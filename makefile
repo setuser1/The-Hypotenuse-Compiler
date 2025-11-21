@@ -1,9 +1,7 @@
-.PHONY: run
+.PHONY: run install
 
-run:
-	install
+run: install
 	./hypotenuse $(ARGS)
-
 
 install:
 	cmake -S . -B cmake-build-debug
