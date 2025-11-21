@@ -1,3 +1,0 @@
-/home/tink/CLionProjects/C-Triangle/cmake-build-debug/CMakeFiles/C_Triangle.dir
-/home/tink/CLionProjects/C-Triangle/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/tink/CLionProjects/C-Triangle/cmake-build-debug/CMakeFiles/rebuild_cache.dir
