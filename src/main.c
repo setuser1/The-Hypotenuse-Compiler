@@ -2,10 +2,58 @@
 #include <stdlib.h>
 #include "compiler.h"
 
+char **lexsize(char *source, size_t *out_count) {
+    if (!source || !out_count) return NULL;
+
+    char **arr = NULL;
+    size_t capacity = 16, count = 0;
+
+    Lexer lexer = {source, {TOK_UNKNOWN, NULL}};
+    arr = malloc(sizeof(char *) * capacity);
+    if (!arr) {
+        fprintf(stderr, "Failed to allocate token array\n");
+        free(source);
+        *out_count = 0;
+        return NULL;
+    }
+
+    while (1) {
+        const Token tok = lexer_next(&lexer);
+
+        /* EOF cleanup */
+        if (tok.type == TOK_EOF) {
+            if (tok.text)
+                free(tok.text);
+            break;
+        }
+
+        /* Expand array dynamically */
+        if (count >= capacity) {
+            capacity *= 2;
+            char **new_arr = realloc(arr, sizeof(char *) * capacity);
+            if (!new_arr) {
+                fprintf(stderr, "Failed to resize token array\n");
+                for (size_t i = 0; i < count; i++)
+                    free(arr[i]);
+                free(arr);
+                free(source);
+                if (tok.text) free(tok.text);
+                *out_count = 0;
+                return NULL;
+            }
+            arr = new_arr;
+        }
+
+        arr[count++] = tok.text; /* take ownership of tok.text */
+    }
+
+    free(source); /* lexsize takes ownership of source */
+    *out_count = count;
+    return arr;
+}
+
 int main(const int argc, char *argv[]) {
     char *source = NULL;
-    Token *tokens = NULL;
-    size_t capacity = 0, token_count = 0;
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <source_file>\n", argv[0]);
@@ -18,59 +66,19 @@ int main(const int argc, char *argv[]) {
         return 1;
     }
 
-    Lexer lexer = {source, {TOK_UNKNOWN, NULL}};
-    capacity = 16;
-    tokens = malloc(sizeof(Token) * capacity);
-    if (!tokens) {
-        fprintf(stderr, "Failed to allocate token array\n");
-        free(source);
+    size_t token_count = 0;
+    char **tokens = lexsize(source, &token_count);
+    if (!tokens && token_count == 0) {
         return 1;
     }
 
-    Token tok;
-    while (1) {
-        tok = lexer_next(&lexer);
-
-        // EOF cleanup
-        if (tok.type == TOK_EOF) {
-            if (tok.text)
-                free(tok.text);
-            break;
-        }
-
-        // Expand token array dynamically
-        if (token_count >= capacity) {
-            capacity *= 2;
-            Token *new_tokens = realloc(tokens, sizeof(Token) * capacity);
-            if (!new_tokens) {
-                fprintf(stderr, "Failed to resize token array\n");
-
-                // Free all existing allocations
-                for (size_t i = 0; i < token_count; i++)
-                    free(tokens[i].text);
-                free(tokens);
-                free(source);
-                free(tok.text);
-                return 1;
-            }
-            tokens = new_tokens;
-        }
-
-        tokens[token_count++] = tok;
-    }
-
-    // ✅ Print tokens
     printf("Tokens:\n");
     for (size_t i = 0; i < token_count; i++)
-        printf("%3d : '%s'\n", tokens[i].type, tokens[i].text ? tokens[i].text : "(null)");
+        printf("%3zu : '%s'\n", i, tokens[i] ? tokens[i] : "(null)");
 
-    // ✅ Free all tokens’ text
     for (size_t i = 0; i < token_count; i++)
-        free(tokens[i].text);
-
-    // ✅ Free master allocations
+        free(tokens[i]);
     free(tokens);
-    free(source);
 
     return 0;
 }
