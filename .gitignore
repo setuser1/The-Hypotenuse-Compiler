@@ -491,6 +491,8 @@ FodyWeavers.xsd
 # Prerequisites
 *.d
 
+*.c
+
 # Object files
 *.o
 *.ko
