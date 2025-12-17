@@ -1,0 +1,86 @@
+// C triangle syntax example file demonstrating ALL features
+using plstd // new library imports — high-level standard utilities (project-specific)
+#include <stdio.h> // C standard IO for printf
+
+// struct with constructors and member function
+struct Example {
+    int value; // integer member storing the example value
+
+    // display: prints the provided value (intended as member or param)
+    void display(value) {
+        printf("Value: %d\n", value);
+    }
+};
+
+struct inheritor&Example {
+    // inheritor: demonstrates an inheriting struct (syntax is language-specific)
+    string name; // member to store a name
+    printd(name); // plstd print function, just like printf
+};
+
+
+
+void function_example(tuple args) {
+    // iterate over a tuple-like collection and print each element
+    for(int i = 0; i < args.size(); i++) {
+        printf("Arg %d: %k\n", i, args[i]);
+    }
+}
+
+void many(int count, auto tuple args*) {
+    // variadic-style function accepting a tuple pointer and a count
+    for(int i = 0; i < count; i++) {
+        printf("Param %d: %k\n", i, args[i]);
+    }
+}
+
+void vars() {
+    // sample variable declarations of different types
+    int a = 10;
+    float b = 20.5;
+    string c = "Hello";
+}
+
+int main() {
+    // inline assembly block demonstrating a simple write and exit syscall on x86_64
+    asm {
+        syntax_x86_64_linux
+        
+        section .data
+        char[20] msg = "Hello, World!\n"
+        
+        
+        
+        section .text
+        global _start
+        _start:
+            ; write syscall
+            mov rax, 1              ; syscall: write
+            mov rdi, 1              ; file descriptor: stdout
+            mov rsi, msg            ; pointer to message
+            mov rdx, 14             ; message length
+            syscall
+
+            ; exit syscall
+            mov rax, 60             ; syscall: exit
+            xor rdi, rdi            ; status: 0
+            syscall
+    }
+    
+    // call example: bring local vars into scope (language-specific "using" syntax)
+    using vars&a;
+    int y = a + 5; // use 'a' from vars()
+    lamb x(a,b) = a + b; // lambda-like function to add two numbers
+    int result = x(y, 10); // call lambda
+
+    // modify the message declared in asm data (note: actual behavior depends on language/ABI)
+    msg = "Goodbye, World!\n";
+    
+    // dynamic array handling example with allocation and free
+    dynamic int arr = [1, 2, 3, 4, 5]; 
+    autoremove allocate ptr = &arr; // example of smart allocation/ownership
+    free(ptr); // free the allocated resource
+
+    
+    return 0;
+}
