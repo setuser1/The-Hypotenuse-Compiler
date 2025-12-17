@@ -12,6 +12,7 @@ Tokens = [
     ('FOR', r'\bfor\b'),
     ('RETURN', r'\breturn\b'),
     ('FUNCTION', r'\bfunction\b'),
+    ('VAR', r'\bvar\b'),
 
     # Data types
     ('FLOAT', r'\d+\.\d+'),
