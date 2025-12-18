@@ -6,5 +6,5 @@ This is in spite of C being Featureless and C++ being too hard to learn. A middl
 
 
 ## Install Guide
- - Make sure you have linux, cmake and gcc.
+ - Make sure you have linux and python.
  - clone repo and cd into it, then make.
