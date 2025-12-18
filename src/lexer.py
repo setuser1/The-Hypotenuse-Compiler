@@ -39,8 +39,7 @@ def get_tokens():
     # here turns the input into a list then cuts it into smaller parts
     while True:
         for token in Tokens:
-            pattern = re.compile(token[1])
-            match = pattern.match(var)
+            match = token[1].match(var)
             if match:
                 lexeme = match.group(0)
                 if token[0] != 'WHITESPACE':  #skip whitespace tokens
