@@ -1,5 +1,5 @@
 import re    #not in use yet, will be used later on
-#UNDER CONSTRUCTION, GONE FISHIN', ON LUNCH BREAK, COME BACK SOON!
+# whoever comments unnecessarily will be murdered
 #order matters, there might be errors if certain elements are not in the right order
 
 Tokens = [
