@@ -1,5 +1,5 @@
 import re    #not in use yet, will be used later on
-
+#UNDER CONSTRUCTION, GONE FISHIN', ON LUNCH BREAK, COME BACK SOON!
 #order matters, there might be errors if certain elements are not in the right order
 
 Tokens = [
@@ -38,4 +38,21 @@ Tokens = [
     ('WHITESPACE', r'\s+')
 ]
 
+#under construction, not finished yet, and will not work properly
 #function to get token list goes here
+def get_tokens():
+    var = input() #input for source code
+    # here turns the input into a list then cuts it into smaller parts
+    while True:
+        for token in Tokens:
+            pattern = re.compile(token[1])
+            match = pattern.match(var)
+            if match:
+                lexeme = match.group(0)
+                if token[0] != 'WHITESPACE':  #skip whitespace tokens
+                    print(f'Token: {token[0]}, Lexeme: {lexeme}')
+                var = var[len(lexeme):]  #move forward in the input string
+                break
+        else:
+            print(f'Unknown token: {var[0]}')
+            var = var[1:]  #skip unknown character
