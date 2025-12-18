@@ -3,39 +3,33 @@ import re    #not in use yet, will be used later on
 #order matters, there might be errors if certain elements are not in the right order
 
 Tokens = [
-    # Keywords (use raw strings for \b)
-    ('PRINT', r'\bprint\b'),
-    ('IF', r'\bif\b'),
-    ('ELSE', r'\belse\b'),
-    ('ELIF', r'\belif\b'),
-    ('WHILE', r'\bwhile\b'),
-    ('FOR', r'\bfor\b'),
-    ('RETURN', r'\breturn\b'),
-    ('FUNCTION', r'\bfunction\b'),
-    ('VAR', r'\bvar\b'),
+    ('PRINT', re.compile(r'\bprint\b')),
+    ('IF', re.compile(r'\bif\b')),
+    ('ELSE', re.compile(r'\belse\b')),
+    ('ELIF', re.compile(r'\belif\b')),
+    ('WHILE', re.compile(r'\bwhile\b')),
+    ('FOR', re.compile(r'\bfor\b')),
+    ('RETURN', re.compile(r'\breturn\b')),
+    ('FUNCTION', re.compile(r'\bfunction\b')),
+    ('VAR', re.compile(r'\bvar\b')),
 
-    # Data types
-    ('FLOAT', r'\d+\.\d+'),
-    ('INTEGER', r'\d+'),
-    ('STRING', r'"(.*?)"'),
+    ('FLOAT', re.compile(r'\d+\.\d+')),
+    ('INTEGER', re.compile(r'\d+')),
+    ('STRING', re.compile(r'"(.*?)"')),
 
-    # Operators and delimiters
-    ('PLUS', r'\+'),
-    ('MINUS', r'-'),
-    ('MULTIPLY', r'\*'),
-    ('DIVIDE', r'/'),
-    ('LPAREN', r'\('),
-    ('RPAREN', r'\)'),
-    ('ASSIGN', r'='),
-    ('SEMICOLON', r';'),
-    ('COMMA', r','),
-    ('COLON', r':'),
+    ('PLUS', re.compile(r'\+')),
+    ('MINUS', re.compile(r'-')),
+    ('MULTIPLY', re.compile(r'\*')),
+    ('DIVIDE', re.compile(r'/')),
+    ('LPAREN', re.compile(r'\(')),
+    ('RPAREN', re.compile(r'\)')),
+    ('ASSIGN', re.compile(r'=')),
+    ('SEMICOLON', re.compile(r';')),
+    ('COMMA', re.compile(r',')),
+    ('COLON', re.compile(r':')),
 
-    # Identifiers (after keywords)
-    ('IDENTIFIER', r'[A-Za-z_][A-Za-z0-9_]*'),
-
-    # Whitespace (skip)
-    ('WHITESPACE', r'\s+')
+    ('IDENTIFIER', re.compile(r'[A-Za-z_][A-Za-z0-9_]*')),
+    ('WHITESPACE', re.compile(r'\s+'))
 ]
 
 #under construction, not finished yet, and will not work properly
