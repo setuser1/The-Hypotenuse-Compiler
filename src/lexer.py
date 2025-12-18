@@ -50,3 +50,9 @@ def get_tokens(argv):
         else:
             print(f'Unknown token: {var[0]}')
             var = var[1:]  #skip unknown character
+
+if "__name__" == __main__:
+    if sys.argv < 2:
+        exit()
+    else:
+        get_tokens(sys.argv)
