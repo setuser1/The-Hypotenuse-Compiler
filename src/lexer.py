@@ -19,9 +19,9 @@ Tokens = [
     ('BOOLEAN', re.compile(r'\b_Bool\b'))
 
     #DATA TYPES
-    ('STRING', re.compile(r'"[^"]*"')),
-    ('DOUBLE', re.compile(r'\b\d+\.\d+\b')),
-    ('LONG', re.compile(r'\b\d+\b')),
+    ('STRING LITERAL', re.compile(r'"[^"]*"')),
+    ('DOUBLE LITERAL', re.compile(r'\b\d+\.\d+\b')),
+    ('LONG LITERAL', re.compile(r'\b\d+\b')),
 
     
     #OPERATORS AND DELIMITERS AND SYMBOLS
@@ -35,10 +35,10 @@ Tokens = [
     ('SEMICOLON', re.compile(r';')),
     ('COMMA', re.compile(r',')),
     ('COLON', re.compile(r':')),
-    ('LESSTHAN', re.compile(r'<')),
-    ('GREATERTHAN', re.compile(r'>')),
-    ('LESSTHANOREQUAL', re.compile(r'<=')),
-    ('GREATERTHANOREQUAL', re.compile(r'>=')),
+    ('LT', re.compile(r'<')),
+    ('GT', re.compile(r'>')),
+    ('LE', re.compile(r'<=')),
+    ('GE', re.compile(r'>=')),
     ('NOT', re.compile(r'!')),
     ('AND', re.compile(r'&&')),
     ('OR', re.compile(r'\|\|')),
