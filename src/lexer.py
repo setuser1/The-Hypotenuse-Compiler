@@ -57,23 +57,20 @@ Tokens = [
     ('WHITESPACE', re.compile(r'\s+'))
 ]
 
-#under construction, not finished yet, and will not work properly
-#function to get token list goes here
 def get_tokens(argv):
-    # here turns the input into a list then cuts it into smaller parts
     var = argv[1]
     while var:
         for token in Tokens:
             match = token[1].match(var)
             if match:
                 lexeme = match.group(0)
-                if token[0] != 'WHITESPACE':  #skip whitespace tokens
+                if token[0] != 'WHITESPACE':
                     print(f'Token: {token[0]}, Lexeme: {lexeme}')
-                var = var[len(lexeme):]  #move forward in the input string
+                var = var[len(lexeme):]
                 break
         else:
             print(f'Unknown token: {var[0]}')
-            var = var[1:]  #skip unknown character
+            var = var[1:]
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
