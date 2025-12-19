@@ -1,6 +1,5 @@
-import re    #not in use yet, will be used later on
+import re
 import sys
-# hey my comment was good! dont edit this one again!
 #order matters, there might be errors if certain elements are not in the right order
 
 Tokens = [
