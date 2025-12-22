@@ -77,7 +77,7 @@ int main() {
     msg = "Goodbye, World!\n";
     
     // dynamic array handling example with allocation and free
-    dynamic int arr = [1, 2, 3, 4, 5]; 
+    dynam int arr = [1, 2, 3, 4, 5]; 
     autoremove allocate ptr = &arr; // example of smart allocation/ownership
     free(ptr); // free the allocated resource
 
