@@ -8,7 +8,7 @@ using <plstd> // new library imports — high-level standard utilities (project-
 #include <stdio.h> // C standard IO for printf
 
 // struct with constructors and member function
-struct Example(value) {
+typed struct Example(value) {
     int self.value = value; // integer member storing the example value
     
     
@@ -18,7 +18,7 @@ struct Example(value) {
     }
 };
 
-struct inheritor&Example {
+typed struct inheritor&Example {
     // inheritor: demonstrates an inheriting struct (syntax is language-specific)
     string name; // member to store a name
     printd(name); // plstd print function, just like printf
@@ -48,6 +48,10 @@ void vars() {
 }
 
 int main() {
+  
+    Example structure(1);
+    structure.display(structure.value);
+  
     // inline assembly block demonstrating a simple write and exit syscall on x86_64
     asm {
         syntax_x86_64_linux
