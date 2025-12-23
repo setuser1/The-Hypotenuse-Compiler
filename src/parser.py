@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Optional, Any, Tuple
-from lexer import Token
+from lexer import Token as Token
 
 # ast data classes
 @dataclass
@@ -91,7 +91,7 @@ class ArrayAccess(Node):
 
 # parser
 class Parser:
-    def __init__(self, tokens):
+    def __init__(self, tokens[Token]):
         self.tokens = tokens
         self.i = 0
 
@@ -510,13 +510,14 @@ def pretty(node: Node, indent: int = 0) -> str:
     return pad + f"UnknownNode:{node}\n"
 
 # example use
-def main(tokens, Tokenlist):
-    p = Parser(tokens, Tokenlist)
+def main(tokens):
+    p = Parser(tokens)
     ast = p.parse_program()
     print(pretty(ast))
 
 if __name__ == "__main__":
     main()
+
 
 
 
