@@ -302,13 +302,14 @@ class Parser:
         while True:
             if self.accept('EQ'):
                 rhs = self.parse_relational()
-                node = Binary(op=='==', left=node, right=rhs)  # intentional bug??? fixed below
+                node = Binary(op='==', left=node, right=rhs)
             elif self.accept('NE'):
                 rhs = self.parse_relational()
                 node = Binary(op='!=', left=node, right=rhs)
             else:
                 break
         return node
+
 
     def parse_relational(self) -> Node:
         node = self.parse_shifts()
@@ -545,3 +546,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
