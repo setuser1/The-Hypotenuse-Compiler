@@ -15,7 +15,7 @@ Tokens = [
     ('CHAR', re.compile(r'\bchar\b')),
     ('VOID', re.compile(r'\bvoid\b')),
     ('FLOAT', re.compile(r'\bfloat\b')),
-    ('BOOLEAN', re.compile(r'\b_Bool\b'))
+    ('BOOLEAN', re.compile(r'\b_Bool\b')),
 
     #DATA TYPES
     ('STRING LITERAL', re.compile(r'"[^"]*"')),
@@ -24,7 +24,9 @@ Tokens = [
 
     
     #OPERATORS AND DELIMITERS AND SYMBOLS
+    ('INCREMENT', re.compile(r'\+\+')),
     ('PLUS', re.compile(r'\+')),
+    ('DECREMENT', re.compile(r'--')),
     ('MINUS', re.compile(r'-')),
     ('MULTIPLY', re.compile(r'\*')),
     ('DIVIDE', re.compile(r'/')),
@@ -34,15 +36,13 @@ Tokens = [
     ('SEMICOLON', re.compile(r';')),
     ('COMMA', re.compile(r',')),
     ('COLON', re.compile(r':')),
-    ('LT', re.compile(r'<')),
-    ('GT', re.compile(r'>')),
     ('LE', re.compile(r'<=')),
     ('GE', re.compile(r'>=')),
+    ('LT', re.compile(r'<')),
+    ('GT', re.compile(r'>')),
     ('NOT', re.compile(r'!')),
     ('AND', re.compile(r'&&')),
     ('OR', re.compile(r'\|\|')),
-    ('INCREMENT', re.compile(r'\+\+')),
-    ('DECREMENT', re.compile(r'--')),
     ('DOT', re.compile(r'\.')),
     ('ARROW', re.compile(r'->')),
     ('LBRACKET', re.compile(r'\[')),
