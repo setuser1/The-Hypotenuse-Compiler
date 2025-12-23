@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import List, Optional, Any, Tuple
-from lexer import Lexer, Token
 
 # ast data classes
 @dataclass
@@ -510,40 +509,12 @@ def pretty(node: Node, indent: int = 0) -> str:
     return pad + f"UnknownNode:{node}\n"
 
 # example use
-def main():
-    sample = r'''
-    // full-feature sample
-    int add(int a, int b) {
-        int c = a + b;
-        return c;
-    }
-
-    int main() {
-        int x = 3;
-        long y = 0x10;
-        float f = 1.23e-1;
-        int z = add(x, (int) y);
-        if (z > 5) {
-            z++;
-        } else {
-            z--;
-        }
-
-        int i;
-        for (i = 0; i < 10; i++) {
-            x = x + i * 2 % 5;
-        }
-
-        int val = (x > 10) ? x : 10;
-        return 0;
-    }
-    '''
-    lexer = Lexer(sample)
-    tokens = lexer.tokenize()
+def main(tokens):
     p = Parser(tokens)
     ast = p.parse_program()
     print(pretty(ast))
 
 if __name__ == "__main__":
     main()
+
 
