@@ -107,6 +107,9 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         exit()
     else:
-        token_list = get_tokens(sys.argv)
+        with open(sys.argv, 'r') as file:
+                content = file.read()
+        token_list = get_tokens(content)
         for t in token_list:
             print(f"Token: {t[0]}, Lexeme {t[1]}")
+            
