@@ -88,21 +88,25 @@ Tokens = [
 
 def get_tokens(argv):
     var = argv[1]
+    tokens = []
+    
     while var:
         for token in Tokens:
             match = token[1].match(var)
             if match:
                 lexeme = match.group(0)
                 if token[0] != 'WHITESPACE':
-                    print(f'Token: {token[0]}, Lexeme: {lexeme}')
+                    tokens.append((Token[0], lexeme))
                 var = var[len(lexeme):]
                 break
         else:
-            print(f'Unknown token: {var[0]}')
+            tokens.append(('UNKNOWN', var[0]))
             var = var[1:]
-    return var
+    return tokens
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         exit()
     else:
-        get_tokens(sys.argv)
+        token_list = get_tokens(sys.argv)
+        for t in token_list:
+            print(f"Token: {t[0]}, Lexeme {t[1]}")
