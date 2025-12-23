@@ -4,8 +4,8 @@ import sys
 
 Tokens = [
     # COMMENTS
-    ('COMMENT_MULTI', re.compiler(r'/\*.*?\*/', re.DOTALL)),
-    ('COMMENT_LINE', re.compiler(r'//[^\n]*')),
+    ('COMMENT_MULTI', re.compile(r'/\*.*?\*/', re.DOTALL)),
+    ('COMMENT_LINE', re.compile(r'//[^\n]*')),
 
     #KEYWORDS
     ('IF', re.compile(r'\bif\b')),
