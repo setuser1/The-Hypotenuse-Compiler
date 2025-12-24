@@ -47,9 +47,9 @@ Tokens = [
     ('BOOLEAN', re.compile(r'\b_Bool\b')),
 
     #DATA TYPES
-    ('STRING LITERAL', re.compile(r'"[^"]*"')),
-    ('DOUBLE LITERAL', re.compile(r'\b\d+\.\d+\b')),
-    ('LONG LITERAL', re.compile(r'\b\d+\b')),
+    ('STRING_LITERAL', re.compile(r'"[^"]*"')),
+    ('FLOAT_LITERAL', re.compile(r'\b\d+.\d+\b')),
+    ('INT_LITERAL', re.compile(r'\b\d+\b')),
 
     
     #OPERATORS AND DELIMITERS AND SYMBOLS
@@ -87,8 +87,8 @@ Tokens = [
     ('UNKNOWN', re.compile(r'.'))
 ]
 
-def get_tokens(argv):
-    var = argv[0]
+def get_tokens(string):
+    var = string
     tokens = []
     
     while var:
