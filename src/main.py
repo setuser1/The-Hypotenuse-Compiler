@@ -16,6 +16,7 @@ def main():
     sys.exit(1)
   except OSError as e:
     print(f"Error reading file: {e}")
+    sys.exit(1)
   except SyntaxError as e:
     print(f"Syntax error: {e}")
     sys.exit(1)
