@@ -1,0 +1,9 @@
+# Normalize all text files
+* text=auto
+
+# Python source files
+*.py text diff=python eol=lf
+
+# Makefile (CRITICAL: must be LF)
+Makefile text eol=lf
+*.mk     text eol=lf
