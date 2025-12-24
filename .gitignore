@@ -23,6 +23,8 @@
 
 *.json
 
+.venv/
+
 .vscode/
 
 # Generated files
