@@ -9,6 +9,7 @@ def main():
   tokens = []
   for i in content:
     tokens.append(get_tokens(i))
+  tokens.append(('EOF', 'EOF'))
   print(tokens)
   parse.main(tokens)
 
