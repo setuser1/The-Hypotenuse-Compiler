@@ -87,6 +87,56 @@ Tokens = [
     ('UNKNOWN', re.compile(r'.'))
 ]
 
+def lex_expression(self):
+    start = self.pos
+    paren = 0
+    bracket = 0
+    in_string = None
+    # For handling strings
+    while self.pos < len(self.text):
+        c = self.text[self.pos]
+        if in_string:
+            if c == '\\':
+                self.pos += 2
+                continue
+            if c == in_string:
+                in_string = None
+        else:
+            if c in ('"', "'"):
+                in_string = c
+            elif c == '(':
+                paren += 1
+            elif c == ')':
+                if paren == 0:
+                    break
+                paren -= 1
+            elif c == '[':
+                bracket += 1
+            elif c == ']':
+                if bracket == 0:
+                    break
+                bracket -= 1
+            elif c in (';', ',') and paren == 0 and bracket == 0:
+                break
+        self.pos += 1
+    value = self.text[start:self.pos].strip()
+    return Token('EXPR', value)
+
+
+
+def peek(self):
+        index = self.pos
+        token = Tokens[self.pos]
+        index += 1
+        return token
+
+def func_call(self, token):
+    tokentype = Tokens[self.pos]
+    if tokentype == "IDENTIFIER" and peek(token) == '(':
+        token = Tokens[self.pos] + peek(token)
+
+
+
 def get_tokens(string):
     var = string
     tokens = []
