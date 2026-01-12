@@ -1,8 +1,7 @@
 .PHONY: run install
-directory := $(CURDIR)
 
 run: install
-	./hypotenuse directory/test/ex.ctri
+	python3 src/main.py $(CURDIR)/test/ex.ctri
 
 install:
 
