@@ -1,7 +1,8 @@
 .PHONY: run install
+directory := $(CURDIR)
 
 run: install
-	./hypotenuse $(ARGS)
+	./hypotenuse directory/test/ex.ctri
 
 install:
 
