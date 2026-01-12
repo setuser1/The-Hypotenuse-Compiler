@@ -48,7 +48,7 @@ def main():
             print(tokens)
             print("\n")
             parse.main(tokens)
-        except FileNotFoundError as error:
+        except FileNotFoundError:
             try:
                 args()
             except:
