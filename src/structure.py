@@ -8,6 +8,12 @@ class Scope:
         self.children.append(child)
         return self
 
+class Callee:
+    def __init__(self, name, scope):
+        self.name = name
+        self.scope = scope
+        scope.children.append(self.name)
+
 class Caller:
     def __init__(self, name, value):
         self.name = name
@@ -29,3 +35,7 @@ class Lib:
         scope.add_child(self)
     def add_function(self, function):
         self.functions.append(function)
+
+
+if __name__ == '__main__':
+    pass
