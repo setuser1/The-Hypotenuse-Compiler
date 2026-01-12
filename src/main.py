@@ -1,73 +1,81 @@
 import sys
 import parser as parse
+import argparse
 from lexer import get_tokens
 
-help_options = """
-      usage: python3 main.py [file..] or
-      python3 main.py [option...] [file..]
-      
-      --help, -h: displays this help message
-      -o: output to file
-      -t: print tokens
-      -a: show asm 
-      """
-
-def args():
-    """ Command line argument parser. """
-    match sys.argv[1]:
-        case '--help':
-            print(help_options)
-        case '-h':
-            print(help_options)
-        case '-o':
-            pass
-        case '-t':
-            try:
-                with open(sys.argv[2], "r") as file:
-                    content = file.read()
-                tokens = get_tokens(content)
-            except FileNotFoundError:
-                print(f"Error: file not found {sys.argv[1]}")
-                sys.exit(1)
-            print(tokens)
-            sys.exit(0)
+def parse_args():
+    """Parse command‑line arguments using argparse."""
+    parser = argparse.ArgumentParser(
+        prog="hypotenuse",
+        description="C triangle compiler.",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "files", nargs="*", help="Source file(s) to compile"
+    )
+    parser.add_argument(
+        "-t", "--tokens", action="store_true",
+        help="Print lexical tokens and exit"
+    )
+    parser.add_argument(
+        "-o", "--output", metavar="PATH",
+        help="Write compiled output to PATH (not yet implemented)"
+    )
+    parser.add_argument(
+        "-a", "--asm", action="store_true",
+        help="Show generated assembly"
+    )
+    return parser.parse_args()
 
 
 def main():
-    if 2 < len(sys.argv) <= 3:
-        args()
-    elif len(sys.argv) < 3:
-        #Catch errors with try and except
+    args = parse_args()
+    # -------------------------------------------------
+    #  Token‑only mode (-t / --tokens)
+    # -------------------------------------------------
+    if args.tokens:
+        if not args.files:
+            print("Error: no input file provided for token printing")
+            sys.exit(1)
         try:
-            with open(sys.argv[1], "r") as file:
+            with open(args.files[0], "r") as file:
                 content = file.read()
-                tokens = get_tokens(content)
-            # Debug:
-            # Add this to verify EOF works: print(tokens[-1])
+            tokens = get_tokens(content)
+        except FileNotFoundError:
+            print(f"Error: file not found {args.files[0]}")
+            sys.exit(1)
+        print(tokens)
+        sys.exit(0)
+
+    # -------------------------------------------------
+    #  Normal compilation path (one or more files)
+    # -------------------------------------------------
+    if not args.files:
+        print("Error: no input file provided")
+        sys.exit(1)
+
+    for path in args.files:
+        try:
+            with open(path, "r") as file:
+                content = file.read()
+            tokens = get_tokens(content)
+            # Append EOF token as the original script expected
             tokens.append(('EOF', 'EOF'))
             print(tokens)
             print("\n")
             parse.main(tokens)
         except FileNotFoundError:
-            try:
-                args()
-            except:
-                print(f"Error: file not found {sys.argv[1]}")
-                sys.exit(1)
+            print(f"Error: file not found {path}")
+            sys.exit(1)
         except OSError as error:
             print(f"Error reading file: {error}")
             sys.exit(1)
-
         except SyntaxError as error:
             print(f"Syntax error: {error}")
             sys.exit(1)
         except Exception as error:
             print(f"Lexing error: {error}")
             sys.exit(1)
-    else:
-        error_msg = f"Usage: main.py [option...] [file..]"
-        print(error_msg)
-        sys.exit(1)
 
 
 if __name__ == "__main__":
