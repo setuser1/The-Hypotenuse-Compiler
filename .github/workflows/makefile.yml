@@ -1,0 +1,21 @@
+name: Makefile CI
+
+on:
+  push:
+    branches: [ "setuser1-patch" ]
+  pull_request:
+    branches: [ "setuser1-patch" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: make install
+
+    - name: Run check
+      run: make run
