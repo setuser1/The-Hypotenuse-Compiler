@@ -41,6 +41,9 @@ def main():
             with open(args.files[0], "r") as file:
                 content = file.read()
             tokens = get_tokens(content)
+            print(tokens)
+            tokens.append(('EOF', 'EOF'))
+            parse.main(tokens)
         except FileNotFoundError:
             print(f"Error: file not found {args.files[0]}")
             sys.exit(1)
@@ -59,10 +62,7 @@ def main():
             with open(path, "r") as file:
                 content = file.read()
             tokens = get_tokens(content)
-            # Append EOF token as the original script expected
             tokens.append(('EOF', 'EOF'))
-            print(tokens)
-            print("\n")
             parse.main(tokens)
         except FileNotFoundError:
             print(f"Error: file not found {path}")

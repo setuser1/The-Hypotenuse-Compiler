@@ -9,23 +9,21 @@ class Scope:
         return self
 
 class Callee:
-    def __init__(self, name, scope):
+    def __init__(self, name, scope, value):
         self.name = name
         self.scope = scope
-        scope.children.append(self.name)
+        self.value = value
+        scope.add_child(self)
 
 class Caller:
-    def __init__(self, name, value):
+    def __init__(self, name, scope, value):
         self.name = name
+        self.scope = scope
         self.value = value
-        self.points = []
-    def start(self, scope):
-        scope.add_child(self)
-        return self
-    def call(self, point, scopes):
-        for scope in scopes:
-            if point in scope.children:
-                self.points.append(point)
+        self.dependencies = []
+        self.callee = Callee(self.name, self.scope, self.value)
+    def call(self, callee):
+        self.dependencies.append(callee)
 
 
 class Lib:
@@ -38,4 +36,10 @@ class Lib:
 
 
 if __name__ == '__main__':
-    pass
+    new = Scope('main')
+    x = Callee("random_variable", new, 5)
+    y = Caller("int y", new, 3)
+
+    y.call(x)
+    b = y.value + y.dependencies[0].value
+    print(b)
