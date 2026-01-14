@@ -1,74 +1,86 @@
 import parser as p
-# new stuff guys!
 class Scope:
-    def __init__(self, name):
+    def __init__(self, name, parent=None):
         self.name = name
-        self.children = []
-    def add_child(self, child):
-        self.children.append(child)
-        return self
-    def called(self, callee):
-        """
-        Return the child that matches *callee*.
-        Matching is based on the name (which is unique for our tiny model) rather
-        than object identity, because callers often pass a different instance that
-        represents the same logical entity.
-        """
-        for child in self.children:
-            if getattr(child, "name", None) == getattr(callee, "name", None):
-                return child
+        self.parent = parent
+        self.children = {}  # name → node
+
+    def add_child(self, node):
+        self.children[node.name] = node
+        return node
+
+    def called(self, name):
+        if name in self.children:
+            return self.children[name]
+        if self.parent:
+            return self.parent.called(name)
         return None
 
-class Callee:
-    def __init__(self, name, scope, value):
-        self.name = name
-        self.scope = scope
-        # Store the payload as a scalar (or more generally as whatever the caller passes)
-        self.value = value
-        scope.add_child(self)
 
-class Caller:
-    def __init__(self, name, scope, value):
+class Node:
+    """Base node for values and dependencies."""
+    def __init__(self, name, scope):
         self.name = name
         self.scope = scope
-        self.value = value
+        self.scope.add_child(self)
         self.dependencies = []
-        self.callee = Callee(self.name, self.scope, self.value)
-    def call(self, callee):
-        self.dependencies.append(callee)
-    def utilize(self, callee):
-        self.dependencies.append(callee.callee)
+
+    def eval(self):
+        raise NotImplementedError
+
+
+class Callee(Node):
+    """Node that provides a value or a function."""
+    def __init__(self, name, scope, value):
+        super().__init__(name, scope)
+        self.value = value
+
+    def eval(self, *args, **kwargs):
+        if callable(self.value):
+            resolved_args = [arg.eval() if isinstance(arg, Node) else arg for arg in args]
+            return self.value(*resolved_args)
+        return self.value
+
+
+class Caller(Node):
+    """Node that can depend on other nodes and call function nodes."""
+    def __init__(self, name, scope, value=None):
+        super().__init__(name, scope)
+        self.value = value
+
+    def call(self, node, *args):
+        """Depend on a node. Arguments can be nodes or literals."""
+        self.dependencies.append((node, args))
+
+    def eval(self):
+        # Start with self.value if numeric, else 0
+        result = self.value if isinstance(self.value, (int, float)) else 0
+        for node, args in self.dependencies:
+            result += node.eval(*args)
+        return result
+
 
 class Lib:
-    def __init__(self, name, scope=None):
+    """Library scope containing callable or value nodes."""
+    def __init__(self, name, parent_scope=None):
         self.name = name
-        self.parent = scope
-        # Create a dedicated Scope for the library and, if a parent scope was
-        # supplied, register this library as a child of that parent.
-        self.scope = Scope(name)
-        if scope is not None:
-            scope.add_child(self.scope)
-    def add_child(self, child):
-        # Accept both Callee/Caller objects and raw Scope objects.
-        # If a Scope is added, we want it to be reachable via the library’s
-        # own scope hierarchy.
-        if isinstance(child, Scope):
-            self.scope.add_child(child)
-        else:
-            self.scope.add_child(child)
-    def called(self, callee):
-        return self.scope.called(callee)
+        self.scope = Scope(name, parent=parent_scope)
+        if parent_scope:
+            parent_scope.add_child(self.scope)
+
+    def add_node(self, node):
+        self.scope.add_child(node)
+
+    def called(self, name):
+        return self.scope.called(name)
 
 
 class Structor:
-    """Used for automatically structuring each line of code,
-    taking tokens from lexer and sorting them into the appropriate
-    representations."""
+    """Used for automatically structuring each line of code."""
     def __init__(self, tokens_array, scope):
         self.tokens = tokens_array
         self.pos = 0
         self.objects = {}
-        # The scope in which the generated objects will live
         self.scope = scope
 
     def peek(self):
@@ -78,31 +90,28 @@ class Structor:
         tok = self.peek()
         self.pos += 1
         return tok
-    def match(self,*types):
+
+    def match(self, *types):
         tok = self.peek()
         if tok and tok.type in types:
             return self.advance()
         return None
+
     def structure(self):
         while self.peek():
             self.statement()
+
     def statement(self):
         # Assignment / object creation
         if (self.peek().type == "NAME" and
                 self.tokens[self.pos + 1].type == "EQUALS" and
                 self.tokens[self.pos + 2].type == "NAME"):
-            # variable name on the left‑hand side
             var_name = self.advance().value
-            # skip the '=' token
-            self.advance()
-            # class name (Callee or Caller) on the right‑hand side
+            self.advance()  # skip '='
             class_name = self.advance().value
-            # skip the opening '('
-            self.advance()
-            # collect arguments until ')'
+            self.advance()  # skip '('
             args = self.collect_args()
 
-            # Build the appropriate object and register it
             if class_name == "Callee":
                 obj = Callee(args[0], self.scope, args[2])
             elif class_name == "Caller":
@@ -112,6 +121,7 @@ class Structor:
 
             self.objects[var_name] = obj
             return
+
         if self.peek().type == "NAME" and self.tokens[self.pos + 1].type == "DOT":
             caller_name = self.advance().value
             self.advance()
@@ -119,36 +129,43 @@ class Structor:
             self.advance()
             callee_name = self.advance().value
             self.advance()
-                
+
             if method == "call":
                 caller = self.objects[caller_name]
                 callee = self.objects[callee_name]
                 caller.call(callee)
             return
+
         self.advance()
-    # Argument Collecting
+
+    # Argument collecting
     def collect_args(self):
         args = []
         while self.peek().type != "RPAREN":
             tok = self.advance()
-            if tok.type in ("STRING", "NUMBER","NAME"):
+            if tok.type in ("STRING", "NUMBER", "NAME"):
                 args.append(tok.value.strip('"\''))
         self.advance()
         return args
 
-if __name__ == '__main__':
-    new = Scope('main')
-    std = Lib('stdio')
-    printf = Caller('printf', std, "print()")
-    std.add_child(printf)
-    x = Callee("random_variable", new, 5)
-    y = Caller("int y", new, 3)
+if __name__ == "__main__":
+    main = Scope("main")
+    stdio = Lib("stdio", main)
 
-    y.call(x)
+    # First-class function
+    def double(x):
+        print(f"double called with {x}")
+        return x * 2
 
-    y.call(std.called(printf))
-    y.utilize(printf)
-    print(y.dependencies[1].value)
+    printf = Callee("printf", stdio.scope, double)
+    stdio.add_node(printf)
 
-    b = y.value + y.dependencies[0].value
-    print(b)
+    # Values
+    x = Callee("x", main, 5)
+    y = Caller("y", main, 3)
+
+    # Dependencies
+    y.call(x)                  # y depends on x
+    y.call(printf, x)          # y calls printf with x as argument
+
+    print("y.eval() =", y.eval())  # 3 + 5 + 10 = 18
