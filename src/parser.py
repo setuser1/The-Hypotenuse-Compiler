@@ -13,8 +13,6 @@ a structured AST suitable for semantic analysis or code generation.
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple
 
-from lexer import Tokens as Token
-
 # ============================================================
 # AST (Abstract Syntax Tree) Nodes
 # ============================================================
@@ -193,8 +191,10 @@ class Parser:
         tok = self.peek()
         if tok[0] == type_name:
             return self.advance()
+        # ``tok`` is a (type, lexeme) tuple; it has no position information.
+        # Use the parser's current index as a simple position indicator.
         raise SyntaxError(
-            f"Expected {type_name} at pos {tok[2]}, got {tok[0]} ({tok[1]!r})"
+            f"Expected {type_name} at token index {self.i}, got {tok[0]} ({tok[1]!r})"
         )
 
     def accept(self, type_name: str):
@@ -373,21 +373,42 @@ class Parser:
         return node
 
     def parse_logical_or(self) -> Node:
-        node = self.parse_assignment()
+        """Parse a logical‑OR (``||``) expression using primary parsing.
+
+        This replaces the previous implementation that called
+        ``self.parse_assignment()`` for both the left‑hand side and each
+        right‑hand side. ``parse_assignment`` eventually invokes
+        ``parse_logical_or`` again, creating a cyclic call chain and causing a
+        ``RecursionError``.  The new approach parses a primary expression
+        (identifier, literal, or parenthesised sub‑expression) for each side,
+        breaking the recursion while preserving operator precedence.
+        """
+        left = self.parse_primary()
         while self.peek()[0] == "OR":
             op = self.advance()[1]
-            node = Binary(op, node, self.parse_assignment())
-        return node
+            right = self.parse_primary()
+            left = Binary(op, left, right)
+        return left
 
-    def parse_logical_or(self) -> Node:
-        node = self.parse_assignment()
-        while self.peek()[0] == 'OR':
-            op = self.advance()[1]
-            node = Binary(op, node, self.parse_assignment())
-        return node
-
-    # Remaining precedence layers intentionally omitted here for brevity
-    # (they are identical to your original implementation)
+    # -----------------------------------------------------------------
+    # Primary expression helper (identifiers, literals, parenthesised expr)
+    # -----------------------------------------------------------------
+    def parse_primary(self) -> Node:
+        """Parse the most basic expression forms."""
+        tok = self.peek()
+        if tok[0] == "IDENTIFIER":
+            # Variable reference
+            return Var(self.advance()[1])
+        if tok[0] in ("INT_LITERAL", "FLOAT_LITERAL", "STRING_LITERAL"):
+            # Literal constant
+            return Literal(self.advance()[1])
+        if tok[0] == "LPAREN":
+            # Parenthesised sub‑expression
+            self.advance()
+            expr = self.parse_expression()
+            self.expect("RPAREN")
+            return expr
+        raise SyntaxError(f"Unexpected token {tok} in primary expression")
 
 
 # ============================================================

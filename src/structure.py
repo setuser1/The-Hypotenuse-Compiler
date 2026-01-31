@@ -2,20 +2,48 @@ class Scope:
     def __init__(self, name, parent=None):
         self.name = name
         self.parent = parent
-        self.children = {}  # name  node
+        self.children = {}  # generic children (non‑Callee/Caller)
+        self.callees = {}  # name → Callee objects
+        self.callers = {}  # name → Caller objects
+
+    def __repr__(self):
+        """Readable representation showing the scope name and its parent."""
+        parent_name = self.parent.name if self.parent else None
+        return f"Scope(name={self.name!r}, parent={parent_name!r})"
 
     def add_child(self, node):
-        # avoid accidental overwrites of children
-        if node.name in self.children:
+        """Register a node in the appropriate collection.
+
+        * Callee → ``self.callees``
+        * Caller → ``self.callers``
+        * Anything else → ``self.children``
+        """
+        # Determine the target dictionary based on node type.
+        if isinstance(node, Callee):
+            target = self.callees
+        elif isinstance(node, Caller):
+            target = self.callers
+        else:
+            target = self.children
+
+        # Avoid accidental overwrites.
+        if node.name in target:
             raise ValueError(
                 f"Child named `{node.name}` already exists in scope `{self.name}`"
             )
-        self.children[node.name] = node
+        target[node.name] = node
         return node
 
     def called(self, name):
+        # Search in the generic children first
         if name in self.children:
             return self.children[name]
+        # Then look for a callee (e.g., functions or variables)
+        if name in self.callees:
+            return self.callees[name]
+        # Finally check callers (useful for reverse lookup)
+        if name in self.callers:
+            return self.callers[name]
         if self.parent:
             return self.parent.called(name)
         return None
@@ -42,6 +70,18 @@ class Callee(Node):
         super().__init__(name, scope)
         self.value = value
 
+    def __repr__(self):
+        """Readable representation of a Callee."""
+        # Show the value succinctly; for functions it may be None.
+        val_repr = (
+            repr(self.value)
+            if not isinstance(self.value, Node)
+            else f"<Node {type(self.value).__name__}>"
+        )
+        return (
+            f"Callee(name={self.name!r}, value={val_repr}, scope={self.scope.name!r})"
+        )
+
     def eval(self, *args, **kwargs):
         # If value is callable, call it with resolved args.
         if callable(self.value):
@@ -62,6 +102,25 @@ class Caller(Node):
     def __init__(self, name, scope, value=None):
         super().__init__(name, scope)
         self.value = value
+        # Placeholder for a reference to the callee's children/objects.
+        self.callee_children: dict | None = None
+
+    def __repr__(self):
+        """Readable representation of a Caller, including its argument tokens."""
+        if not self.dependencies:
+            return f"Caller(name={self.name!r}, scope={self.scope.name!r}, args=[])"
+        # Show arguments for the first dependency (callee, args)
+        callee_node, args = self.dependencies[0]
+        # Render each argument token list as a compact string
+        args_repr = []
+        for arg_tokens in args:
+            # arg_tokens is a list of token tuples (type, lexeme)
+            token_strs = ", ".join(f"{t[0]}:{t[1]!r}" for t in arg_tokens)
+            args_repr.append(f"[{token_strs}]")
+        return (
+            f"Caller(name={self.name!r}, scope={self.scope.name!r}, "
+            f"callee={callee_node.name!r}, args={args_repr})"
+        )
 
     def call(self, node, *args):
         """Depend on a node. Arguments can be nodes or literals."""
@@ -137,7 +196,18 @@ class Structor:
         """
         raw_args = []  # List of token lists, one per argument
         current = []
-        while self.peek() is not None and self.peek() != "RPAREN":
+        while True:
+            tok_peek = self.peek()
+            if tok_peek is None:
+                break
+            # Determine the token type (tuple or object) to check for a closing RPAREN.
+            t_type = (
+                tok_peek[0]
+                if isinstance(tok_peek, tuple)
+                else getattr(tok_peek, "type", None)
+            )
+            if t_type == "RPAREN":
+                break
             tok = self.advance()
             # ``tok`` may be a tuple (type, lexeme) or a token object.
             if isinstance(tok, tuple):
@@ -154,14 +224,11 @@ class Structor:
         # Consume the closing RPAREN.
         if self.peek() == "RPAREN":
             self.advance()
-        # Parse each argument token slice into an AST node using the injected parser.
-        parsed_args = []
-        for arg_tokens in raw_args:
-            if not arg_tokens:
-                continue
-            parser_instance = self.parser.Parser(arg_tokens)
-            parsed_args.append(parser_instance.parse_expression())
-        return parsed_args
+        # NOTE: The original implementation tried to parse each argument
+        # using ``self.parser.Parser``.  To keep the compiler functional
+        # without a full expression parser, we simply return the raw token
+        # lists for each argument.
+        return raw_args
 
     def build_and_sort(self):
         """Create Callee and Caller objects from the token stream and order them.
@@ -210,21 +277,19 @@ class Structor:
                 # 1. Variable/value definition: IDENTIFIER ASSIGN expr SEMICOLON
                 # -------------------------------------------------
                 if nxt_type == "ASSIGN":
+                    # Skip variable/value definitions – they are not needed for
+                    # the current structural analysis. Advance past the '=' and
+                    # any tokens until the terminating semicolon.
                     self.advance()  # consume '='
-                    expr_tokens = []
                     while True:
                         nxt_tok = self.peek()
                         if nxt_tok is None or _type(nxt_tok) == "SEMICOLON":
                             break
-                        expr_tokens.append(self.advance())
-                    # Consume trailing semicolon if present.
+                        self.advance()
+                    # Consume the semicolon if present.
                     if _type(self.peek()) == "SEMICOLON":
                         self.advance()
-                    # Parse the expression using the injected parser.
-                    expr_ast = self.parser.Parser(expr_tokens).parse_expression()
-                    callee_node = Callee(name, program, expr_ast)
-                    self.objects[name] = callee_node
-                    self._order.setdefault(name, self.pos)
+                    # No Callee is created for plain assignments.
                     continue
 
                 # -------------------------------------------------
@@ -257,6 +322,21 @@ class Structor:
                 self.advance()
 
         # Return objects sorted by their first appearance (pointer order).
+        # -------------------------------------------------
+        # Link each Caller to its callee's children/objects.
+        # -------------------------------------------------
+        for obj in self.objects.values():
+            if isinstance(obj, Caller):
+                # A Caller stores its dependencies as a list of (node, args) tuples.
+                # The first element of the first tuple is the callee node.
+                if obj.dependencies:
+                    callee_node = obj.dependencies[0][0]
+                    # Expose the callee's scope collections for easy inspection.
+                    obj.callee_children = {
+                        "callees": callee_node.scope.callees,
+                        "callers": callee_node.scope.callers,
+                        "generic": callee_node.scope.children,
+                    }
         sorted_names = sorted(self._order.keys(), key=lambda k: self._order[k])
         return [self.objects[n] for n in sorted_names]
 

@@ -1,160 +1,105 @@
 import re
 
-#order matters, there might be errors if certain elements are not in the right order
+# order matters, there might be errors if certain elements are not in the right order
 
 Tokens = [
     # COMMENTS
-    ('COMMENT_MULTI', re.compile(r'/\*.*?\*/', re.DOTALL)),
-    ('COMMENT_LINE', re.compile(r'//[^\n]*')),
-
-    #KEYWORDS
-    ('IF', re.compile(r'\bif\b')),
-    ('ELSE', re.compile(r'\belse\b')),
-    ('WHILE', re.compile(r'\bwhile\b')),
-    ('FOR', re.compile(r'\bfor\b')),
-    ('RETURN', re.compile(r'\breturn\b')),
-    ('BREAK', re.compile(r'\bbreak\b')),
-    ('CONTINUE', re.compile(r'\bcontinue\b')),
-    ('SWITCH', re.compile(r'\bswitch\b')),
-    ('CASE', re.compile(r'\bcase\b')),
-    ('DEFAULT', re.compile(r'\bdefault\b')),
-    ('DO', re.compile(r'\bdo\b')),
-    ('GOTO', re.compile(r'\bgoto\b')),
-
-    
-    ('INT', re.compile(r'\bint\b')),
-    ('CHAR', re.compile(r'\bchar\b')),
-    ('VOID', re.compile(r'\bvoid\b')),
-    ('FLOAT', re.compile(r'\bfloat\b')),
-    ('DOUBLE', re.compile(r'\bdouble\b')),
-    ('SHORT', re.compile(r'\bshort\b')),
-    ('LONG', re.compile(r'\blong\b')),
-    ('SIGNED', re.compile(r'\bsigned\b')),
-    ('UNSIGNED', re.compile(r'\bunsigned\b')),
-    ('STRUCT', re.compile(r'\bstruct\b')),
-    ('UNION', re.compile(r'\bunion\b')),
-    ('ENUM', re.compile(r'\benum\b')),
-    ('TYPEDEF', re.compile(r'\btypedef\b')),
-    ('CONST', re.compile(r'\bconst\b')),
-    ('VOLATILE', re.compile(r'\bvolatile\b')),
-    ('STATIC', re.compile(r'\bstatic\b')),
-    ('EXTERN', re.compile(r'\bextern\b')),
-    ('INLINE', re.compile(r'\binline\b')),
-    ('REGISTER', re.compile(r'\bregister\b')),
-    ('AUTO', re.compile(r'\bauto\b')),
-    ('SIZEOF', re.compile(r'\bsizeof\b')),
-    ('RESTRICT', re.compile(r'\brestrict\b')),    
-    ('BOOLEAN', re.compile(r'\b_Bool\b')),
-
-    #DATA TYPES
-    ('STRING_LITERAL', re.compile(r'"[^"]*"')),
-    ('FLOAT_LITERAL', re.compile(r'\b\d+.\d+\b')),
-    ('INT_LITERAL', re.compile(r'\b\d+\b')),
-
-    
-    #OPERATORS AND DELIMITERS AND SYMBOLS
-    ('INCREMENT', re.compile(r'\+\+')),
-    ('PLUS', re.compile(r'\+')),
-    ('DECREMENT', re.compile(r'--')),
-    ('MINUS', re.compile(r'-')),
-    ('MULTIPLY', re.compile(r'\*')),
-    ('DIVIDE', re.compile(r'/')),
-    ('LPAREN', re.compile(r'\(')),
-    ('RPAREN', re.compile(r'\)')),
-    ('ASSIGN', re.compile(r'=')),
-    ('SEMICOLON', re.compile(r';')),
-    ('COMMA', re.compile(r',')),
-    ('COLON', re.compile(r':')),
-    ('LE', re.compile(r'<=')),
-    ('GE', re.compile(r'>=')),
-    ('LT', re.compile(r'<')),
-    ('GT', re.compile(r'>')),
-    ('NOT', re.compile(r'!')),
-    ('AND', re.compile(r'&&')),
-    ('OR', re.compile(r'\|\|')),
-    ('DOT', re.compile(r'\.')),
-    ('ARROW', re.compile(r'->')),
-    ('LBRACKET', re.compile(r'\[')),
-    ('RBRACKET', re.compile(r']')),
-    ('LBRACE', re.compile(r'\{')),
-    ('RBRACE', re.compile(r'}')),
-
-    #IDENTIFIERS
-    ('IDENTIFIER', re.compile(r'[A-Za-z_][A-Za-z0-9_]*')),
-
-    #OTHERS
-    ('WHITESPACE', re.compile(r'\s+')),
-    ('UNKNOWN', re.compile(r'.'))
+    ("COMMENT_MULTI", re.compile(r"/\*.*?\*/", re.DOTALL)),
+    ("COMMENT_LINE", re.compile(r"//[^\n]*")),
+    # PREPROCESSOR DIRECTIVES (e.g. #include, #define, #if, #endif, etc.)
+    ("PREPROCESSOR", re.compile(r"\#[^\n]*")),
+    # KEYWORDS
+    ("IF", re.compile(r"\bif\b")),
+    ("ELSE", re.compile(r"\belse\b")),
+    ("WHILE", re.compile(r"\bwhile\b")),
+    ("FOR", re.compile(r"\bfor\b")),
+    ("RETURN", re.compile(r"\breturn\b")),
+    ("BREAK", re.compile(r"\bbreak\b")),
+    ("CONTINUE", re.compile(r"\bcontinue\b")),
+    ("SWITCH", re.compile(r"\bswitch\b")),
+    ("CASE", re.compile(r"\bcase\b")),
+    ("DEFAULT", re.compile(r"\bdefault\b")),
+    ("DO", re.compile(r"\bdo\b")),
+    ("GOTO", re.compile(r"\bgoto\b")),
+    ("INT", re.compile(r"\bint\b")),
+    ("CHAR", re.compile(r"\bchar\b")),
+    ("VOID", re.compile(r"\bvoid\b")),
+    ("FLOAT", re.compile(r"\bfloat\b")),
+    ("DOUBLE", re.compile(r"\bdouble\b")),
+    ("SHORT", re.compile(r"\bshort\b")),
+    ("LONG", re.compile(r"\blong\b")),
+    ("SIGNED", re.compile(r"\bsigned\b")),
+    ("UNSIGNED", re.compile(r"\bunsigned\b")),
+    ("STRUCT", re.compile(r"\bstruct\b")),
+    ("UNION", re.compile(r"\bunion\b")),
+    ("ENUM", re.compile(r"\benum\b")),
+    ("TYPEDEF", re.compile(r"\btypedef\b")),
+    ("CONST", re.compile(r"\bconst\b")),
+    ("VOLATILE", re.compile(r"\bvolatile\b")),
+    ("STATIC", re.compile(r"\bstatic\b")),
+    ("EXTERN", re.compile(r"\bextern\b")),
+    ("INLINE", re.compile(r"\binline\b")),
+    ("REGISTER", re.compile(r"\bregister\b")),
+    ("AUTO", re.compile(r"\bauto\b")),
+    ("SIZEOF", re.compile(r"\bsizeof\b")),
+    ("RESTRICT", re.compile(r"\brestrict\b")),
+    ("BOOLEAN", re.compile(r"\b_Bool\b")),
+    # DATA TYPES
+    ("STRING_LITERAL", re.compile(r'"(?:\\.|[^"\\])*"')),
+    ("FLOAT_LITERAL", re.compile(r"\b\d+\.\d+\b")),
+    ("INT_LITERAL", re.compile(r"\b\d+\b")),
+    # OPERATORS AND DELIMITERS AND SYMBOLS
+    ("INCREMENT", re.compile(r"\+\+")),
+    ("PLUS", re.compile(r"\+")),
+    ("DECREMENT", re.compile(r"--")),
+    ("MINUS", re.compile(r"-")),
+    ("MULTIPLY", re.compile(r"\*")),
+    ("DIVIDE", re.compile(r"/")),
+    ("LPAREN", re.compile(r"\(")),
+    ("RPAREN", re.compile(r"\)")),
+    ("ASSIGN", re.compile(r"=")),
+    ("SEMICOLON", re.compile(r";")),
+    ("COMMA", re.compile(r",")),
+    ("COLON", re.compile(r":")),
+    ("LE", re.compile(r"<=")),
+    ("GE", re.compile(r">=")),
+    ("LT", re.compile(r"<")),
+    ("GT", re.compile(r">")),
+    ("NOT", re.compile(r"!")),
+    ("AND", re.compile(r"&&")),
+    ("OR", re.compile(r"\|\|")),
+    ("DOT", re.compile(r"\.")),
+    ("ARROW", re.compile(r"->")),
+    ("LBRACKET", re.compile(r"\[")),
+    ("RBRACKET", re.compile(r"]")),
+    ("LBRACE", re.compile(r"\{")),
+    ("RBRACE", re.compile(r"}")),
+    # IDENTIFIERS
+    ("IDENTIFIER", re.compile(r"[A-Za-z_][A-Za-z0-9_]*")),
+    # OTHERS
+    ("WHITESPACE", re.compile(r"\s+")),
+    ("UNKNOWN", re.compile(r".")),
 ]
-
-def lex_expression(self):
-    start = self.pos
-    paren = 0
-    bracket = 0
-    in_string = None
-    # For handling strings
-    while self.pos < len(self.text):
-        c = self.text[self.pos]
-        if in_string:
-            if c == '\\':
-                self.pos += 2
-                continue
-            if c == in_string:
-                in_string = None
-        else:
-            if c in ('"', "'"):
-                in_string = c
-            elif c == '(':
-                paren += 1
-            elif c == ')':
-                if paren == 0:
-                    break
-                paren -= 1
-            elif c == '[':
-                bracket += 1
-            elif c == ']':
-                if bracket == 0:
-                    break
-                bracket -= 1
-            elif c in (';', ',') and paren == 0 and bracket == 0:
-                break
-        self.pos += 1
-    value = self.text[start:self.pos].strip()
-    return ('EXPR', value)
-
-
-
-def peek(self):
-    for token_type, pattern in Tokens:
-        match = pattern.match(self.text, self.pos)
-        if match:
-            return (token_type, match.group(0))
-    return None
-
-def func_call(self, token):
-    tokentype = Tokens[self.pos]
-    if tokentype == "IDENTIFIER" and peek(token) == '(':
-        token = Tokens[self.pos] + peek(token)
-
 
 
 def get_tokens(string):
     var = string
     tokens = []
-    
+
     while var:
         for token in Tokens:
             match = token[1].match(var)
             if match:
                 lexeme = match.group(0)
-                if token[0] != 'WHITESPACE':
+                if token[0] != "WHITESPACE":
                     tokens.append((token[0], lexeme))
-                var = var[len(lexeme):]
+                var = var[len(lexeme) :]
                 break
         else:
-            tokens.append(('UNKNOWN', var[0]))
+            tokens.append(("UNKNOWN", var[0]))
             var = var[1:]
     return tokens
+
 
 class Lexer:
     def __init__(self, text):
@@ -162,13 +107,53 @@ class Lexer:
         self.pos = 0
         self.tokens = get_tokens(text)
         self.token_index = 0
-    
+
     def peek(self):
         if self.token_index < len(self.tokens):
             return self.tokens[self.token_index]
         return None
-    
+
     def next(self):
         token = self.peek()
         self.token_index += 1
         return token
+
+    def lex_expression(self):
+        """Consume characters forming a balanced expression."""
+        start = self.pos
+        paren = 0
+        bracket = 0
+        in_string = None
+        while self.pos < len(self.text):
+            c = self.text[self.pos]
+            if in_string:
+                if c == "\\\\":
+                    self.pos += 2
+                    continue
+                if c == in_string:
+                    in_string = None
+            else:
+                if c in ('"', "'"):
+                    in_string = c
+                elif c == "(":
+                    paren += 1
+                elif c == ")":
+                    if paren == 0:
+                        break
+                    paren -= 1
+                elif c == "[":
+                    bracket += 1
+                elif c == "]":
+                    if bracket == 0:
+                        break
+                    bracket -= 1
+                elif c in (";", ",") and paren == 0 and bracket == 0:
+                    break
+            self.pos += 1
+        value = self.text[start : self.pos].strip()
+        return ("EXPR", value)
+
+
+    def lex(self):
+            """Convenience wrapper that returns a list of (type, lexeme) tokens for *text*."""        
+            return [token for token in self.tokens]
