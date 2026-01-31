@@ -91,7 +91,7 @@ def get_tokens(string):
             match = token[1].match(var)
             if match:
                 lexeme = match.group(0)
-                if token[0] != "WHITESPACE":
+                if token[0] != "WHITESPACE" or token[0] != "COMMENT_LINE" or token[0] != "COMMENT_MULTI":
                     tokens.append((token[0], lexeme))
                 var = var[len(lexeme) :]
                 break
