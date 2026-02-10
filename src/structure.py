@@ -134,6 +134,8 @@ class Caller(Node):
             result = self.value if isinstance(self.value, (int, float)) else 0
 
         for node, args in self.dependencies:
+            if node is None:
+                raise ValueError(f"callee '{node.name}' not found")
             result += node.eval(*args)
         return result
 
@@ -157,6 +159,13 @@ class Lib:
     def called(self, name):
         return self.scope.called(name)
 
+class Token:
+    def __init__(self, type_, value):
+        self.type = type_
+        self.value = value
+    
+    def __repr__(self):
+        return f"Token({self.type!r}, {self.value!r})"
 
 class Structor:
     """Automatically structures each line of code.
@@ -181,7 +190,10 @@ class Structor:
 
     def match(self, *types):
         tok = self.peek()
-        if tok and getattr(tok, "type", None) in types:
+        if tok is None:
+            return None
+        tok_type = tok[0] if isinstance(tok, tuple) else getattr(tok, "type", None)
+        if tok_type in types:
             return self.advance()
         return None
 

@@ -1,4 +1,5 @@
 import argparse
+from ftplib import all_errors
 import sys
 
 import lexer
@@ -64,7 +65,7 @@ def main():
     if not args.files:
         print("Error: no input file provided")
         sys.exit(1)
-
+    
     for path in args.files:
         try:
             with open(path, "r") as file:
@@ -80,6 +81,7 @@ def main():
             objects = struct.build_and_sort()
             print("Objects (including parent scopes):", objects)
             return objects
+
         except FileNotFoundError:
             print(f"Error: file not found {path}")
             sys.exit(1)

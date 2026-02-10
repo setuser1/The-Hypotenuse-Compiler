@@ -46,6 +46,7 @@ Tokens = [
     ("BOOLEAN", re.compile(r"\b_Bool\b")),
     # DATA TYPES
     ("STRING_LITERAL", re.compile(r'"(?:\\.|[^"\\])*"')),
+    ("CHAR_LITERAL", re.compile(r"'(?:\\.|[^'\\])*'")),
     ("FLOAT_LITERAL", re.compile(r"\b\d+\.\d+\b")),
     ("INT_LITERAL", re.compile(r"\b\d+\b")),
     # OPERATORS AND DELIMITERS AND SYMBOLS
@@ -91,7 +92,7 @@ def get_tokens(string):
             match = token[1].match(var)
             if match:
                 lexeme = match.group(0)
-                if token[0] != "WHITESPACE" or token[0] != "COMMENT_LINE" or token[0] != "COMMENT_MULTI":
+                if token[0] not in ("WHITESPACE", "COMMENT_LINE", "COMMENT_MULTI"):
                     tokens.append((token[0], lexeme))
                 var = var[len(lexeme) :]
                 break
@@ -127,7 +128,7 @@ class Lexer:
         while self.pos < len(self.text):
             c = self.text[self.pos]
             if in_string:
-                if c == "\\\\":
+                if c == "\\":
                     self.pos += 2
                     continue
                 if c == in_string:
