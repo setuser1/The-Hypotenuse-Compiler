@@ -81,7 +81,6 @@ def main():
             objects = struct.build_and_sort()
             print("Objects (including parent scopes):", objects)
             return objects
-
         except FileNotFoundError:
             print(f"Error: file not found {path}")
             sys.exit(1)
