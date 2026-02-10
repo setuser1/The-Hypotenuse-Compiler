@@ -64,7 +64,6 @@ def main():
     if not args.files:
         print("Error: no input file provided")
         sys.exit(1)
-    
     for path in args.files:
         try:
             with open(path, "r") as file:
