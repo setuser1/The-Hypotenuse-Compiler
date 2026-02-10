@@ -1,5 +1,4 @@
 import argparse
-from ftplib import all_errors
 import sys
 
 import lexer
