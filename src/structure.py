@@ -135,7 +135,7 @@ class Caller(Node):
 
         for node, args in self.dependencies:
             if node is None:
-                raise ValueError("Callee not found")
+                raise ValueError(f"callee '{node.name}' not found")
             result += node.eval(*args)
         return result
 
