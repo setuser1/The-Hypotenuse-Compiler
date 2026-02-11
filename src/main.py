@@ -1,6 +1,5 @@
 import argparse
 import sys
-
 import lexer
 import parser as p
 import structure
