@@ -5,6 +5,7 @@ import parser as p
 import structure
 
 
+
 def parse_args():
     """Parse command‑line arguments using argparse."""
     parser = argparse.ArgumentParser(
@@ -30,6 +31,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+
     # -------------------------------------------------
     #  Token‑only mode (-t / --tokens)
     # -------------------------------------------------
