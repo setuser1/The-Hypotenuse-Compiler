@@ -2,9 +2,9 @@ name: Makefile CI
 
 on:
   push:
-    branches: [ "setuser1-patch" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "setuser1-patch" ]
+    branches: [ "main" ]
 
 jobs:
   build:
