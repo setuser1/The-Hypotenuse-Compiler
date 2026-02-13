@@ -293,11 +293,32 @@ class Structor:
                     # the current structural analysis. Advance past the '=' and
                     # any tokens until the terminating semicolon.
                     self.advance()  # consume '='
+                    value_tokens = []
                     while True:
                         nxt_tok = self.peek()
                         if nxt_tok is None or _type(nxt_tok) == "SEMICOLON":
                             break
                         self.advance()
+                        value_tokens.append(nxt_tok)
+                    # Extracts the actual value from tokens
+                    # if it is a simple literal (number, string), use it directly
+                    assigned_value = None
+                    if value_tokens:
+                        first_token = value_tokens[0]
+                        val_type = _type(first_token)
+                        val_content = _value(first_token)
+                        if val_type == "NUMBER" and val_content is not None:
+                            try:
+                                assigned_value = int(val_content)
+                            except ValueError:
+                                assigned_value = float(val_content)
+                        elif val_type == "STRING_LITERAL" and val_content is not None:
+                            assigned_value = val_content
+                        elif val_content is not None:
+                            assigned_value = val_content
+                    var_callee = Callee(name, program, assigned_value)
+                    self.objects[name] = var_callee
+                    self._order.setdefault(name, self.pos)
                     # Consume the semicolon if present.
                     if _type(self.peek()) == "SEMICOLON":
                         self.advance()
