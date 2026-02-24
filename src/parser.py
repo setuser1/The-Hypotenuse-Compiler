@@ -383,27 +383,48 @@ class Parser:
         return node
 
     def parse_logical_or(self) -> Node:
-        """Parse a logical‑OR (``||``) expression using primary parsing.
-
-        This replaces the previous implementation that called
-        ``self.parse_assignment()`` for both the left‑hand side and each
-        right‑hand side. ``parse_assignment`` eventually invokes
-        ``parse_logical_or`` again, creating a cyclic call chain and causing a
-        ``RecursionError``.  The new approach parses a primary expression
-        (identifier, literal, or parenthesised sub‑expression) for each side,
-        breaking the recursion while preserving operator precedence.
-        """
-        """^^^^^above comments are old edits"""
         """
         Old order: Logical OR -> Primary
         New order: Logical OR -> Unary -> Primary
         """
-        left = self.parse_unary()
+        left = self.parse_add()
         while self.peek()[0] == "OR":
+            op = self.advance()[1]
+            right = self.parse_add()
+            left = Binary(op, left, right)
+        return left
+
+    def parse_add(self) -> Node:
+        """
+        Parse addition and subtraction expressions.
+        """
+        left = self.parse_term()
+        while self.peek()[0] in ("PLUS", "MINUS"):
+            op = self.advance()[1]
+            right = self.parse_term()
+            left = Binary(op, left, right)
+        return left
+
+    def parse_term(self) -> Node:
+        """
+        Parse multiplication and division expressions.
+        """
+        left = self.parse_unary()
+        while self.peek()[0] in ("MULTIPLY", "DIVIDE"):
             op = self.advance()[1]
             right = self.parse_unary()
             left = Binary(op, left, right)
         return left
+
+    def parse_unary(self):
+        """Parse unary prefix expression (e.g., -x, !y)."""
+        # checks if current token is a unary operator
+        token = self.peek()
+        if token[0] in ("PLUS", "MINUS", "NOT"):
+            op = self.advance()[1]
+            operand = self.parse_unary()
+            return Unary(op=op, operand=operand, prefix=True)
+        return self.parse_primary()
 
     # -----------------------------------------------------------------
     # Primary expression helper (identifiers, literals, parenthesised expr)

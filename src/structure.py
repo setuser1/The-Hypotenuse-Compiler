@@ -49,7 +49,6 @@ class Scope:
         return None
 
 
-
 class Node:
     """Base node for values and dependencies."""
 
@@ -166,6 +165,15 @@ class Token:
     
     def __repr__(self):
         return f"Token({self.type!r}, {self.value!r})"
+
+class Token:
+    def __init__(self, type_, value):
+        self.type = type_
+        self.value = value
+
+    def __repr__(self):
+        return f"Token({self.type!r}, {self.value!r})"
+
 
 class Structor:
     """Automatically structures each line of code.
@@ -331,9 +339,6 @@ class Structor:
                 # 1. Variable/value definition: IDENTIFIER ASSIGN expr SEMICOLON
                 # -------------------------------------------------
                 if nxt_type == "ASSIGN":
-                    # Skip variable/value definitions – they are not needed for
-                    # the current structural analysis. Advance past the '=' and
-                    # any tokens until the terminating semicolon.
                     self.advance()  # consume '='
                     value_tokens = []
                     while True:
@@ -342,18 +347,38 @@ class Structor:
                             break
                         self.advance()
                         value_tokens.append(nxt_tok)
+
                     # Extracts the actual value from tokens
                     # if it is a simple literal (number, string), use it directly
                     assigned_value = None
                     if value_tokens:
-                        first_token = value_tokens[0]
-                        val_type = _type(first_token)
-                        val_content = _value(first_token)
-                        if val_type == "NUMBER" and val_content is not None:
+                        is_negative = False
+                        target_token = value_tokens[0]
+
+                        # If the first token is a minus and we have another token, it's negative
+                        if _type(target_token) == "MINUS" and len(value_tokens) > 1:
+                            is_negative = True
+                            target_token = value_tokens[
+                                1
+                            ]  # Look at the actual number token next
+
+                        val_type = _type(target_token)
+                        val_content = _value(target_token)
+
+                        # checks using the actual tokens we have
+                        if (
+                            val_type in ("INT_LITERAL", "FLOAT_LITERAL")
+                            and val_content is not None
+                        ):
                             try:
                                 assigned_value = int(val_content)
                             except ValueError:
                                 assigned_value = float(val_content)
+
+                            # Apply the negative sign if we found one
+                            if is_negative:
+                                assigned_value = -assigned_value
+
                         elif val_type == "STRING_LITERAL" and val_content is not None:
                             assigned_value = val_content
                         elif val_content is not None:
