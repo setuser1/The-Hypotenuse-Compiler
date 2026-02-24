@@ -92,7 +92,7 @@ def get_tokens(string):
             match = token[1].match(var)
             if match:
                 lexeme = match.group(0)
-                if token[0] != "WHITESPACE" or token[0] != "COMMENT_LINE" or token[0] != "COMMENT_MULTI":
+                if token[0] not in ("WHITESPACE", "COMMENT_LINE", "COMMENT_MULTI"):
                     tokens.append((token[0], lexeme))
                 var = var[len(lexeme) :]
                 break
@@ -154,7 +154,6 @@ class Lexer:
         value = self.text[start : self.pos].strip()
         return ("EXPR", value)
 
-
     def lex(self):
-            """Convenience wrapper that returns a list of (type, lexeme) tokens for *text*."""        
-            return [token for token in self.tokens]
+        """Convenience wrapper that returns a list of (type, lexeme) tokens for *text*."""
+        return [token for token in self.tokens]
