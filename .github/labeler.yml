@@ -1,1 +1,63 @@
+# .github/labeler.yml
 
+bug:
+  - '**/*.py'
+  - '**/*.ctri'
+
+documentation:
+  - '**/*.md'
+  - '**/*.txt'
+  - '**/*.ctri'
+
+duplicate:
+  - '**/*'          # Any file, if the PR duplicates existing work
+
+enhancement:
+  - '**/*.py'
+  - '**/*.ctri'
+  - 'Makefile'
+
+help wanted:
+  - '**/*.py'
+  - '**/*.ctri'
+
+invalid:
+  - '**/*.py'
+  - '**/*.txt'
+  - '**/*.ctri'
+  - 'Makefile'
+  - '.gitignore'
+  - '.gitattributes'
+  - '.github/workflows/**/*.yml'
+
+question:
+  - '**/*.md'
+  - '**/*.txt'
+  - '**/*.ctri'
+
+stupidity:
+  - '**/*.py'
+  - '**/*.txt'
+  - '**/*.ctri'
+  - 'Makefile'
+  - '.gitignore'
+  - '.gitattributes'
+  - '.github/workflows/**/*.yml'
+
+update/addition:
+  - '**/*.py'
+  - '**/*.txt'
+  - '**/*.ctri'
+  - 'Makefile'
+  - '.gitignore'
+  - '.gitattributes'
+  - '.github/workflows/**/*.yml'
+
+wontfix:
+  - '**/*.py'
+  - '**/*.txt'
+  - '**/*.ctri'
+  - 'Makefile'
+  - '.gitignore'
+  - '.gitattributes'
+  - '.github/workflows/**/*.yml'
