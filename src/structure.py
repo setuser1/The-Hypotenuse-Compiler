@@ -279,7 +279,49 @@ class Structor:
 
             typ = _type(cur)
             val = _value(cur)
-
+            if typ in ("IF", "ELSE", "WHILE", "FOR", "RETURN", "BREAK", "CONTINUE", "SWITCH", "CASE", "DEFAULT", "DO", "GOTO", "INT", "CHAR", "VOID", "FLOAT", "DOUBLE", "SHORT", "LONG", "SIGNED", "UNSIGNED", "STRUCT", "UNION", "ENUM", "TYPEDEF", "STATIC", "CONST", "VOLATILE", "STATIC", "EXTERN", "INLINE", "REGISTER", "AUTO", "SIZEOF", "RESTRICT", "BOOLEAN"):
+                self.advance()
+                name_tok = self.peek()
+                if _type(name_tok) == "IDENTIFIER":
+                    # This is a variable declaration with an initializer, e.g.:
+                    # int x = 5;
+                    # We will treat this as a Callee with a literal value.
+                    name = _value(name_tok)
+                    self.advance()  # consume the identifier
+                    if self.match("ASSIGN"):
+                        value_tokens = []
+                        while True:
+                            nxt_tok = self.peek()
+                            if nxt_tok is None or _type(nxt_tok) == "SEMICOLON":
+                                break
+                            self.advance()
+                            value_tokens.append(nxt_tok)
+                        # Extract the literal value from the tokens.
+                        assigned_value = None
+                        if value_tokens:
+                            first_token = value_tokens[0]
+                            val_type = _type(first_token)
+                            val_content = _value(first_token)
+                            if val_type == "NUMBER" and val_content is not None:
+                                try:
+                                    assigned_value = int(val_content)
+                                except ValueError:
+                                    assigned_value = float(val_content)
+                            elif val_type == "STRING_LITERAL" and val_content is not None:
+                                assigned_value = val_content
+                            elif val_content is not None:
+                                assigned_value = val_content
+                        var_callee = Callee(name, program, assigned_value)
+                        self.objects[name] = var_callee
+                        self._order.setdefault(name, self.pos)
+                        # Consume the semicolon if present.
+                        if _type(self.peek()) == "SEMICOLON":
+                            self.advance()
+                    else:
+                        # No initializer; treat as a variable with None value.
+                        var_callee = Callee(name, program, None)
+                        self.objects[name] = var_callee
+                        self._order.setdefault(name, self.pos)
             if typ == "IDENTIFIER":
                 name = val
                 self.advance()  # consume identifier
