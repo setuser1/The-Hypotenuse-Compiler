@@ -3,6 +3,7 @@
 int main() {
     int x = -500;
     printf("%d", x);
-    printf("hello world");
+    for i in range(1):
+        printf("hello world");
     return 0;
 }
