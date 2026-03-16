@@ -2,9 +2,9 @@ class Scope:
     def __init__(self, name, parent=None):
         self.name = name
         self.parent = parent
-        self.children = {}  # generic children (non‑Callee/Caller)
-        self.callees = {}  # name → Callee objects
-        self.callers = {}  # name → Caller objects
+        self.children = {}  # generic children (non-Callee/Caller)
+        self.callees = {}  # name -> Callee objects
+        self.callers = {}  # name -> Caller objects
 
     def __repr__(self):
         """Readable representation showing the scope name and its parent."""
@@ -14,11 +14,10 @@ class Scope:
     def add_child(self, node):
         """Register a node in the appropriate collection.
 
-        * Callee → ``self.callees``
-        * Caller → ``self.callers``
-        * Anything else → ``self.children``
+        * Callee -> ``self.callees``
+        * Caller -> ``self.callers``
+        * Anything else -> ``self.children``
         """
-        # Determine the target dictionary based on node type.
         if isinstance(node, Callee):
             target = self.callees
         elif isinstance(node, Caller):
@@ -26,7 +25,6 @@ class Scope:
         else:
             target = self.children
 
-        # Avoid accidental overwrites.
         if node.name in target:
             raise ValueError(
                 f"Child named `{node.name}` already exists in scope `{self.name}`"
@@ -35,13 +33,10 @@ class Scope:
         return node
 
     def called(self, name):
-        # Search in the generic children first
         if name in self.children:
             return self.children[name]
-        # Then look for a callee (e.g., functions or variables)
         if name in self.callees:
             return self.callees[name]
-        # Finally check callers (useful for reverse lookup)
         if name in self.callers:
             return self.callers[name]
         if self.parent:
@@ -70,8 +65,6 @@ class Callee(Node):
         self.value = value
 
     def __repr__(self):
-        """Readable representation of a Callee."""
-        # Show the value succinctly; for functions it may be None.
         val_repr = (
             repr(self.value)
             if not isinstance(self.value, Node)
@@ -82,16 +75,13 @@ class Callee(Node):
         )
 
     def eval(self, *args, **kwargs):
-        # If value is callable, call it with resolved args.
         if callable(self.value):
             resolved_args = [
                 arg.eval() if isinstance(arg, Node) else arg for arg in args
             ]
             return self.value(*resolved_args)
-        # If value is a Node, evaluate it and return its value.
         if isinstance(self.value, Node):
             return self.value.eval()
-        # Otherwise return the literal value.
         return self.value
 
 
@@ -101,19 +91,14 @@ class Caller(Node):
     def __init__(self, name, scope, value=None):
         super().__init__(name, scope)
         self.value = value
-        # Placeholder for a reference to the callee's children/objects.
         self.callee_children: dict | None = None
 
     def __repr__(self):
-        """Readable representation of a Caller, including its argument tokens."""
         if not self.dependencies:
             return f"Caller(name={self.name!r}, scope={self.scope.name!r}, args=[])"
-        # Show arguments for the first dependency (callee, args)
         callee_node, args = self.dependencies[0]
-        # Render each argument token list as a compact string
         args_repr = []
         for arg_tokens in args:
-            # arg_tokens is a list of token tuples (type, lexeme)
             token_strs = ", ".join(f"{t[0]}:{t[1]!r}" for t in arg_tokens)
             args_repr.append(f"[{token_strs}]")
         return (
@@ -126,7 +111,6 @@ class Caller(Node):
         self.dependencies.append((node, args))
 
     def eval(self):
-        # Evaluate self.value if it's a Node, otherwise start with numeric value or 0.
         if isinstance(self.value, Node):
             result = self.value.eval()
         else:
@@ -149,8 +133,6 @@ class Lib:
             parent_scope.add_child(self.scope)
 
     def add_node(self, node):
-        # Node constructors already register themselves with the scope.
-        # Avoid attempting to add the same node twice.
         if node.name in self.scope.children:
             return self.scope.children[node.name]
         return self.scope.add_child(node)
@@ -172,14 +154,14 @@ class Structor:
     """Automatically structures each line of code.
 
     The parser implementation is injected via the ``parser`` argument to the
-    constructor, removing the need for a hard‑coded import.
+    constructor, removing the need for a hard-coded import.
     """
 
     def __init__(self, tokens_array, parser):
         self.tokens = tokens_array
         self.pos = 0
         self.objects = {}
-        self.parser = parser  # injected parser module/object
+        self.parser = parser
 
     def peek(self):
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
@@ -198,22 +180,14 @@ class Structor:
             return self.advance()
         return None
 
-    # Function Argument collecting
     def collect_args(self):
-        """Collect function‑call arguments and return a list of parsed AST nodes.
-
-        Tokens are gathered until a matching RPAREN is found. The raw token
-        list for each argument (separated by commas) is fed to the injected
-        parser's ``Parser`` class and ``parse_expression`` is invoked, so the
-        caller receives fully parsed expression objects rather than raw strings.
-        """
-        raw_args = []  # List of token lists, one per argument
+        """Collect function-call arguments as lists of raw tokens."""
+        raw_args = []
         current = []
         while True:
             tok_peek = self.peek()
             if tok_peek is None:
                 break
-            # Determine the token type (tuple or object) to check for a closing RPAREN.
             t_type = (
                 tok_peek[0]
                 if isinstance(tok_peek, tuple)
@@ -222,7 +196,6 @@ class Structor:
             if t_type == "RPAREN":
                 break
             tok = self.advance()
-            # ``tok`` may be a tuple (type, lexeme) or a token object.
             if isinstance(tok, tuple):
                 t_type = tok[0]
             else:
@@ -234,30 +207,82 @@ class Structor:
             current.append(tok)
         if current:
             raw_args.append(current)
-        # Consume the closing RPAREN.
         if self.peek() == "RPAREN":
             self.advance()
-        # NOTE: The original implementation tried to parse each argument
-        # using ``self.parser.Parser``.  To keep the compiler functional
-        # without a full expression parser, we simply return the raw token
-        # lists for each argument.
         return raw_args
+
+    # ------------------------------------------------------------------
+    # Helper: parse a numeric literal value from a token list.
+    # Handles optional leading MINUS for negative numbers.
+    # Fix for issue #61: correctly resolves '-500' instead of '-'.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_literal_value(value_tokens, _type_fn, _value_fn):
+        """Return a Python int/float/str from a list of value tokens.
+
+        Recognises an optional leading MINUS token so that '-500' is stored
+        as the integer -500 rather than the string '-'.
+        """
+        if not value_tokens:
+            return None
+
+        is_negative = False
+        token_iter = iter(value_tokens)
+        first = next(token_iter, None)
+
+        if _type_fn(first) == "MINUS":
+            second = next(token_iter, None)
+            if second is not None and _type_fn(second) in ("INT_LITERAL", "FLOAT_LITERAL"):
+                is_negative = True
+                first = second
+            else:
+                # Not a negative literal - fall through and store raw value
+                return _value_fn(first)
+
+        val_type = _type_fn(first)
+        val_content = _value_fn(first)
+
+        if val_type == "INT_LITERAL" and val_content is not None:
+            try:
+                result = int(val_content)
+            except ValueError:
+                result = float(val_content)
+            return -result if is_negative else result
+
+        if val_type == "FLOAT_LITERAL" and val_content is not None:
+            try:
+                result = float(val_content)
+            except ValueError:
+                result = val_content
+            return -result if is_negative else result
+
+        if val_type == "STRING_LITERAL" and val_content is not None:
+            return val_content
+
+        return val_content
 
     def build_and_sort(self):
         """Create Callee and Caller objects from the token stream and order them.
 
-        This method walks the token list, uses the full parser only for
-        expressions and function‑call arguments, and builds lightweight
-        ``Callee``/``Caller`` nodes. The resulting objects are returned sorted
-        by their original appearance (pointer‑line order).
+        Fix for issue #62: tracks current_scope so that symbols declared
+        inside a function body are registered in the function's own scope
+        rather than the global program scope.
         """
-        # Global scope that will contain the nodes.
         program = Scope("program")
-        # Mapping of name -> first appearance index for sorting later.
+        # Fix #62: maintain a scope stack so nested scopes work correctly.
+        # current_scope starts as the program scope and is pushed/popped as
+        # function bodies are entered and exited.
+        scope_stack = [program]
+
+        def current_scope():
+            return scope_stack[-1]
+
         self._order = {}
 
-        # Helper functions to safely extract token type/value regardless of
-        # representation (tuple, object, or None).
+        # Unique key for objects that may appear in multiple scopes
+        def obj_key(name, scope):
+            return f"{scope.name}::{name}"
+
         def _type(tok):
             if tok is None:
                 return None
@@ -272,6 +297,15 @@ class Structor:
                 return tok[1]
             return getattr(tok, "value", getattr(tok, "lexeme", None))
 
+        TYPE_KEYWORDS = (
+            "IF", "ELSE", "WHILE", "FOR", "RETURN", "BREAK", "CONTINUE",
+            "SWITCH", "CASE", "DEFAULT", "DO", "GOTO",
+            "INT", "CHAR", "VOID", "FLOAT", "DOUBLE", "SHORT", "LONG",
+            "SIGNED", "UNSIGNED", "STRUCT", "UNION", "ENUM", "TYPEDEF",
+            "STATIC", "CONST", "VOLATILE", "EXTERN", "INLINE", "REGISTER",
+            "AUTO", "SIZEOF", "RESTRICT", "BOOLEAN",
+        )
+
         while True:
             cur = self.peek()
             if cur is None:
@@ -279,15 +313,56 @@ class Structor:
 
             typ = _type(cur)
             val = _value(cur)
-            if typ in ("IF", "ELSE", "WHILE", "FOR", "RETURN", "BREAK", "CONTINUE", "SWITCH", "CASE", "DEFAULT", "DO", "GOTO", "INT", "CHAR", "VOID", "FLOAT", "DOUBLE", "SHORT", "LONG", "SIGNED", "UNSIGNED", "STRUCT", "UNION", "ENUM", "TYPEDEF", "STATIC", "CONST", "VOLATILE", "STATIC", "EXTERN", "INLINE", "REGISTER", "AUTO", "SIZEOF", "RESTRICT", "BOOLEAN"):
+
+            # ----------------------------------------------------------
+            # Handle closing brace: pop function scope (fix #62)
+            # ----------------------------------------------------------
+            if typ == "RBRACE":
+                self.advance()
+                if len(scope_stack) > 1:
+                    scope_stack.pop()
+                continue
+
+            # ----------------------------------------------------------
+            # Type-keyword-led declarations: int x = -500;
+            # Also detects function definitions: int main() { ...
+            # Fix #61: use _parse_literal_value for correct negative numbers.
+            # Fix #62: function body opens a new scope.
+            # ----------------------------------------------------------
+            if typ in TYPE_KEYWORDS:
                 self.advance()
                 name_tok = self.peek()
                 if _type(name_tok) == "IDENTIFIER":
-                    # This is a variable declaration with an initializer, e.g.:
-                    # int x = 5;
-                    # We will treat this as a Callee with a literal value.
                     name = _value(name_tok)
-                    self.advance()  # consume the identifier
+                    self.advance()  # consume identifier
+
+                    # Function definition: int main() {
+                    if _type(self.peek()) == "LPAREN":
+                        self.advance()  # consume '('
+                        # Skip parameter list
+                        depth = 1
+                        while depth > 0:
+                            t = self.peek()
+                            if t is None:
+                                break
+                            if _type(t) == "LPAREN":
+                                depth += 1
+                            elif _type(t) == "RPAREN":
+                                depth -= 1
+                            self.advance()
+                        # Register function as a Callee in the current (parent) scope
+                        func_callee = Callee(name, current_scope(), None)
+                        key = obj_key(name, current_scope())
+                        self.objects[key] = func_callee
+                        self._order.setdefault(key, self.pos)
+                        # If followed by '{', push a new scope for the function body
+                        if _type(self.peek()) == "LBRACE":
+                            self.advance()  # consume '{'
+                            func_scope = Scope(name, current_scope())
+                            scope_stack.append(func_scope)
+                        continue
+
+                    # Variable declaration with initializer
                     if self.match("ASSIGN"):
                         value_tokens = []
                         while True:
@@ -296,41 +371,31 @@ class Structor:
                                 break
                             self.advance()
                             value_tokens.append(nxt_tok)
-                        # Extract the literal value from the tokens.
-                        assigned_value = None
-                        if value_tokens:
-                            first_token = value_tokens[0]
-                            val_type = _type(first_token)
-                            val_content = _value(first_token)
-                            if val_type == "NUMBER" and val_content is not None:
-                                try:
-                                    assigned_value = int(val_content)
-                                except ValueError:
-                                    assigned_value = float(val_content)
-                            elif val_type == "STRING_LITERAL" and val_content is not None:
-                                assigned_value = val_content
-                            elif val_content is not None:
-                                assigned_value = val_content
-                        var_callee = Callee(name, program, assigned_value)
-                        self.objects[name] = var_callee
-                        self._order.setdefault(name, self.pos)
-                        # Consume the semicolon if present.
+                        assigned_value = self._parse_literal_value(value_tokens, _type, _value)
+                        var_callee = Callee(name, current_scope(), assigned_value)
+                        key = obj_key(name, current_scope())
+                        self.objects[key] = var_callee
+                        self._order.setdefault(key, self.pos)
                         if _type(self.peek()) == "SEMICOLON":
                             self.advance()
                     else:
-                        # No initializer; treat as a variable with None value.
-                        var_callee = Callee(name, program, None)
-                        self.objects[name] = var_callee
-                        self._order.setdefault(name, self.pos)
+                        var_callee = Callee(name, current_scope(), None)
+                        key = obj_key(name, current_scope())
+                        self.objects[key] = var_callee
+                        self._order.setdefault(key, self.pos)
+                continue
+
+            # ----------------------------------------------------------
+            # Identifier-led statements
+            # ----------------------------------------------------------
             if typ == "IDENTIFIER":
                 name = val
-                self.advance()  # consume identifier
+                self.advance()
                 nxt = self.peek()
                 nxt_type = _type(nxt)
 
-                # -------------------------------------------------
-                # 1. Variable/value definition: IDENTIFIER ASSIGN expr SEMICOLON
-                # -------------------------------------------------
+                # Variable assignment: x = -500;
+                # Fix #61: use _parse_literal_value for correct negative numbers.
                 if nxt_type == "ASSIGN":
                     self.advance()  # consume '='
                     value_tokens = []
@@ -340,117 +405,74 @@ class Structor:
                             break
                         self.advance()
                         value_tokens.append(nxt_tok)
-
-                    # Extracts the actual value from tokens
-                    # if it is a simple literal (number, string), use it directly
-                    assigned_value = None
-                    if value_tokens:
-                        is_negative = False
-                        target_token = value_tokens[0]
-
-                        # If the first token is a minus and we have another token, it's negative
-                        if _type(target_token) == "MINUS" and len(value_tokens) > 1:
-                            is_negative = True
-                            target_token = value_tokens[
-                                1
-                            ]  # Look at the actual number token next
-
-                        val_type = _type(target_token)
-                        val_content = _value(target_token)
-
-                        # checks using the actual tokens we have
-                        if (
-                            val_type in ("INT_LITERAL", "FLOAT_LITERAL")
-                            and val_content is not None
-                        ):
-                            try:
-                                assigned_value = int(val_content)
-                            except ValueError:
-                                assigned_value = float(val_content)
-
-                            # Apply the negative sign if we found one
-                            if is_negative:
-                                assigned_value = -assigned_value
-
-                        elif val_type == "STRING_LITERAL" and val_content is not None:
-                            assigned_value = val_content
-                        elif val_content is not None:
-                            assigned_value = val_content
-                    var_callee = Callee(name, program, assigned_value)
-                    self.objects[name] = var_callee
-                    self._order.setdefault(name, self.pos)
-                    # Consume the semicolon if present.
+                    assigned_value = self._parse_literal_value(value_tokens, _type, _value)
+                    var_callee = Callee(name, current_scope(), assigned_value)
+                    key = obj_key(name, current_scope())
+                    self.objects[key] = var_callee
+                    self._order.setdefault(key, self.pos)
                     if _type(self.peek()) == "SEMICOLON":
                         self.advance()
-                    # No Callee is created for plain assignments.
                     continue
 
-                # -------------------------------------------------
-                # 2. Function‑like call: IDENTIFIER LPAREN ... RPAREN
-                # -------------------------------------------------
+                # Function call: printf("hello");
                 if nxt_type == "LPAREN":
                     self.advance()  # consume '('
-                    args = self.collect_args()  # returns parsed AST nodes
-                    # Resolve (or lazily create) the callee.
-                    callee_node = self.objects.get(name)
+                    args = self.collect_args()
+                    # Resolve or lazily create the callee in the nearest scope
+                    lookup_key = obj_key(name, current_scope())
+                    callee_node = self.objects.get(lookup_key)
                     if callee_node is None:
-                        callee_node = Callee(name, program, None)
-                        self.objects[name] = callee_node
-                        self._order.setdefault(name, self.pos)
-                    # Create a Caller representing this invocation.
+                        # Try program scope as fallback
+                        program_key = obj_key(name, program)
+                        callee_node = self.objects.get(program_key)
+                    if callee_node is None:
+                        callee_node = Callee(name, current_scope(), None)
+                        lookup_key = obj_key(name, current_scope())
+                        self.objects[lookup_key] = callee_node
+                        self._order.setdefault(lookup_key, self.pos)
                     caller_name = f"call_{name}_{self.pos}"
-                    caller_node = Caller(caller_name, program)
+                    caller_node = Caller(caller_name, current_scope())
                     caller_node.call(callee_node, *args)
-                    self.objects[caller_name] = caller_node
-                    self._order.setdefault(caller_name, self.pos)
-                    # Optional trailing semicolon.
+                    caller_key = obj_key(caller_name, current_scope())
+                    self.objects[caller_key] = caller_node
+                    self._order.setdefault(caller_key, self.pos)
                     if _type(self.peek()) == "SEMICOLON":
                         self.advance()
                     continue
 
-                # Any other identifier usage is ignored for structuring purposes.
                 continue
             else:
-                # Non‑identifier tokens are ignored.
                 self.advance()
 
-        # Return objects sorted by their first appearance (pointer order).
-        # -------------------------------------------------
         # Link each Caller to its callee's children/objects.
-        # -------------------------------------------------
         for obj in self.objects.values():
             if isinstance(obj, Caller):
-                # A Caller stores its dependencies as a list of (node, args) tuples.
-                # The first element of the first tuple is the callee node.
                 if obj.dependencies:
                     callee_node = obj.dependencies[0][0]
-                    # Expose the callee's scope collections for easy inspection.
                     obj.callee_children = {
                         "callees": callee_node.scope.callees,
                         "callers": callee_node.scope.callers,
                         "generic": callee_node.scope.children,
                     }
-        sorted_names = sorted(self._order.keys(), key=lambda k: self._order[k])
-        return [self.objects[n] for n in sorted_names]
+
+        sorted_keys = sorted(self._order.keys(), key=lambda k: self._order[k])
+        return [self.objects[k] for k in sorted_keys]
 
 
 if __name__ == "__main__":
     main = Scope("main")
     stdio = Lib("stdio", main)
 
-    # First-class function
     def double(x):
         print(f"double called with {x}")
         return x * 2
 
     printf = Callee("printf", stdio.scope, double)
 
-    # Values
     x = Callee("x", main, 5)
     y = Caller("y", main, 3)
 
-    # Dependencies
-    y.call(x)  # y depends on x
-    y.call(printf, x)  # y calls printf with x as argument
+    y.call(x)
+    y.call(printf, x)
 
     print("y.eval() =", y.eval())  # 3 + 5 + 10 = 18
