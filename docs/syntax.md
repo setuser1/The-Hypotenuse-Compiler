@@ -80,18 +80,6 @@ auto describe(auto value) {
 
 ### Variadic Functions
 
-Two forms of variadic arguments are supported.
-
-**Inline variadic** — arguments passed directly:
-
-```c
-void log(int count, auto... args) {
-    for(int i = 0; i < count; i++) {
-        printf("%k\n", args[i]);
-    }
-}
-```
-
 **Pointer stream** — arguments passed as a pointer to a stream:
 
 ```c
@@ -118,11 +106,10 @@ lamb scale(float x, float factor) = x * factor;
 int result = add(5, 10);    // 15
 ```
 
-Return type is inferred from the expression. Explicit return type can be declared:
+Return type is inferred from the expression.
 
 ```c
 int lamb add(int a, int b) = a + b;
-auto lamb transform(auto x) = x * 2;
 ```
 
 ---
@@ -313,8 +300,6 @@ name.raw;                 // access underlying char* for C interop
 
 ## 7. Memory Management
 
-See [memory.md](memory.md) for the full memory model documentation.
-
 ```c
 // stack
 int x = 5;
@@ -335,8 +320,6 @@ allocate int* ptr2 = &ptr;    // ptr2 inherits ptr's space, becomes plain variab
 
 ## 8. Assembly Blocks
 
-See [assembly.md](assembly.md) for full assembly documentation.
-
 ```c
 asm void my_func(int x) {
     syntax_x86_64_linux
@@ -352,8 +335,6 @@ asm void my_func(int x) {
 
 ## 9. Imports
 
-See [imports.md](imports.md) for full import documentation.
-
 ```c
 #include <stdio.h>              // C library
 using printd from <plstd>       // explicit plstd import (optional)
@@ -367,7 +348,7 @@ using vars&a                    // intra file reference (immutable)
 ## 10. Namespaces
 
 ```c
-// declaration — library files only
+// declaration
 space myspace {
     void random() {
         printd("nothing");
