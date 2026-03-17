@@ -21,9 +21,6 @@ The Hypotenuse compiler transforms C△ source files into native Linux ELF x86_6
    [ Structor ]        src/structure.py
         │  Scope / Callee / Caller graph
         ▼
- [ Simulation pass ]   (planned)
-        │  autoremove last-use analysis
-        ▼
   [ Code generator ]   (planned)
         │  .c  +  .asm files
         ▼
@@ -95,17 +92,7 @@ The `build_and_sort` method returns objects ordered by first-appearance position
 
 ---
 
-### Stage 4 — Simulation Pass *(planned)*
-
-The simulation pass walks the Callee/Caller graph before code generation to perform:
-
-- `autoremove` last-use analysis — identifies the final reference to each `autoremove` pointer and inserts a `free` immediately after it.
-- Robbery resolution — when an `autoremove` pointer is transferred via `&ptr1`, the simulation pass marks the receiving variable as a plain (non-heap) variable requiring no `free`.
-- Type inference for `auto` variables where the concrete type can be determined at compile time.
-
----
-
-### Stage 5 — Code Generator *(planned)*
+### Stage 4 — Code Generator *(planned)*
 
 Code generation walks the structured graph and emits:
 
@@ -116,7 +103,7 @@ Each `asm` block becomes a standalone NASM source file. The function name in the
 
 ---
 
-### Stage 6 — Assembly and Compilation *(planned)*
+### Stage 5 — Assembly and Compilation *(planned)*
 
 GCC compiles the emitted `.c` files and NASM assembles each `.asm` file:
 
@@ -127,7 +114,7 @@ nasm -f elf64 block.asm -o block.o
 
 ---
 
-### Stage 7 — Linking *(planned)*
+### Stage 6 — Linking *(planned)*
 
 All object files are linked into the final binary:
 
@@ -234,7 +221,6 @@ The `make` target installs the `hypotenuse` command to a location on `PATH`. See
 │   └── structure.py     Structor — Scope/Callee/Caller graph builder
 ├── docs/                Language and compiler documentation
 ├── test/                Test suite
-├── errors/              Community-contributed error personality messages
 ├── makefile             Build system
 └── LICENSE
 ```
