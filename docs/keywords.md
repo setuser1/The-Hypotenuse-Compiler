@@ -110,8 +110,7 @@ These keywords are removed from C△ and will cause a compiler error if used.
 |---|---|
 | `using` | Import or intra file reference — `using x from <lib>`, `using x from "lib"`, `using scope&var` |
 | `show` | Globalize a namespace or entire plstd — `show lib`, `show plstd`, `show namespace` |
-| `space` | Declare a namespace — library files only |
-| `expose library` | Make entire library global — library files only |
+| `space` | Declare a namespace |
 
 ### Standard Library
 
@@ -155,7 +154,7 @@ These keywords are removed from C△ and will cause a compiler error if used.
 - `autoremove` is exclusively for heap allocated variables via `allocate`
 - Robbery: when an `autoremove` pointer drops, another pointer inherits the space via `&ptr1` and automatically becomes a plain variable — no `free` needed
 - Intra file `using` references are always immutable
-- `show lib` globalizes plstd scope only — linking is always automatic based on actual usage
+- `show lib` globalizes library scope only — linking is always automatic based on actual usage
 - Compiler auto imports what you use — manual `using` is optional
 - Each `asm` block or function is compiled to a separate `.asm` file, assembled with NASM, linked into binary
 - `return` inside `asm` replaces `ret` — implicit return defaults to `rax` on x86_64
