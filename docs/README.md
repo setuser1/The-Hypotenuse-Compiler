@@ -10,12 +10,6 @@ This folder contains the official documentation for the C△ (C Triangle) progra
 |---|---|
 | [keywords.md](keywords.md) | Full keyword and operator reference |
 | [syntax.md](syntax.md) | Complete syntax guide with examples |
-| [memory.md](memory.md) | Memory model, allocate, autoremove, and robbery |
-| [structs.md](structs.md) | Structs, typed structs, constructors, and inheritance |
-| [assembly.md](assembly.md) | Native assembly blocks and functions |
-| [imports.md](imports.md) | Import system, using, show, namespaces, and plstd |
-| [stdlib.md](stdlib.md) | Standard library (plstd) reference |
-| [compiler.md](compiler.md) | Compiler pipeline and internals |
 
 ---
 
