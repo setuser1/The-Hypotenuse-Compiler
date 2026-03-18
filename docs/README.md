@@ -17,7 +17,7 @@ This folder contains the official documentation for the C△ (C Triangle) progra
 | [compiler.md](compiler.md) | Compiler architecture, pipeline stages, and CLI reference |
 | [errors.md](errors.md) | Error reference — all compiler and runtime errors |
 | [contributing.md](contributing.md) | Contributing guide — workflow, style, tests, error personalities |
-
+| there are other more specialized docs |
 ---
 
 ## About C△
