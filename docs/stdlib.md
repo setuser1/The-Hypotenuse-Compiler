@@ -1,4 +1,4 @@
-# C△ Standard Library (`plstd`)
+# C△ Standard Library/Plus Standard (`plstd`)
 
 This document describes the C△ standard library, referred to as `plstd`. It covers how to access the library, what modules it contains, and the API of every provided function.
 
@@ -25,13 +25,13 @@ lib:printfs("x is {x}");
 
 ```c
 using printd from <plstd>;
-printd("hello");
+lib:printd("hello");
 ```
 
 ### Globalize all of `plstd`
 
 ```c
-show lib;
+show plstd;
 printd("hello");    // no prefix needed
 ```
 
@@ -42,7 +42,7 @@ show lib:printd;
 printd("hello");
 ```
 
-Once `show lib` or `show plstd` is written, all `plstd` symbols are available without a prefix for the remainder of the file.
+Once `show plstd` is written, all `plstd` symbols are available without a prefix for the remainder of the file.
 
 ---
 
@@ -141,7 +141,7 @@ See `errors.md` for the full error reference.
 
 ---
 
-## Planned `plstd` Additions
+## Planned `plstd` Additions (LAST STAGES WHEN COMPLETE)
 
 The following are planned for future development stages.
 
