@@ -126,8 +126,8 @@ dynam string names = [];
 `dynam` works with any type including `typed struct` types:
 
 ```c
-dynam Vec3 positions = [];
-positions.push(Vec3(1.0, 2.0, 3.0));
+dynam float positions = [];
+positions.push(1.0, 2.0, 3.0);
 ```
 
 ---
@@ -198,12 +198,13 @@ auto foo(Vec3 v) { return v.magnitude(); }
 ```
 
 **Inheritance** is supported only for `typed struct` via `&`:
-
+- Inheritance only carries over the already pre-existing variables and constructors, not the initialization of those structs.
 ```c
 typed struct Dog&Animal(string name) {
     init(string name) {
         self.name = name;
     }
+    end {}
     void speak() { printf("Woof!\n"); }
 }
 ```
@@ -248,37 +249,6 @@ See `memory.md` for `autoremove` and robbery.
 - `auto` accepts any value. Passing a concrete type to an `auto` parameter is always valid.
 - A `typed struct` can be passed to an `auto` parameter; the runtime type tag records its concrete type.
 - `dynam` and `tuple` cannot be implicitly cast to each other.
-
----
-
-## The `Typed` Keyword (Library Files Only)
-
-Inside `.plib` library files, `Typed` declares a template struct for native types — effectively a parameterised typedef.
-
-```c
-Typed Stack(T) {
-    dynam T items;
-    void push(T val) { items.push(val); }
-    T pop() { return items.pop(); }
-}
-```
-
-Users instantiate a `Typed` template with a concrete type:
-
-```c
-Stack(int) int_stack;
-int_stack.push(42);
-```
-
-`Typed` is exclusively a `.plib` construct and cannot appear in `.ctri` source files, except as a plain `typedef` alias.
-
----
-
-## The `Worded` Keyword (Library Files Only)
-
-`Worded` defines a keyword alias — a template for language extension inside `.plib` files. It allows library authors to introduce new syntax sugar without modifying the compiler.
-
-Protected C△ keywords cannot be shadowed by `Worded`.
 
 ---
 
