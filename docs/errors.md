@@ -118,15 +118,5 @@ These are produced at runtime by the `plstd` runtime. Each has a random personal
 
 ---
 
-## Contributing Error Personalities
-
-Error personality messages are community-contributed. Each error type has a folder in `errors/` containing one or more `.txt` files. Each line in a `.txt` file is a candidate message.
-
-To add new personalities:
-
-1. Find the relevant subfolder in `errors/` (e.g. `errors/out_of_bounds/`).
-2. Add a new `.txt` file or append lines to an existing one.
-3. One message per line. Keep messages concise — one sentence maximum.
-4. Open a pull request against the `main` branch.
-
-See `contributing.md` for the full contribution workflow.
+## Error Personalities
+- Each error type has messages in one or more `.txt` files. Each line in a `.txt` file is a candidate message.
