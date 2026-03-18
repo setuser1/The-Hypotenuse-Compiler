@@ -11,7 +11,6 @@ Ordinary variable declarations allocate on the stack. This is identical to C11 b
 ```c
 int x = 5;             // stack
 char[64] buffer;       // stack, fixed size
-Vec3 v(1.0, 2.0, 3.0); // stack, typed struct
 ```
 
 Stack variables are valid for the lifetime of their enclosing scope. No explicit deallocation is needed or possible.
@@ -26,7 +25,7 @@ Stack variables are valid for the lifetime of their enclosing scope. No explicit
 
 ```
 allocate type name
-allocate type name [size]
+allocate type name [size] // cannot be assigned a value when size is being declared
 ```
 
 | Form | Description |
@@ -38,8 +37,7 @@ allocate type name [size]
 ### Examples
 
 ```c
-allocate int counter;
-counter = 0;
+allocate int counter = 0;
 
 allocate float matrix [16];
 matrix[0] = 1.0;
@@ -88,6 +86,7 @@ int y = *ptr + 5;        // use 2 — last use, free inserted here by compiler
 ### Rules
 
 - `autoremove` is only valid on variables created with `allocate`.
+- `autoremove` can only be done on heap initialized variables/pointers
 - The simulation pass performs a single forward scan over the Callee/Caller graph to find last use.
 - If a pointer is conditionally used inside a branch, the `free` is inserted after the outermost enclosing statement that could be the last use — conservatively late.
 - `autoremove` pointers must not be assigned to another variable without using the robbery pattern (see below). Doing so would leave two names referring to the same allocation after one of them is freed.
@@ -122,7 +121,7 @@ allocate int* keeper = &ptr;    // robbery — keeper takes ownership
 
 // ptr is now invalid
 // keeper holds the allocation as a plain variable — no free needed
-printf("%d\n", *keeper);
+printf("%d\n", *keeper); // still requires dereferencing since it points to an address
 ```
 
 ### Why Robbery Exists
