@@ -58,6 +58,7 @@ Currently only `syntax_x86_64_linux` is a production target. The others are decl
 asm int add_one(int x) {
     syntax_x86_64_linux
 
+    .section text
     mov rax, x
     add rax, 1
     return
@@ -72,6 +73,7 @@ asm int add_one(int x) {
 asm void sys_write(int fd, string buf, int len) {
     syntax_x86_64_linux
 
+    .section text
     mov rax, 1          ; syscall: write
     mov rdi, fd
     mov rsi, buf
@@ -87,6 +89,7 @@ asm void sys_write(int fd, string buf, int len) {
 asm void halt() {
     syntax_x86_64_linux
 
+    .section text
     mov rax, 60         ; syscall: exit
     xor rdi, rdi
     syscall
@@ -104,6 +107,7 @@ Parameters in `asm` functions follow the same declaration syntax as regular C△
 asm int multiply(int a, int b) {
     syntax_x86_64_linux
 
+    .section text
     mov rax, a
     imul rax, b
     return
@@ -121,8 +125,10 @@ Native C△ variable declarations can appear inside an `asm` block instead of as
 ```c
 asm int example() {
     syntax_x86_64_linux
-
+    .section data
     int local = 0       ; declares a dword in .bss or .data
+
+    .section text
     mov eax, local
     return
 }
@@ -145,6 +151,7 @@ asm int example() {
 asm {
     syntax_x86_64_linux
 
+    .section text
     add x,y // uses variable x and y from the parent scope
 }
 ```
