@@ -14,7 +14,7 @@ Assembly blocks are the foundation of `plstd` — every syscall and hardware-lev
 
 ## Declaring an Assembly Function
 
-```
+```c
 asm return_type funcname(param_list) {
     syntax_target
 
