@@ -19,7 +19,7 @@ asm return_type funcname(param_list) {
     syntax_target
 
     // NASM instructions
-    return
+    return (return_option if specified)
 }
 ```
 
@@ -135,6 +135,19 @@ asm int example() {
 - `return` inside an `asm` block emits `ret`.
 - If no explicit `return` is written, the block falls off the end — the code generator does **not** insert an implicit `ret`. Always write an explicit `return`.
 - The implicit return value is whatever is in `rax` at the point `return` is reached, consistent with the System V AMD64 ABI.
+
+---
+
+## Assembly code blocks
+
+- code blocks act the same as functions but they are blocks of code, lacking the usual return a function would have
+```c
+asm {
+    syntax_x86_64_linux
+
+    add x,y // uses variable x and y from the parent scope
+}
+```
 
 ---
 
