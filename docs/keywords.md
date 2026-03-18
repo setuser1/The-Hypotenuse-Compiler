@@ -76,7 +76,7 @@ These keywords are removed from C△ and will cause a compiler error if used.
 
 | Keyword | Description |
 |---|---|
-| `allocate` | Heap allocation with optional custom size — `allocate int x [256]` |
+| `allocate` | Heap allocation with optional custom size — `allocate int x (256)` |
 | `free` | Manual heap deallocation |
 | `autoremove` | Auto free at last use — `autoremove allocate int* ptr = &x` — compiler simulation pass finds last use |
 
