@@ -207,7 +207,12 @@ class Structor:
             current.append(tok)
         if current:
             raw_args.append(current)
-        if self.peek() == "RPAREN":
+        # Fix: peek() returns a (type, value) tuple, not a bare string.
+        # Use _type() style check so the closing ')' is actually consumed.
+        nxt = self.peek()
+        if nxt is not None and (
+            nxt[0] if isinstance(nxt, tuple) else getattr(nxt, "type", None)
+        ) == "RPAREN":
             self.advance()
         return raw_args
 
@@ -272,7 +277,16 @@ class Structor:
         # Fix #62: maintain a scope stack so nested scopes work correctly.
         # current_scope starts as the program scope and is pushed/popped as
         # function bodies are entered and exited.
+        #
+        # NOTE: only function-definition braces push a new scope. Control-flow
+        # braces (if/while/for) intentionally share the enclosing function
+        # scope so that variables declared inside them are visible in the
+        # same function body — matching C scoping semantics at this stage.
+        # When full block-scope support is needed, introduce a scope_kind tag.
         scope_stack = [program]
+        # Track which LBRACE pushes were function-scope pushes so we only
+        # pop on the matching RBRACE.
+        is_function_scope = [False]  # parallel stack; index 0 = program (never popped)
 
         def current_scope():
             return scope_stack[-1]
@@ -315,12 +329,22 @@ class Structor:
             val = _value(cur)
 
             # ----------------------------------------------------------
-            # Handle closing brace: pop function scope (fix #62)
+            # Handle closing brace: only pop if this was a function scope
             # ----------------------------------------------------------
             if typ == "RBRACE":
                 self.advance()
-                if len(scope_stack) > 1:
+                if len(scope_stack) > 1 and is_function_scope[-1]:
                     scope_stack.pop()
+                    is_function_scope.pop()
+                continue
+
+            # ----------------------------------------------------------
+            # Handle opening brace that is NOT part of a function def
+            # (e.g. if/while bodies): advance but do NOT push a new scope
+            # ----------------------------------------------------------
+            if typ == "LBRACE":
+                self.advance()
+                is_function_scope.append(False)
                 continue
 
             # ----------------------------------------------------------
@@ -355,11 +379,12 @@ class Structor:
                         key = obj_key(name, current_scope())
                         self.objects[key] = func_callee
                         self._order.setdefault(key, self.pos)
-                        # If followed by '{', push a new scope for the function body
+                        # If followed by '{', push a new function scope
                         if _type(self.peek()) == "LBRACE":
                             self.advance()  # consume '{'
                             func_scope = Scope(name, current_scope())
                             scope_stack.append(func_scope)
+                            is_function_scope.append(True)
                         continue
 
                     # Variable declaration with initializer

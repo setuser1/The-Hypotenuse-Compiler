@@ -50,28 +50,32 @@ Tokens = [
     ("FLOAT_LITERAL", re.compile(r"\b\d+\.\d+\b")),
     ("INT_LITERAL", re.compile(r"\b\d+\b")),
     # OPERATORS AND DELIMITERS AND SYMBOLS
+    # NOTE: multi-character operators must appear before their single-character
+    # prefixes so the lexer matches the longer token first.
     ("INCREMENT", re.compile(r"\+\+")),
     ("PLUS", re.compile(r"\+")),
     ("DECREMENT", re.compile(r"--")),
+    ("ARROW", re.compile(r"->")),
     ("MINUS", re.compile(r"-")),
+    ("POWER", re.compile(r"\*\*")),   # must come before MULTIPLY
     ("MULTIPLY", re.compile(r"\*")),
     ("DIVIDE", re.compile(r"/")),
-    ("POWER", re.compile(r"\*\*")),
     ("LPAREN", re.compile(r"\(")),
     ("RPAREN", re.compile(r"\)")),
+    ("LE", re.compile(r"<=")),         # must come before LT
+    ("GE", re.compile(r">=")),         # must come before GT
+    ("EQ", re.compile(r"==")),         # must come before ASSIGN
+    ("NEQ", re.compile(r"!=")),        # must come before NOT
     ("ASSIGN", re.compile(r"=")),
     ("SEMICOLON", re.compile(r";")),
     ("COMMA", re.compile(r",")),
     ("COLON", re.compile(r":")),
-    ("LE", re.compile(r"<=")),
-    ("GE", re.compile(r">=")),
     ("LT", re.compile(r"<")),
     ("GT", re.compile(r">")),
     ("NOT", re.compile(r"!")),
     ("AND", re.compile(r"&&")),
     ("OR", re.compile(r"\|\|")),
     ("DOT", re.compile(r"\.")),
-    ("ARROW", re.compile(r"->")),
     ("LBRACKET", re.compile(r"\[")),
     ("RBRACKET", re.compile(r"]")),
     ("LBRACE", re.compile(r"\{")),

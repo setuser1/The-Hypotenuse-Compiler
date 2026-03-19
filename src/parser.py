@@ -165,6 +165,20 @@ class Parser:
     Recursive-descent parser for a C-like language.
 
     Implements operator precedence via layered parsing functions.
+
+    Precedence (low -> high):
+      assignment
+      conditional (?:)
+      logical or  (||)
+      logical and (&&)
+      equality    (== !=)
+      relational  (< > <= >=)
+      additive    (+ -)
+      multiplicative (* /)
+      power       (**)
+      unary       (- ! +)
+      postfix     (call, subscript)
+      primary     (literal, identifier, grouped)
     """
 
     def __init__(self, tokens, var=None):
@@ -191,8 +205,6 @@ class Parser:
         tok = self.peek()
         if tok[0] == type_name:
             return self.advance()
-        # ``tok`` is a (type, lexeme) tuple; it has no position information.
-        # Use the parser's current index as a simple position indicator.
         raise SyntaxError(
             f"Expected {type_name} at token index {self.i}, got {tok[0]} ({tok[1]!r})"
         )
@@ -222,18 +234,16 @@ class Parser:
         - Global variables
         """
         t = self.peek()
-        #Deprecated keyword error handler for replaced/useless keywords
-        #REMOVE MULTILINE COMMENTS FOR THIS WHEN THESE ARE REPLACED/DEPRECATED FULLY
-        """if t[0] in (
-            "RESTRICT",
-            "BOOLEAN",
-            "COMPLEX",
-            "IMAGINARY",
-        ):
+
+        # Reject deprecated / removed keywords immediately.
+        # RESTRICT and BOOLEAN are deprecated in C△; COMPLEX and IMAGINARY
+        # are not emitted by the lexer but are listed here for documentation.
+        if t[0] in ("RESTRICT", "BOOLEAN"):
             raise SyntaxError(
                 f"Deprecated keyword used! Please remove or replace the keyword. "
                 f"Found '{t[0]}'."
-            ) """
+            )
+
         # COMMENTS ARE SKIPPED
         if t[0] in (
             "COMMENT_MULTI",
@@ -241,6 +251,7 @@ class Parser:
         ):
             self.advance()
             return self.parse_external()
+
         if t[0] in (
             "INT",
             "CHAR",
@@ -263,12 +274,10 @@ class Parser:
             "REGISTER",
             "AUTO",
             "SIZEOF",
-            "RESTRICT",
-            "BOOLEAN",
             "UNKNOWN",
         ):
             typ = self.advance()[1]
-            # Expected Identifier error handling            
+            # Expected Identifier error handling
             if self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
                 raise SyntaxError(
@@ -338,19 +347,14 @@ class Parser:
             self.expect("SEMICOLON")
             return Return(expr)
 
-        # Local declaration
-        #Deprecated keyword error handler for replaced/useless keywords
-        #REMOVE MULTILINE COMMENTS FOR THIS WHEN THESE ARE REPLACED/DEPRECATED FULLY
-        """if t[0] in (
-            "RESTRICT",
-            "BOOLEAN",
-            "COMPLEX",
-            "IMAGINARY",
-        ):
+        # Reject deprecated / removed keywords in statement position too.
+        if t[0] in ("RESTRICT", "BOOLEAN"):
             raise SyntaxError(
                 f"Deprecated keyword used! Please remove or replace the keyword. "
                 f"Found '{t[0]}'."
-            )"""
+            )
+
+        # Local declaration
         if t[0] in (
             "INT",
             "CHAR",
@@ -364,7 +368,6 @@ class Parser:
             "STRUCT",
             "UNION",
             "ENUM",
-            "BOOLEAN",
         ):
             typ = self.advance()[1]
             if self.peek()[0] != "IDENTIFIER":
@@ -416,21 +419,43 @@ class Parser:
         return node
 
     def parse_logical_or(self) -> Node:
-        """
-        Old order: Logical OR -> Primary
-        New order: Logical OR -> Unary -> Primary
-        """
-        left = self.parse_add()
+        """Parse logical OR expressions (||)."""
+        left = self.parse_logical_and()
         while self.peek()[0] == "OR":
+            op = self.advance()[1]
+            right = self.parse_logical_and()
+            left = Binary(op, left, right)
+        return left
+
+    def parse_logical_and(self) -> Node:
+        """Parse logical AND expressions (&&)."""
+        left = self.parse_equality()
+        while self.peek()[0] == "AND":
+            op = self.advance()[1]
+            right = self.parse_equality()
+            left = Binary(op, left, right)
+        return left
+
+    def parse_equality(self) -> Node:
+        """Parse equality expressions (== !=)."""
+        left = self.parse_relational()
+        while self.peek()[0] in ("EQ", "NEQ"):
+            op = self.advance()[1]
+            right = self.parse_relational()
+            left = Binary(op, left, right)
+        return left
+
+    def parse_relational(self) -> Node:
+        """Parse relational expressions (< > <= >=)."""
+        left = self.parse_add()
+        while self.peek()[0] in ("LT", "GT", "LE", "GE"):
             op = self.advance()[1]
             right = self.parse_add()
             left = Binary(op, left, right)
         return left
 
     def parse_add(self) -> Node:
-        """
-        Parse addition and subtraction expressions.
-        """
+        """Parse addition and subtraction expressions."""
         left = self.parse_term()
         while self.peek()[0] in ("PLUS", "MINUS"):
             op = self.advance()[1]
@@ -439,25 +464,13 @@ class Parser:
         return left
 
     def parse_term(self) -> Node:
-        """
-        Parse multiplication and division expressions.
-        """
-        left = self.parse_unary()
+        """Parse multiplication and division expressions."""
+        left = self.parse_power()
         while self.peek()[0] in ("MULTIPLY", "DIVIDE"):
             op = self.advance()[1]
-            right = self.parse_unary()
+            right = self.parse_power()
             left = Binary(op, left, right)
         return left
-
-    def parse_unary(self):
-        """Parse unary prefix expression (e.g., -x, !y)."""
-        # checks if current token is a unary operator
-        token = self.peek()
-        if token[0] in ("PLUS", "MINUS", "NOT"):
-            op = self.advance()[1]
-            operand = self.parse_unary()
-            return Unary(op=op, operand=operand, prefix=True)
-        return self.parse_primary()
 
     def parse_power(self) -> Node:
         """Parse exponentiation expressions (right-associative)."""
@@ -467,26 +480,52 @@ class Parser:
             return Binary("**", left, right)
         return left
 
-    # -----------------------------------------------------------------
-    # Primary expression helper (identifiers, literals, parenthesised expr)
-    # -----------------------------------------------------------------
+    def parse_unary(self) -> Node:
+        """Parse unary prefix expression (e.g., -x, !y)."""
+        token = self.peek()
+        if token[0] in ("PLUS", "MINUS", "NOT"):
+            op = self.advance()[1]
+            operand = self.parse_unary()
+            return Unary(op=op, operand=operand, prefix=True)
+        return self.parse_postfix()
+
+    def parse_postfix(self) -> Node:
+        """Parse postfix expressions: function calls and array subscripts."""
+        node = self.parse_primary()
+        while True:
+            if self.peek()[0] == "LPAREN":
+                # Function call: expr ( arg, ... )
+                self.advance()
+                args = []
+                if self.peek()[0] != "RPAREN":
+                    args.append(self.parse_assignment())
+                    while self.accept("COMMA"):
+                        args.append(self.parse_assignment())
+                self.expect("RPAREN")
+                node = Call(node, args)
+            elif self.peek()[0] == "LBRACKET":
+                # Array subscript: expr [ index ]
+                self.advance()
+                index = self.parse_expression()
+                self.expect("RBRACKET")
+                node = ArrayAccess(node, index)
+            else:
+                break
+        return node
+
     def parse_primary(self) -> Node:
         """Parse the most basic expression forms."""
         tok = self.peek()
         if tok[0] == "IDENTIFIER":
-            # Variable reference
             return Var(self.advance()[1])
         if tok[0] in ("INT_LITERAL", "FLOAT_LITERAL", "STRING_LITERAL"):
-            # Literal constant
             return Literal(self.advance()[1])
         if tok[0] == "LPAREN":
-            # Parenthesised sub‑expression
             self.advance()
             expr = self.parse_expression()
             self.expect("RPAREN")
             return expr
         raise SyntaxError(f"Unexpected token {tok} in primary expression")
-
 
 
 # ============================================================
