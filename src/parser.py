@@ -9,10 +9,89 @@ This file defines:
 The parser consumes tokens produced by an external lexer and builds
 a structured AST suitable for semantic analysis or code generation.
 """
-
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple
 
+Tokens = [
+    # COMMENTS
+    ("COMMENT_MULTI"),
+    ("COMMENT_LINE"),
+    # PREPROCESSOR DIRECTIVES (e.g. #include, #define, #if, #endif, etc.)
+    ("PREPROCESSOR"),
+    # KEYWORDS
+    ("IF"),
+    ("ELSE"),
+    ("WHILE"),
+    ("FOR"),
+    ("RETURN"),
+    ("BREAK"),
+    ("CONTINUE"),
+    ("SWITCH"),
+    ("CASE"),
+    ("DEFAULT"),
+    ("DO"),
+    ("GOTO"),
+    ("INT"),
+    ("CHAR"),
+    ("VOID"),
+    ("FLOAT"),
+    ("DOUBLE"),
+    ("SHORT"),
+    ("LONG"),
+    ("SIGNED"),
+    ("UNSIGNED"),
+    ("STRUCT"),
+    ("UNION"),
+    ("ENUM"),
+    ("TYPEDEF"),
+    ("CONST"),
+    ("VOLATILE"),
+    ("STATIC"),
+    ("EXTERN"),
+    ("INLINE"),
+    ("REGISTER"),
+    ("AUTO"),
+    ("SIZEOF"),
+    ("RESTRICT"),
+    ("BOOLEAN"),
+    # DATA TYPES
+    ("STRING_LITERAL"),
+    ("CHAR_LITERAL"),
+    ("FLOAT_LITERAL"),
+    ("INT_LITERAL"),
+    # OPERATORS AND DELIMITERS AND SYMBOLS
+    ("INCREMENT"),
+    ("PLUS"),
+    ("DECREMENT"),
+    ("MINUS"),
+    ("MULTIPLY"),
+    ("DIVIDE"),
+    ("POWER"),
+    ("LPAREN"),
+    ("RPAREN"),
+    ("ASSIGN"),
+    ("SEMICOLON"),
+    ("COMMA"),
+    ("COLON"),
+    ("LE"),
+    ("GE"),
+    ("LT"),
+    ("GT"),
+    ("NOT"),
+    ("AND"),
+    ("OR"),
+    ("DOT"),
+    ("ARROW"),
+    ("LBRACKET"),
+    ("RBRACKET"),
+    ("LBRACE"),
+    ("RBRACE"),
+    # IDENTIFIERS
+    ("IDENTIFIER"),
+    # OTHERS
+    ("WHITESPACE"),
+    ("UNKNOWN"),
+]
 # ============================================================
 # AST (Abstract Syntax Tree) Nodes
 # ============================================================
@@ -224,7 +303,7 @@ class Parser:
         t = self.peek()
         #Deprecated keyword error handler for replaced/useless keywords
         #REMOVE MULTILINE COMMENTS FOR THIS WHEN THESE ARE REPLACED/DEPRECATED FULLY
-        """if t[0] in (
+        if t[0] in (
             "RESTRICT",
             "BOOLEAN",
             "COMPLEX",
@@ -233,7 +312,7 @@ class Parser:
             raise SyntaxError(
                 f"Deprecated keyword used! Please remove or replace the keyword. "
                 f"Found '{t[0]}'."
-            ) """
+            )
         # COMMENTS ARE SKIPPED
         if t[0] in (
             "COMMENT_MULTI",
@@ -263,8 +342,6 @@ class Parser:
             "REGISTER",
             "AUTO",
             "SIZEOF",
-            "RESTRICT",
-            "BOOLEAN",
             "UNKNOWN",
         ):
             typ = self.advance()[1]
