@@ -110,7 +110,11 @@ class Binary(Node):
 
 @dataclass
 class Unary(Node):
-    """Unary operation (prefix or postfix)."""
+    """Unary operation (prefix or postfix).
+
+    prefix=True  -> prefix operator  (e.g. -x, !y, ++x, --x)
+    prefix=False -> postfix operator (e.g. x++, x--)
+    """
 
     op: str
     operand: Node
@@ -176,9 +180,9 @@ class Parser:
       additive    (+ -)
       multiplicative (* /)
       power       (**)
-      unary       (- ! +)
-      postfix     (call, subscript)
-      primary     (literal, identifier, grouped)
+      unary prefix  (- ! + ++ --)
+      postfix       (call, subscript, ++ --)
+      primary       (literal, identifier, grouped)
     """
 
     def __init__(self, tokens, var=None):
@@ -529,19 +533,24 @@ class Parser:
         return left
 
     def parse_unary(self) -> Node:
-        """Parse unary prefix expression (e.g., -x, !y)."""
+        """Parse unary prefix expressions (e.g. -x, !y, ++x, --x)."""
         token = self.peek()
         if token[0] in ("PLUS", "MINUS", "NOT"):
+            op = self.advance()[1]
+            operand = self.parse_unary()
+            return Unary(op=op, operand=operand, prefix=True)
+        if token[0] in ("INCREMENT", "DECREMENT"):
             op = self.advance()[1]
             operand = self.parse_unary()
             return Unary(op=op, operand=operand, prefix=True)
         return self.parse_postfix()
 
     def parse_postfix(self) -> Node:
-        """Parse postfix expressions: function calls and array subscripts."""
+        """Parse postfix expressions: calls, subscripts, and x++/x--."""
         node = self.parse_primary()
         while True:
             if self.peek()[0] == "LPAREN":
+                # Function call: expr(arg, ...)
                 self.advance()
                 args = []
                 if self.peek()[0] != "RPAREN":
@@ -551,10 +560,15 @@ class Parser:
                 self.expect("RPAREN")
                 node = Call(node, args)
             elif self.peek()[0] == "LBRACKET":
+                # Array subscript: expr[index]
                 self.advance()
                 index = self.parse_expression()
                 self.expect("RBRACKET")
                 node = ArrayAccess(node, index)
+            elif self.peek()[0] in ("INCREMENT", "DECREMENT"):
+                # Postfix ++/--: expr++ / expr--
+                op = self.advance()[1]
+                node = Unary(op=op, operand=node, prefix=False)
             else:
                 break
         return node
