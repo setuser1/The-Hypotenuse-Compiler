@@ -7,7 +7,7 @@ import structure
 
 
 def parse_args():
-    """Parse command‑line arguments using argparse."""
+    """Parse command-line arguments using argparse."""
     parser = argparse.ArgumentParser(
         prog="hypotenuse",
         description="C triangle compiler.",
@@ -29,35 +29,51 @@ def parse_args():
     return parser.parse_args()
 
 
+def compile_file(path):
+    """Lex, parse, and structure a single source file.
+
+    Returns the ordered list of Callee/Caller graph objects.
+    """
+    with open(path, "r") as f:
+        content = f.read()
+
+    # Lex
+    tokens = lexer.Lexer(content).lex()
+    tokens.append(("EOF", "EOF"))
+
+    # Parse tokens -> AST
+    ast = p.Parser(tokens).parse_program()
+
+    # Build Callee/Caller/Scope graph from AST
+    structor = structure.Structor(ast)
+    return structor.build_from_ast()
+
+
 def main():
     args = parse_args()
 
     # -------------------------------------------------
-    #  Token‑only mode (-t / --tokens)
+    #  Token-only mode (-t / --tokens)
     # -------------------------------------------------
     if args.tokens:
         if not args.files:
             print("Error: no input file provided for token printing")
             sys.exit(1)
         try:
-            with open(args.files[0], "r") as file:
-                content = file.read()
-            tokenizer = lexer.Lexer(content)
-            tokens = tokenizer.lex()
+            with open(args.files[0], "r") as f:
+                content = f.read()
+            tokens = lexer.Lexer(content).lex()
             tokens.append(("EOF", "EOF"))
-
-            # Use Structure module to handle the token list.
-            # Use the real parser module (which now has the recursion bug fixed).
-            parser = p
-            struct = structure.Structor(tokens, parser)
-            objects = struct.build_and_sort()
             print(tokens)
+
+            ast = p.Parser(tokens).parse_program()
+            structor = structure.Structor(ast)
+            objects = structor.build_from_ast()
             print("Objects (including parent scopes):", objects)
             return objects
         except FileNotFoundError:
             print(f"Error: file not found {args.files[0]}")
             sys.exit(1)
-        sys.exit(0)
 
     # -------------------------------------------------
     #  Normal compilation path (one or more files)
@@ -65,19 +81,10 @@ def main():
     if not args.files:
         print("Error: no input file provided")
         sys.exit(1)
+
     for path in args.files:
         try:
-            with open(path, "r") as file:
-                content = file.read()
-            tokenizer = lexer.Lexer(content)
-            tokens = tokenizer.lex()
-            tokens.append(("EOF", "EOF"))
-
-            # Pass the parser module for consistency.
-            parser = p
-            # Use Structure module for each file's token stream.
-            struct = structure.Structor(tokens, parser)
-            objects = struct.build_and_sort()
+            objects = compile_file(path)
             print("Objects (including parent scopes):", objects)
             return objects
         except FileNotFoundError:
@@ -90,7 +97,7 @@ def main():
             print(f"Syntax error: {error}")
             sys.exit(1)
         except Exception as error:
-            print(f"Lexing error: {error}")
+            print(f"Compilation error: {error}")
             sys.exit(1)
 
 
