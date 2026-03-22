@@ -241,22 +241,19 @@ class Parser:
         """
         t = self.peek()
 
+        # Preprocessor directives and comments are skipped silently.
+        # C△ does not process #include / #define etc. — those are handled
+        # by the C backend after code generation.
+        if t[0] in ("PREPROCESSOR", "COMMENT_MULTI", "COMMENT_LINE"):
+            self.advance()
+            return self.parse_external()
+
         # Reject deprecated / removed keywords immediately.
-        # RESTRICT and BOOLEAN are deprecated in C△; COMPLEX and IMAGINARY
-        # are not emitted by the lexer but are listed here for documentation.
         if t[0] in ("RESTRICT", "BOOLEAN"):
             raise SyntaxError(
                 f"Deprecated keyword used! Please remove or replace the keyword. "
                 f"Found '{t[0]}'."
             )
-
-        # COMMENTS ARE SKIPPED
-        if t[0] in (
-            "COMMENT_MULTI",
-            "COMMENT_LINE",
-        ):
-            self.advance()
-            return self.parse_external()
 
         if t[0] in (
             "INT",
@@ -328,6 +325,11 @@ class Parser:
         """Parse a single statement."""
         t = self.peek()
 
+        # Skip preprocessor directives and comments inside function bodies too
+        if t[0] in ("PREPROCESSOR", "COMMENT_MULTI", "COMMENT_LINE"):
+            self.advance()
+            return self.parse_statement()
+
         if t[0] == "LBRACE":
             return self.parse_compound()
 
@@ -352,9 +354,6 @@ class Parser:
             self.expect('LPAREN')
             init = None
             if self.peek()[0] != 'SEMICOLON':
-                # could be declaration or expression.
-                # BOOLEAN is intentionally excluded: it is deprecated and will
-                # be caught by the deprecated-keyword check below if used.
                 if self.peek()[0] in (
                     'INT', 'CHAR', 'VOID', 'FLOAT', 'DOUBLE', 'LONG', 'SHORT',
                     'SIGNED', 'UNSIGNED', 'STRUCT', 'UNION', 'ENUM',
@@ -543,7 +542,6 @@ class Parser:
         node = self.parse_primary()
         while True:
             if self.peek()[0] == "LPAREN":
-                # Function call: expr ( arg, ... )
                 self.advance()
                 args = []
                 if self.peek()[0] != "RPAREN":
@@ -553,7 +551,6 @@ class Parser:
                 self.expect("RPAREN")
                 node = Call(node, args)
             elif self.peek()[0] == "LBRACKET":
-                # Array subscript: expr [ index ]
                 self.advance()
                 index = self.parse_expression()
                 self.expect("RBRACKET")
