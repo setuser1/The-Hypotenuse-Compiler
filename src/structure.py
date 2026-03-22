@@ -1,30 +1,34 @@
+from parser import (
+    Program, Function, Declaration, Compound,
+    If, While, For, Return, ExprStmt,
+    Assignment, Binary, Unary, Literal, Var, Call, ArrayAccess,
+    Node as ASTNode,
+)
+
+
+# ============================================================
+# Scope / graph nodes
+# ============================================================
+
 class Scope:
     def __init__(self, name, parent=None):
         self.name = name
         self.parent = parent
-        self.children = {}  # generic children (non-Callee/Caller)
-        self.callees = {}  # name -> Callee objects
-        self.callers = {}  # name -> Caller objects
+        self.children = {}   # generic children
+        self.callees = {}    # name -> Callee
+        self.callers = {}    # name -> Caller
 
     def __repr__(self):
-        """Readable representation showing the scope name and its parent."""
         parent_name = self.parent.name if self.parent else None
         return f"Scope(name={self.name!r}, parent={parent_name!r})"
 
     def add_child(self, node):
-        """Register a node in the appropriate collection.
-
-        * Callee -> ``self.callees``
-        * Caller -> ``self.callers``
-        * Anything else -> ``self.children``
-        """
         if isinstance(node, Callee):
             target = self.callees
         elif isinstance(node, Caller):
             target = self.callers
         else:
             target = self.children
-
         if node.name in target:
             raise ValueError(
                 f"Child named `{node.name}` already exists in scope `{self.name}`"
@@ -33,20 +37,16 @@ class Scope:
         return node
 
     def called(self, name):
-        if name in self.children:
-            return self.children[name]
-        if name in self.callees:
-            return self.callees[name]
-        if name in self.callers:
-            return self.callers[name]
+        for store in (self.children, self.callees, self.callers):
+            if name in store:
+                return store[name]
         if self.parent:
             return self.parent.called(name)
         return None
 
 
 class Node:
-    """Base node for values and dependencies."""
-
+    """Base graph node."""
     def __init__(self, name, scope):
         self.name = name
         self.scope = scope
@@ -58,8 +58,7 @@ class Node:
 
 
 class Callee(Node):
-    """Node that provides a value or a function."""
-
+    """A value provider or function."""
     def __init__(self, name, scope, value):
         super().__init__(name, scope)
         self.value = value
@@ -70,24 +69,19 @@ class Callee(Node):
             if not isinstance(self.value, Node)
             else f"<Node {type(self.value).__name__}>"
         )
-        return (
-            f"Callee(name={self.name!r}, value={val_repr}, scope={self.scope.name!r})"
-        )
+        return f"Callee(name={self.name!r}, value={val_repr}, scope={self.scope.name!r})"
 
     def eval(self, *args, **kwargs):
         if callable(self.value):
-            resolved_args = [
-                arg.eval() if isinstance(arg, Node) else arg for arg in args
-            ]
-            return self.value(*resolved_args)
+            resolved = [a.eval() if isinstance(a, Node) else a for a in args]
+            return self.value(*resolved)
         if isinstance(self.value, Node):
             return self.value.eval()
         return self.value
 
 
 class Caller(Node):
-    """Node that can depend on other nodes and call function nodes."""
-
+    """A node that depends on and calls other nodes."""
     def __init__(self, name, scope, value=None):
         super().__init__(name, scope)
         self.value = value
@@ -97,35 +91,28 @@ class Caller(Node):
         if not self.dependencies:
             return f"Caller(name={self.name!r}, scope={self.scope.name!r}, args=[])"
         callee_node, args = self.dependencies[0]
-        args_repr = []
-        for arg_tokens in args:
-            token_strs = ", ".join(f"{t[0]}:{t[1]!r}" for t in arg_tokens)
-            args_repr.append(f"[{token_strs}]")
+        args_repr = [repr(a) for a in args]
         return (
             f"Caller(name={self.name!r}, scope={self.scope.name!r}, "
             f"callee={callee_node.name!r}, args={args_repr})"
         )
 
     def call(self, node, *args):
-        """Depend on a node. Arguments can be nodes or literals."""
         self.dependencies.append((node, args))
 
     def eval(self):
+        result = self.value if isinstance(self.value, (int, float)) else 0
         if isinstance(self.value, Node):
             result = self.value.eval()
-        else:
-            result = self.value if isinstance(self.value, (int, float)) else 0
-
         for node, args in self.dependencies:
             if node is None:
-                raise ValueError(f"callee '{node.name}' not found")
+                raise ValueError("callee not found")
             result += node.eval(*args)
         return result
 
 
 class Lib:
     """Library scope containing callable or value nodes."""
-
     def __init__(self, name, parent_scope=None):
         self.name = name
         self.scope = Scope(name, parent_scope)
@@ -141,395 +128,260 @@ class Lib:
         return self.scope.called(name)
 
 
-class Token:
-    def __init__(self, type_, value):
-        self.type = type_
-        self.value = value
+# ============================================================
+# Literal value extraction from AST expressions
+# ============================================================
 
-    def __repr__(self):
-        return f"Token({self.type!r}, {self.value!r})"
+def _extract_literal(expr):
+    """Return a Python value from a simple AST expression, or None.
 
+    Handles:
+    - Literal nodes          -> the literal value cast to int/float where possible
+    - Unary('-', Literal)    -> negative numeric literal (fix for issue #61)
+    - Anything else          -> None (non-constant expression)
+    """
+    if isinstance(expr, Literal):
+        return _cast_literal(expr.value)
+    if isinstance(expr, Unary) and expr.op == '-' and expr.prefix:
+        inner = _extract_literal(expr.operand)
+        if isinstance(inner, (int, float)):
+            return -inner
+    return None
+
+
+def _cast_literal(raw):
+    """Try to cast a raw lexeme string to int or float."""
+    if isinstance(raw, (int, float)):
+        return raw
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        pass
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        pass
+    return raw  # string literal or other
+
+
+# ============================================================
+# Structor: AST walker that builds the Callee/Caller/Scope graph
+# ============================================================
 
 class Structor:
-    """Automatically structures each line of code.
+    """Builds the Callee/Caller/Scope graph by walking a parser AST.
 
-    The parser implementation is injected via the ``parser`` argument to the
-    constructor, removing the need for a hard-coded import.
+    Usage::
+
+        from parser import Parser
+        ast = Parser(tokens).parse_program()
+        structor = Structor(ast)
+        objects = structor.build_from_ast()
+
+    Scope rules (matching C scoping semantics):
+    - ``Program``    -> root ``program`` scope
+    - ``Function``   -> named child scope pushed for the function body
+    - ``For``        -> anonymous ``for_<name>`` child scope covering the
+                        init declaration *and* the loop body (fix for issue
+                        where ``int i`` leaked into the enclosing scope)
+    - ``Compound`` / ``If`` / ``While`` bodies share the enclosing scope
     """
 
-    def __init__(self, tokens_array, parser):
-        self.tokens = tokens_array
-        self.pos = 0
+    def __init__(self, ast: Program):
+        self.ast = ast
         self.objects = {}
-        self.parser = parser
-
-    def peek(self):
-        return self.tokens[self.pos] if self.pos < len(self.tokens) else None
-
-    def advance(self):
-        tok = self.peek()
-        self.pos += 1
-        return tok
-
-    def match(self, *types):
-        tok = self.peek()
-        if tok is None:
-            return None
-        tok_type = tok[0] if isinstance(tok, tuple) else getattr(tok, "type", None)
-        if tok_type in types:
-            return self.advance()
-        return None
-
-    def collect_args(self):
-        """Collect function-call arguments as lists of raw tokens."""
-        raw_args = []
-        current = []
-        while True:
-            tok_peek = self.peek()
-            if tok_peek is None:
-                break
-            t_type = (
-                tok_peek[0]
-                if isinstance(tok_peek, tuple)
-                else getattr(tok_peek, "type", None)
-            )
-            if t_type == "RPAREN":
-                break
-            tok = self.advance()
-            if isinstance(tok, tuple):
-                t_type = tok[0]
-            else:
-                t_type = getattr(tok, "type", None)
-            if t_type == "COMMA":
-                raw_args.append(current)
-                current = []
-                continue
-            current.append(tok)
-        if current:
-            raw_args.append(current)
-        # Fix: peek() returns a (type, value) tuple, not a bare string.
-        # Use _type() style check so the closing ')' is actually consumed.
-        nxt = self.peek()
-        if nxt is not None and (
-            nxt[0] if isinstance(nxt, tuple) else getattr(nxt, "type", None)
-        ) == "RPAREN":
-            self.advance()
-        return raw_args
-
-    # ------------------------------------------------------------------
-    # Helper: parse a numeric literal value from a token list.
-    # Handles optional leading MINUS for negative numbers.
-    # Fix for issue #61: correctly resolves '-500' instead of '-'.
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _parse_literal_value(value_tokens, _type_fn, _value_fn):
-        """Return a Python int/float/str from a list of value tokens.
-
-        Recognises an optional leading MINUS token so that '-500' is stored
-        as the integer -500 rather than the string '-'.
-
-        If MINUS is present but is NOT followed by a numeric literal (e.g.
-        it precedes an identifier like '-x'), the MINUS value is returned
-        and the following token is left in the iterator for the caller to
-        process.
-        """
-        if not value_tokens:
-            return None
-
-        is_negative = False
-        token_iter = iter(value_tokens)
-        first = next(token_iter, None)
-
-        if _type_fn(first) == "MINUS":
-            second = next(token_iter, None)
-            if second is not None and _type_fn(second) in ("INT_LITERAL", "FLOAT_LITERAL"):
-                is_negative = True
-                first = second
-            else:
-                return _value_fn(first)
-
-        val_type = _type_fn(first)
-        val_content = _value_fn(first)
-
-        if val_type == "INT_LITERAL" and val_content is not None:
-            try:
-                result = int(val_content)
-            except ValueError:
-                result = float(val_content)
-            return -result if is_negative else result
-
-        if val_type == "FLOAT_LITERAL" and val_content is not None:
-            try:
-                result = float(val_content)
-            except ValueError:
-                result = val_content
-            return -result if is_negative else result
-
-        if val_type == "STRING_LITERAL" and val_content is not None:
-            return val_content
-
-        return val_content
-
-    def build_and_sort(self):
-        """Create Callee and Caller objects from the token stream and order them.
-
-        Scope rules:
-        - program scope is the root.
-        - Each function definition pushes a new named child Scope.
-        - Each for-loop pushes a new anonymous block Scope so that init-clause
-          declarations (e.g. 'int i = 0') are scoped to the loop, not the
-          enclosing function. The scope is named 'for_<pos>' to be unique.
-        - Plain if/while bodies share the enclosing scope (no new scope pushed).
-        - Scopes are popped on the RBRACE that closes them, tracked via the
-          parallel is_block_scope stack.
-        """
-        program = Scope("program")
-        scope_stack = [program]
-        # Parallel stack: True if the matching RBRACE should pop a scope.
-        # Index 0 = program level, never popped.
-        is_block_scope = [False]
-
-        def current_scope():
-            return scope_stack[-1]
-
         self._order = {}
+        self._counter = 0
 
-        def obj_key(name, scope):
-            return f"{scope.name}::{name}"
+    def _next_id(self):
+        self._counter += 1
+        return self._counter
 
-        def _type(tok):
-            if tok is None:
-                return None
-            if isinstance(tok, tuple):
-                return tok[0]
-            return getattr(tok, "type", None)
+    def _obj_key(self, name, scope):
+        return f"{scope.name}::{name}"
 
-        def _value(tok):
-            if tok is None:
-                return None
-            if isinstance(tok, tuple):
-                return tok[1]
-            return getattr(tok, "value", getattr(tok, "lexeme", None))
+    def _register(self, node, scope_obj):
+        key = self._obj_key(node.name, scope_obj)
+        if key not in self.objects:
+            self.objects[key] = node
+            self._order[key] = self._next_id()
+        return self.objects[key]
 
-        TYPE_KEYWORDS = (
-            "IF", "ELSE", "WHILE", "FOR", "RETURN", "BREAK", "CONTINUE",
-            "SWITCH", "CASE", "DEFAULT", "DO", "GOTO",
-            "INT", "CHAR", "VOID", "FLOAT", "DOUBLE", "SHORT", "LONG",
-            "SIGNED", "UNSIGNED", "STRUCT", "UNION", "ENUM", "TYPEDEF",
-            "STATIC", "CONST", "VOLATILE", "EXTERN", "INLINE", "REGISTER",
-            "AUTO", "SIZEOF", "RESTRICT", "BOOLEAN",
-        )
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
 
-        while True:
-            cur = self.peek()
-            if cur is None:
-                break
-
-            typ = _type(cur)
-
-            # ----------------------------------------------------------
-            # RBRACE: pop scope only if this brace opened one
-            # ----------------------------------------------------------
-            if typ == "RBRACE":
-                self.advance()
-                if len(scope_stack) > 1 and is_block_scope[-1]:
-                    scope_stack.pop()
-                    is_block_scope.pop()
-                elif len(is_block_scope) > 1:
-                    # brace that didn't open a scope — just remove tracking entry
-                    is_block_scope.pop()
-                continue
-
-            # ----------------------------------------------------------
-            # LBRACE not preceded by a function/for definition:
-            # e.g. bare if/while body. Track it but don't push a scope.
-            # ----------------------------------------------------------
-            if typ == "LBRACE":
-                self.advance()
-                is_block_scope.append(False)
-                continue
-
-            # ----------------------------------------------------------
-            # FOR loop: push a new block scope covering the init clause
-            # and the loop body. Skip the header (LPAREN...RPAREN) so the
-            # init tokens are processed normally inside the new scope.
-            # The loop body LBRACE is consumed here; its RBRACE will pop
-            # this scope via the is_block_scope stack.
-            # ----------------------------------------------------------
-            if typ == "FOR":
-                self.advance()  # consume 'for'
-                for_scope = Scope(f"for_{self.pos}", current_scope())
-                scope_stack.append(for_scope)
-                is_block_scope.append(True)
-                # Skip '('
-                if _type(self.peek()) == "LPAREN":
-                    self.advance()
-                # Now let the main loop process the init clause tokens
-                # (they will be seen as normal type-keyword or identifier
-                # statements within the new for_scope).
-                continue
-
-            # ----------------------------------------------------------
-            # SEMICOLON inside for-header: separates init / cond / post.
-            # Just advance; the expressions are not yet evaluated by the
-            # structurer, only declarations matter here.
-            # ----------------------------------------------------------
-            if typ == "SEMICOLON":
-                self.advance()
-                continue
-
-            # ----------------------------------------------------------
-            # RPAREN: end of for-header. The next token should be LBRACE
-            # (the loop body); consume RPAREN here and let LBRACE be
-            # handled in the next iteration (it will append False to
-            # is_block_scope since the scope was already pushed for FOR).
-            # ----------------------------------------------------------
-            if typ == "RPAREN":
-                self.advance()
-                continue
-
-            # ----------------------------------------------------------
-            # Type-keyword-led declarations: int x = -500;
-            # Also detects function definitions: int main() { ...
-            # ----------------------------------------------------------
-            if typ in TYPE_KEYWORDS:
-                self.advance()
-                name_tok = self.peek()
-                if _type(name_tok) == "IDENTIFIER":
-                    name = _value(name_tok)
-                    self.advance()  # consume identifier
-
-                    # Function definition: int main() {
-                    if _type(self.peek()) == "LPAREN":
-                        self.advance()  # consume '('
-                        depth = 1
-                        while depth > 0:
-                            t = self.peek()
-                            if t is None:
-                                break
-                            if _type(t) == "LPAREN":
-                                depth += 1
-                            elif _type(t) == "RPAREN":
-                                depth -= 1
-                            self.advance()
-                        func_callee = Callee(name, current_scope(), None)
-                        key = obj_key(name, current_scope())
-                        self.objects[key] = func_callee
-                        self._order.setdefault(key, self.pos)
-                        # Push a new function scope; its LBRACE is consumed here
-                        if _type(self.peek()) == "LBRACE":
-                            self.advance()  # consume '{'
-                            func_scope = Scope(name, current_scope())
-                            scope_stack.append(func_scope)
-                            is_block_scope.append(True)
-                        continue
-
-                    # Variable declaration with optional initializer
-                    if self.match("ASSIGN"):
-                        value_tokens = []
-                        while True:
-                            nxt_tok = self.peek()
-                            if nxt_tok is None or _type(nxt_tok) == "SEMICOLON":
-                                break
-                            self.advance()
-                            value_tokens.append(nxt_tok)
-                        assigned_value = self._parse_literal_value(value_tokens, _type, _value)
-                        var_callee = Callee(name, current_scope(), assigned_value)
-                        key = obj_key(name, current_scope())
-                        self.objects[key] = var_callee
-                        self._order.setdefault(key, self.pos)
-                        if _type(self.peek()) == "SEMICOLON":
-                            self.advance()
-                    else:
-                        var_callee = Callee(name, current_scope(), None)
-                        key = obj_key(name, current_scope())
-                        self.objects[key] = var_callee
-                        self._order.setdefault(key, self.pos)
-                continue
-
-            # ----------------------------------------------------------
-            # Identifier-led statements
-            # ----------------------------------------------------------
-            if typ == "IDENTIFIER":
-                name = _value(cur)
-                self.advance()
-                nxt = self.peek()
-                nxt_type = _type(nxt)
-
-                if nxt_type == "ASSIGN":
-                    self.advance()  # consume '='
-                    value_tokens = []
-                    while True:
-                        nxt_tok = self.peek()
-                        if nxt_tok is None or _type(nxt_tok) == "SEMICOLON":
-                            break
-                        self.advance()
-                        value_tokens.append(nxt_tok)
-                    assigned_value = self._parse_literal_value(value_tokens, _type, _value)
-                    var_callee = Callee(name, current_scope(), assigned_value)
-                    key = obj_key(name, current_scope())
-                    self.objects[key] = var_callee
-                    self._order.setdefault(key, self.pos)
-                    if _type(self.peek()) == "SEMICOLON":
-                        self.advance()
-                    continue
-
-                if nxt_type == "LPAREN":
-                    self.advance()  # consume '('
-                    args = self.collect_args()
-                    lookup_key = obj_key(name, current_scope())
-                    callee_node = self.objects.get(lookup_key)
-                    if callee_node is None:
-                        program_key = obj_key(name, program)
-                        callee_node = self.objects.get(program_key)
-                    if callee_node is None:
-                        callee_node = Callee(name, current_scope(), None)
-                        lookup_key = obj_key(name, current_scope())
-                        self.objects[lookup_key] = callee_node
-                        self._order.setdefault(lookup_key, self.pos)
-                    caller_name = f"call_{name}_{self.pos}"
-                    caller_node = Caller(caller_name, current_scope())
-                    caller_node.call(callee_node, *args)
-                    caller_key = obj_key(caller_name, current_scope())
-                    self.objects[caller_key] = caller_node
-                    self._order.setdefault(caller_key, self.pos)
-                    if _type(self.peek()) == "SEMICOLON":
-                        self.advance()
-                    continue
-
-                continue
-            else:
-                self.advance()
-
-        # Link each Caller to its callee's children/objects.
-        for obj in self.objects.values():
-            if isinstance(obj, Caller):
-                if obj.dependencies:
-                    callee_node = obj.dependencies[0][0]
-                    obj.callee_children = {
-                        "callees": callee_node.scope.callees,
-                        "callers": callee_node.scope.callers,
-                        "generic": callee_node.scope.children,
-                    }
-
-        sorted_keys = sorted(self._order.keys(), key=lambda k: self._order[k])
+    def build_from_ast(self):
+        """Walk self.ast and return an ordered list of graph nodes."""
+        program_scope = Scope("program")
+        self._walk_program(self.ast, program_scope)
+        self._link_callee_children()
+        sorted_keys = sorted(self._order, key=lambda k: self._order[k])
         return [self.objects[k] for k in sorted_keys]
 
+    # ------------------------------------------------------------------
+    # Walkers
+    # ------------------------------------------------------------------
+
+    def _walk_program(self, node: Program, scope: Scope):
+        for decl in node.declarations:
+            self._walk_node(decl, scope)
+
+    def _walk_node(self, node, scope: Scope):
+        """Dispatch to the appropriate walker based on AST node type."""
+        if isinstance(node, Function):
+            self._walk_function(node, scope)
+        elif isinstance(node, Declaration):
+            self._walk_declaration(node, scope)
+        elif isinstance(node, For):
+            self._walk_for(node, scope)
+        elif isinstance(node, Compound):
+            self._walk_compound(node, scope)
+        elif isinstance(node, If):
+            self._walk_if(node, scope)
+        elif isinstance(node, While):
+            self._walk_while(node, scope)
+        elif isinstance(node, Return):
+            if node.expr is not None:
+                self._walk_expr(node.expr, scope)
+        elif isinstance(node, ExprStmt):
+            if node.expr is not None:
+                self._walk_expr(node.expr, scope)
+        elif isinstance(node, (Assignment, Binary, Unary, Call, ArrayAccess, Var, Literal)):
+            self._walk_expr(node, scope)
+        # Other node types (Break, Continue, etc.) have no graph impact yet
+
+    def _walk_function(self, node: Function, parent_scope: Scope):
+        """Register function as a Callee in the parent scope, then walk its
+        body in a new child scope named after the function."""
+        callee = Callee(node.name, parent_scope, None)
+        self._register(callee, parent_scope)
+        func_scope = Scope(node.name, parent_scope)
+        self._walk_compound(node.body, func_scope)
+
+    def _walk_declaration(self, node: Declaration, scope: Scope):
+        """Register a variable declaration as a Callee with its initial value."""
+        value = _extract_literal(node.initializer) if node.initializer is not None else None
+        callee = Callee(node.name, scope, value)
+        self._register(callee, scope)
+        # Also walk initializer for any embedded calls
+        if node.initializer is not None:
+            self._walk_expr(node.initializer, scope)
+
+    def _walk_for(self, node: For, parent_scope: Scope):
+        """Push a new scope for the for-loop so that the init declaration
+        (e.g. 'int i = 0') is scoped to the loop, not the enclosing function.
+        The loop body shares the same for-scope."""
+        for_scope = Scope(f"for_{self._next_id()}", parent_scope)
+        if node.init is not None:
+            self._walk_node(node.init, for_scope)
+        if node.cond is not None:
+            self._walk_expr(node.cond, for_scope)
+        if node.post is not None:
+            self._walk_expr(node.post, for_scope)
+        self._walk_node(node.body, for_scope)
+
+    def _walk_compound(self, node: Compound, scope: Scope):
+        """Walk all statements in a block. Does NOT push a new scope —
+        the caller is responsible for creating the appropriate scope."""
+        for stmt in node.stmts:
+            self._walk_node(stmt, scope)
+
+    def _walk_if(self, node: If, scope: Scope):
+        self._walk_expr(node.cond, scope)
+        self._walk_node(node.then_branch, scope)
+        if node.else_branch is not None:
+            self._walk_node(node.else_branch, scope)
+
+    def _walk_while(self, node: While, scope: Scope):
+        self._walk_expr(node.cond, scope)
+        self._walk_node(node.body, scope)
+
+    def _walk_expr(self, node, scope: Scope):
+        """Walk an expression node, registering any Call nodes as Callers."""
+        if isinstance(node, Call):
+            self._walk_call(node, scope)
+        elif isinstance(node, Assignment):
+            self._walk_expr(node.target, scope)
+            self._walk_expr(node.value, scope)
+        elif isinstance(node, Binary):
+            self._walk_expr(node.left, scope)
+            self._walk_expr(node.right, scope)
+        elif isinstance(node, Unary):
+            self._walk_expr(node.operand, scope)
+        elif isinstance(node, ArrayAccess):
+            self._walk_expr(node.array, scope)
+            self._walk_expr(node.index, scope)
+        # Var and Literal have no sub-expressions to walk
+
+    def _walk_call(self, node: Call, scope: Scope):
+        """Register a function call as a Caller node linked to its Callee."""
+        # Resolve callee name
+        if isinstance(node.callee, Var):
+            callee_name = node.callee.name
+        else:
+            # Complex callee expression (e.g. function pointer) — walk it and skip
+            self._walk_expr(node.callee, scope)
+            for arg in node.args:
+                self._walk_expr(arg, scope)
+            return
+
+        # Look up or lazily create the Callee node
+        callee_key = self._obj_key(callee_name, scope)
+        callee_node = self.objects.get(callee_key)
+        if callee_node is None:
+            # Search up the scope chain
+            found = scope.called(callee_name)
+            if found is not None and isinstance(found, Callee):
+                callee_node = found
+            else:
+                # Forward declaration / extern — register lazily in current scope
+                callee_node = Callee(callee_name, scope, None)
+                self._register(callee_node, scope)
+
+        # Build arg list (raw AST nodes for now)
+        args = list(node.args)
+
+        caller_name = f"call_{callee_name}_{self._next_id()}"
+        caller = Caller(caller_name, scope)
+        caller.call(callee_node, *args)
+        self._register(caller, scope)
+
+        # Walk args for nested calls
+        for arg in node.args:
+            self._walk_expr(arg, scope)
+
+    # ------------------------------------------------------------------
+    # Post-processing
+    # ------------------------------------------------------------------
+
+    def _link_callee_children(self):
+        """Link each Caller to its callee's child scope for downstream use."""
+        for obj in self.objects.values():
+            if isinstance(obj, Caller) and obj.dependencies:
+                callee_node = obj.dependencies[0][0]
+                obj.callee_children = {
+                    "callees": callee_node.scope.callees,
+                    "callers": callee_node.scope.callers,
+                    "generic": callee_node.scope.children,
+                }
+
+
+# ============================================================
+# Self-test
+# ============================================================
 
 if __name__ == "__main__":
-    main = Scope("main")
-    stdio = Lib("stdio", main)
+    main_scope = Scope("main")
+    stdio = Lib("stdio", main_scope)
 
     def double(x):
         print(f"double called with {x}")
         return x * 2
 
     printf = Callee("printf", stdio.scope, double)
-
-    x = Callee("x", main, 5)
-    y = Caller("y", main, 3)
-
+    x = Callee("x", main_scope, 5)
+    y = Caller("y", main_scope, 3)
     y.call(x)
     y.call(printf, x)
-
     print("y.eval() =", y.eval())  # 3 + 5 + 10 = 18
