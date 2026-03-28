@@ -33,6 +33,7 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 | Keyword | Description |
 |---|---|
 | `struct` | Plain struct (no inheritance) |
+| `typed` | 🆕 Typed struct (with inheritance) |
 | `space` | 🆕 Library namespace declaration |
 | `typedef` | C11 type alias |
 | `union` | C11 union |
@@ -70,9 +71,9 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 
 | Keyword | Description |
 |---|---|
-| `using` | 🆕 Import a symbol from a library |
+| `using` | 🆕 Import symbols or entire libraries |
 | `show` | 🆕 Globalize a library or namespace |
-| `lib:` | 🆕 Explicit plstd access prefix |
+| `lib:` | 🆕 Explicit plib access prefix |
 
 ---
 

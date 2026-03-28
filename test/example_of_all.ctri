@@ -8,30 +8,31 @@ using <plstd> // new library imports — high-level standard utilities (project-
 #include <stdio.h> // C standard IO for printf
 
 // struct with constructors and member function
-typed struct Example(value) {
-    init {
-      int self.value = value; // integer member storing the example value
+typed struct Example(int value) {
+    init() {
+      self.value = value; // integer member storing the example value
     }
     end {}
     // display: prints the provided value (intended as member or param)
-    void display(value) {
+    void display(int value) {
         printf("Value: %d\n", value);
     }
 };
 
-typed struct inheritor&Example {
+typed struct Inheritor&Example {
     // inheritor: demonstrates an inheriting struct (syntax is language-specific)
-    init {}
+    init() {
+        self.name = "Default";
+    }
     end {}
     string name; // member to store a name
-    printd(name); // plstd print function, just like printf
 };
 
 
 
 void function_example(tuple loop) {
     // iterate over a tuple-like collection and print each element
-    for(int i = 0; i < args.size(); i++) {
+    for(int i = 0; i < len(loop); i++) {
         printf("element %d: %k\n", i, loop[i]);
     }
 }
@@ -52,7 +53,7 @@ void vars() {
 
 int main() {
   
-    Example structure(1);
+    Example structure = Example(1);
     structure.display(structure.value);
   
     // inline assembly block demonstrating a simple write and exit syscall on x86_64
@@ -62,29 +63,25 @@ int main() {
         section .data
         char[20] msg = "Hello, World!\n"
         
-        
-        
         section .text
-        global _start
-        _start:
-            ; write syscall
-            mov rax, 1             ; syscall: write
-            mov rdi, 1             ; file descriptor: stdout
-            mov rsi, msg           ; pointer to message
-            mov rdx, 14            ; message length
-            syscall
+        ; write syscall
+        mov rax, 1             ; syscall: write
+        mov rdi, 1             ; file descriptor: stdout
+        mov rsi, msg           ; pointer to message
+        mov rdx, 14            ; message length
+        syscall
 
-            ; exit syscall
-            mov rax, 60            ; syscall: exit
-            xor rdi, rdi           ; status: 0
-            syscall
+        ; exit syscall
+        mov rax, 60            ; syscall: exit
+        xor rdi, rdi           ; status: 0
+        syscall
     }
     
     // call example: bring local vars into scope (language-specific "using" syntax)
     using vars&a;
     int y = a + 5; // use 'a' from vars()
-    lamb x(a,b) = a + b; // lambda-like function to add two numbers
-    int result = x(y, 10); // call lambda
+    lamb add(int a, int b) = a + b; // lambda-like function to add two numbers
+    int result = add(y, 10); // call lambda
 
     // modify the message declared in asm data (note: actual behavior depends on language/ABI)
     msg = "Goodbye, World!\n";
@@ -94,6 +91,5 @@ int main() {
     autoremove allocate ptr = &arr; // example of smart allocation/ownership
     free(ptr); // free the allocated resource
 
-    
     return 0;
 }

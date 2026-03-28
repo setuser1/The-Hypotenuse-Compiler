@@ -22,6 +22,9 @@ The compiler detects whether a file is an **executable** (has a `main` function)
 ## 📦 Imports
 
 ```c
+// Import an entire plib (project-specific library) 🔗
+using <plstd>
+
 // Import a specific symbol from a system library 🔗
 using random from <math>
 
@@ -104,10 +107,11 @@ int sum(auto args*) {
 
 ## 🐑 Lambdas (`lamb`) 🆕
 
-Named lambdas — always typed.
+Named lambdas — return type is optional.
 
 ```c
 lamb double(int num) = num*2;
+lamb add(int a, int b) = a + b;
 
 auto result = double(5);  // result = 10
 ```
@@ -135,7 +139,7 @@ struct Point(int x, int y) {
 ### Typed Struct (Native Type + Inheritance) 🆕
 
 ```c
-Typed struct Animal(string name) {
+typed struct Animal(string name) {
     init() {...}
     string speak() {
         return "...";
@@ -144,7 +148,7 @@ Typed struct Animal(string name) {
 }
 
 // Single inheritance
-Typed struct Dog&Animal(string name) {
+typed struct Dog&Animal(string name) {
     init {...}
     string speak() {
         return "Woof!";
@@ -153,7 +157,7 @@ Typed struct Dog&Animal(string name) {
 }
 
 // Multiple inheritance 🆕
-Typed struct PoliceDog&Dog&Animal(string name, int badge) {
+typed struct PoliceDog&Dog&Animal(string name, int badge) {
     init {...}
     // conflicts resolved via parent namespace: obj.Dog.speak()
     end {...}
@@ -185,9 +189,8 @@ int* q = &p;   // q becomes a plain variable, p drops
 ## 📊 Dynamic Arrays (`dynam`) 🆕
 
 ```c
-dynam int numbers;
-numbers.push(1);
-numbers.push(2);
+dynam int numbers = [1, 2, 3, 4, 5];
+numbers.push(6);
 numbers.remove(0);
 int len = len(numbers);
 ```
@@ -213,6 +216,15 @@ asm addInts(int a, int b) {
     mov rbx, b
     add rax, rbx
     return
+}
+
+// Anonymous assembly block
+asm {
+    syntax x86_64_linux
+    section .data
+    char[20] msg = "Hello, World!\n"
+    section .text
+    ; assembly code here
 }
 ```
 

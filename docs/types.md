@@ -58,9 +58,8 @@ printf("%k", x);
 ### `dynam` — Dynamic Array 📊
 
 ```c
-dynam int numbers;
-numbers.push(5);
-numbers.push(10);
+dynam int numbers = [1, 2, 3, 4, 5];
+numbers.push(6);
 numbers.pop();       // removes last
 numbers.remove(0);   // removes by index
 int size = len(numbers);
@@ -109,13 +108,13 @@ printd(v.length());   // 5.0
 Constructors, member functions, **inheritance**, becomes a native type.
 
 ```c
-Typed struct Animal(string name) {
+typed struct Animal(string name) {
     init {...}
     string speak() { return "..."; }
     end {...}
 }
 
-Typed struct Dog&Animal(string name) {
+typed struct Dog&Animal(string name) {
     init {...}
     string speak() { return "Woof! 🐕"; }
     end {...}
@@ -128,7 +127,7 @@ printfs(d.speak());   // Woof! 🐕
 #### Multiple Inheritance 🔀
 
 ```c
-Typed struct PoliceDog&Dog&Animal(string name, int badge) {
+typed struct PoliceDog&Dog&Animal(string name, int badge) {
     init {...}
     // Constructor order: Animal -> Dog -> PoliceDog
     // Conflict resolution: obj.Animal.speak(), obj.Dog.speak()
