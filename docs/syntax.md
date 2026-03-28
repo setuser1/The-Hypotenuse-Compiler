@@ -211,7 +211,7 @@ auto first = t[0];
 ```c
 asm addInts(int a, int b) {
     syntax x86_64_linux
-    section .text
+    .section .text
     mov rax, a
     mov rbx, b
     add rax, rbx
@@ -220,7 +220,7 @@ asm addInts(int a, int b) {
 
 // Anonymous assembly block
 asm {
-    syntax x86_64_linux
+    .syntax x86_64_linux
     section .data
     char[20] msg = "Hello, World!\n"
     section .text
