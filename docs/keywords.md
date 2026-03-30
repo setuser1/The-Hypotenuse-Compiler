@@ -34,6 +34,7 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 |---|---|
 | `struct` | Plain struct (no inheritance) |
 | `space` | *NEW* Library namespace declaration |
+| `typed` |  Typed struct (with inheritance) |
 | `typedef` | C11 type alias |
 | `union` | C11 union |
 | `enum` | C11 enumeration |

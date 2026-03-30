@@ -23,6 +23,10 @@ The compiler detects whether a file is an **executable** (has a `main` function)
 
 ```c
 // Import a specific symbol from a system library
+// Import an entire plib (project-specific library)
+using <plstd>
+
+// Import a specific symbol from a system library
 using random from <math>
 
 // Import from a local library
@@ -104,10 +108,11 @@ int sum(auto args*) {
 
 ## Lambdas (`lamb`) *NEW*
 
-Named lambdas — always typed.
+Named lambdas — return type is optional.
 
 ```c
 lamb double(int num) = num*2;
+lamb add(int a, int b) = a + b;
 
 auto result = double(5);  // result = 10
 ```
@@ -135,7 +140,7 @@ struct Point(int x, int y) {
 ### Typed Struct (Native Type + Inheritance) *NEW*
 
 ```c
-Typed struct Animal(string name) {
+typed struct Animal(string name) {
     init() {...}
     string speak() {
         return "...";
@@ -144,7 +149,7 @@ Typed struct Animal(string name) {
 }
 
 // Single inheritance
-Typed struct Dog&Animal(string name) {
+typed struct Dog&Animal(string name) {
     init {...}
     string speak() {
         return "Woof!";
@@ -185,9 +190,8 @@ int* q = &p;   // q becomes a plain variable, p drops
 ## Dynamic Arrays (`dynam`) *NEW*
 
 ```c
-dynam int numbers;
-numbers.push(1);
-numbers.push(2);
+dynam int numbers = [1, 2, 3, 4, 5];
+numbers.push(6);
 numbers.remove(0);
 int len = len(numbers);
 ```
@@ -208,11 +212,20 @@ auto first = t[0];
 ```c
 asm addInts(int a, int b) {
     syntax x86_64_linux
-    section .text
+    .section .text
     mov rax, a
     mov rbx, b
     add rax, rbx
     return
+}
+
+// Anonymous assembly block
+asm {
+    .syntax x86_64_linux
+    section .data
+    char[20] msg = "Hello, World!\n"
+    section .text
+    ; assembly code here
 }
 ```
 

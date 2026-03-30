@@ -30,7 +30,7 @@ asm functionName(params) {
 ```c
 asm int addInts(int a, int b) {
     syntax x86_64_linux
-    section .text
+    .section .text
     mov rax, a
     mov rbx, b
     add rax, rbx
@@ -50,6 +50,7 @@ int result = addInts(3, 7);   // result = 10
 
 ```c
 asm void exitProcess(int code) {
+    .section .text
     mov rax, 60    // sys_exit
     mov rdi, code
     syscall
