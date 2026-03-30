@@ -62,10 +62,10 @@ asm void exitProcess(int code) {
 
 | Property | Value |
 |---|---|
-| 🏗️ Architecture | x86_64 |
-| 🐧 Platform | Linux |
-| 🔤 Syntax | NASM (Intel syntax) |
-| 📤 Output | ELF object file per asm block |
+| Architecture | x86_64 |
+| Platform | Linux |
+| Syntax | NASM (Intel syntax) |
+| Output | ELF object file per asm block |
 
 ---
 
