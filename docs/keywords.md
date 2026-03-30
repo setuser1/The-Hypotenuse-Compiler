@@ -1,14 +1,14 @@
-# 🔑 C△ Keyword Reference
+# C△ Keyword Reference
 
 <p align="center">
   <img src="../assets/logo.png" alt="C△ Logo" width="120"/>
 </p>
 
-This document lists all keywords in C△, their purpose, and basic usage. Keywords marked 🚫 are **deprecated** from C11 and will cause a compiler error if used.
+This document lists all keywords in C△, their purpose, and basic usage. Keywords marked "*Removed*" are **deprecated** from C11 and will cause a compiler error if used.
 
 ---
 
-## 🧱 Type Keywords
+## Type Keywords
 
 | Keyword | Description |
 |---|---|
@@ -21,26 +21,26 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 | `long` | Long integer |
 | `signed` | Explicitly signed integer |
 | `unsigned` | Unsigned integer |
-| `string` | 🆕 First-class string type |
-| `auto` | 🆕 Dynamic / inferred type |
-| `dynam` | 🆕 Dynamic array |
-| `tuple` | 🆕 Dynamic heterogeneous list |
+| `string` | *NEW* First-class string type |
+| `auto` | *NEW* Dynamic / inferred type |
+| `dynam` | *NEW* Dynamic array |
+| `tuple` | *NEW* Dynamic heterogeneous list |
 
 ---
 
-## 🏗️ Structure Keywords
+## Structure Keywords
 
 | Keyword | Description |
 |---|---|
 | `struct` | Plain struct (no inheritance) |
-| `space` | 🆕 Library namespace declaration |
+| `space` | *NEW* Library namespace declaration |
 | `typedef` | C11 type alias |
 | `union` | C11 union |
 | `enum` | C11 enumeration |
 
 ---
 
-## 🔁 Control Flow
+## Control Flow
 
 | Keyword | Description |
 |---|---|
@@ -56,35 +56,35 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 
 ---
 
-## 🧠 Memory Keywords
+## Memory Keywords
 
 | Keyword | Description |
 |---|---|
-| `allocate` | 🆕 Heap allocation (`allocate type name [size]`) |
+| `allocate` | *NEW* Heap allocation (`allocate type name [size]`) |
 | `free` | Manual heap deallocation |
-| `autoremove` | 🆕 Heap alloc freed at last use (simulation pass) |
+| `autoremove` | *NEW* Heap alloc freed at last use (simulation pass) |
 
 ---
 
-## 📦 Module / Import Keywords
+## Module / Import Keywords
 
 | Keyword | Description |
 |---|---|
-| `using` | 🆕 Import a symbol from a library |
-| `show` | 🆕 Globalize a library or namespace |
-| `lib:` | 🆕 Explicit plstd access prefix |
+| `using` | *NEW* Import a symbol from a library |
+| `show` | *NEW* Globalize a library or namespace |
+| `lib:` | *NEW* Explicit plstd access prefix |
 
 ---
 
-## ⚙️ Other Keywords
+## Other Keywords
 
 | Keyword | Description |
 |---|---|
-| `asm` | 🆕 Inline assembly block |
-| `lamb` | 🆕 Named lambda |
-| `self` | 🆕 Optional struct self-reference |
-| `init` | 🆕 Struct constructor lifecycle function |
-| `end` | 🆕 Struct destructor lifecycle function |
+| `asm` | *NEW* Inline assembly block |
+| `lamb` | *NEW* Named lambda |
+| `self` | *NEW* Optional struct self-reference |
+| `init` | *NEW* Struct constructor lifecycle function |
+| `end` | *NEW* Struct destructor lifecycle function |
 | `sizeof` | C11 size operator |
 | `const` | Constant qualifier |
 | `volatile` | Volatile qualifier |
@@ -95,14 +95,14 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 
 ---
 
-## 🚫 Deprecated Keywords
+## Deprecated Keywords
 
 These C11 keywords are **not supported** in C△ and will raise a `SyntaxError`:
 
 | Keyword | Reason |
 |---|---|
 | `auto` *(C11 meaning)* | Repurposed as dynamic type |
-| `restrict` | Removed |
-| `_Bool` | Removed |
-| `_Complex` | Removed |
-| `_Imaginary` | Removed |
+| `restrict` | *Removed* |
+| `_Bool` | *Removed* |
+| `_Complex` | *Removed* |
+| `_Imaginary` | *Removed* |
