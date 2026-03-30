@@ -1,4 +1,4 @@
-# 🧱 C△ Type System
+# C△ Type System
 
 <p align="center">
   <img src="../assets/logo.png" alt="C△ Logo" width="120"/>
@@ -8,7 +8,7 @@ C△ supports all C11 primitive types plus several new first-class types designe
 
 ---
 
-## 🔢 Primitive Types (inherited from C11)
+## Primitive Types (inherited from C11)
 
 | Type | Size | Description |
 |---|---|---|
@@ -23,9 +23,9 @@ C△ supports all C11 primitive types plus several new first-class types designe
 
 ---
 
-## 🆕 C△ New Types
+## *NEW* C△ New Types
 
-### `string` — First-class string 📝
+### `string` — First-class string
 
 ```c
 string greeting = "Hello, world!";
@@ -34,13 +34,13 @@ string name = "Hypotenuse";
 // Concatenation
 string full = greeting + " " + name;
 
-// f-string printing via plstd 🖨️
+// f-string printing via plstd
 printfs("{greeting}, {name}!");
 ```
 
 ---
 
-### `auto` — Dynamic / Inferred Type 🔮
+### `auto` — Dynamic / Inferred Type
 
 ```c
 auto x = 42;          // inferred as int
@@ -51,11 +51,11 @@ auto f = 3.14;        // inferred as double
 printf("%k", x);
 ```
 
-> 💡 `auto` is type-aware at runtime via the simulation pass.
+> `auto` is type-aware at runtime via the simulation pass.
 
 ---
 
-### `dynam` — Dynamic Array 📊
+### `dynam` — Dynamic Array
 
 ```c
 dynam int numbers;
@@ -66,11 +66,11 @@ numbers.remove(0);   // removes by index
 int size = len(numbers);
 ```
 
-> ⚠️ `dynam` arrays grow and shrink at runtime. No fixed capacity.
+> `dynam` arrays grow and shrink at runtime. No fixed capacity.
 
 ---
 
-### `tuple` — Heterogeneous List 🎒
+### `tuple` — Heterogeneous List
 
 ```c
 tuple t = [1, "hello", 3.14, 'x'];
@@ -78,11 +78,11 @@ auto first = t[0];    // 1
 auto second = t[1];   // "hello"
 ```
 
-> 💡 Tuples are declared with `[]` and can hold mixed types.
+> Tuples are declared with `[]` and can hold mixed types.
 
 ---
 
-## 🏗️ Struct Types
+## Struct Types
 
 ### Plain Struct
 
@@ -104,7 +104,7 @@ printd(v.length());   // 5.0
 
 ---
 
-### `Typed` Struct — Native Type + Inheritance 👑
+### `Typed` Struct — Native Type + Inheritance
 
 Constructors, member functions, **inheritance**, becomes a native type.
 
@@ -117,15 +117,15 @@ Typed struct Animal(string name) {
 
 Typed struct Dog&Animal(string name) {
     init {...}
-    string speak() { return "Woof! 🐕"; }
+    string speak() { return "Woof!"; }
     end {...}
 }
 
 Dog d = Dog("Rex");
-printfs(d.speak());   // Woof! 🐕
+printfs(d.speak());   // Woof!
 ```
 
-#### Multiple Inheritance 🔀
+#### Multiple Inheritance
 
 ```c
 Typed struct PoliceDog&Dog&Animal(string name, int badge) {
@@ -138,7 +138,7 @@ Typed struct PoliceDog&Dog&Animal(string name, int badge) {
 
 ---
 
-## 🎯 Type Format Specifiers
+## Type Format Specifiers
 
 | Specifier | Type |
 |---|---|
@@ -146,4 +146,4 @@ Typed struct PoliceDog&Dog&Animal(string name, int badge) {
 | `%f` | `float` / `double` |
 | `%s` | `string` / `char*` |
 | `%c` | `char` |
-| `%k` | `auto` (type-aware) 🆕 |
+| `%k` | `auto` (type-aware) *NEW* |
