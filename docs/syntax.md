@@ -1,4 +1,4 @@
-# ✍️ C△ Syntax Guide
+# C△ Syntax Guide
 
 <p align="center">
   <img src="../assets/logo.png" alt="C△ Logo" width="120"/>
@@ -8,7 +8,7 @@ A complete reference for C△ syntax with examples. C△ inherits C11 syntax and
 
 ---
 
-## 📁 File Extensions
+## File Extensions
 
 | Extension | Purpose |
 |---|---|
@@ -19,30 +19,30 @@ The compiler detects whether a file is an **executable** (has a `main` function)
 
 ---
 
-## 📦 Imports
+## Imports
 
 ```c
-// Import a specific symbol from a system library 🔗
+// Import a specific symbol from a system library
 using random from <math>
 
-// Import from a local library 📂
+// Import from a local library
 using helper from "utils"
 
-// Globalize an entire library (all symbols in scope) 🌍
+// Globalize an entire library (all symbols in scope)
 show plstd
 
 // Globalize one module from plstd
 show lib:io
 
-// Intra-file immutable reference 🔒
+// Intra-file immutable reference
 using scope&myVar
 ```
 
-> 💡 The compiler auto-imports what is used — manual `using` is optional style.
+> The compiler auto-imports what is used — manual `using` is optional style.
 
 ---
 
-## 🔢 Variables
+## Variables
 
 ```c
 // Standard C types
@@ -50,20 +50,20 @@ int x = 5;
 float pi = 3.14;
 char c = 'A';
 
-// C△ string type 🆕
+// C△ string type *NEW*
 string name = "Hypotenuse";
 
-// Dynamic / inferred type 🆕
+// Dynamic / inferred type *NEW*
 auto value = 42;
 auto label = "hello";
 
-// Multiple variable packing 🆕
+// Multiple variable packing *NEW*
 auto x, z, w = 10;   // all three initialized to 10
 ```
 
 ---
 
-## 🔁 Control Flow
+## Control Flow
 
 ```c
 // Standard if/else
@@ -86,7 +86,7 @@ while (x > 0) {
 
 ---
 
-## 🏗️ Functions
+## Functions
 
 ```c
 // Standard function
@@ -94,7 +94,7 @@ int add(int a, int b) {
     return a + b;
 }
 
-// Variadic argument stream 🆕
+// Variadic argument stream *NEW*
 int sum(auto args*) {
     // args is a pointer to the argument stream
 }
@@ -102,7 +102,7 @@ int sum(auto args*) {
 
 ---
 
-## 🐑 Lambdas (`lamb`) 🆕
+## Lambdas (`lamb`) *NEW*
 
 Named lambdas — always typed.
 
@@ -114,7 +114,7 @@ auto result = double(5);  // result = 10
 
 ---
 
-## 🧱 Structs
+## Structs
 
 ### Plain Struct
 
@@ -132,7 +132,7 @@ struct Point(int x, int y) {
 }
 ```
 
-### Typed Struct (Native Type + Inheritance) 🆕
+### Typed Struct (Native Type + Inheritance) *NEW*
 
 ```c
 Typed struct Animal(string name) {
@@ -152,7 +152,7 @@ Typed struct Dog&Animal(string name) {
     end {...}
 }
 
-// Multiple inheritance 🆕
+// Multiple inheritance *NEW*
 Typed struct PoliceDog&Dog&Animal(string name, int badge) {
     init {...}
     // conflicts resolved via parent namespace: obj.Dog.speak()
@@ -162,27 +162,27 @@ Typed struct PoliceDog&Dog&Animal(string name, int badge) {
 
 ---
 
-## 🧠 Memory
+## Memory
 
 ```c
-// Heap allocation 🆕
+// Heap allocation *NEW*
 allocate int arr[100];
 free arr;
 
-// Auto-freed at last use 🆕
+// Auto-freed at last use *NEW*
 autoremove allocate int buf[512];
 
 // Custom size types
 allocate int x(200) = 100000000000;
 
-// Robbery: another pointer takes ownership 🆕
+// Robbery: another pointer takes ownership *NEW*
 autoremove allocate int p[10];
 int* q = &p;   // q becomes a plain variable, p drops
 ```
 
 ---
 
-## 📊 Dynamic Arrays (`dynam`) 🆕
+## Dynamic Arrays (`dynam`) *NEW*
 
 ```c
 dynam int numbers;
@@ -194,7 +194,7 @@ int len = len(numbers);
 
 ---
 
-## 📦 Tuples 🆕
+## Tuples *NEW*
 
 ```c
 tuple t = [1, "hello", 3.14];
@@ -203,7 +203,7 @@ auto first = t[0];
 
 ---
 
-## ⚙️ Inline Assembly (`asm`) 🆕
+## Inline Assembly (`asm`) *NEW*
 
 ```c
 asm addInts(int a, int b) {
@@ -216,11 +216,11 @@ asm addInts(int a, int b) {
 }
 ```
 
-See [assembly.md](assembly.md) for full details. ⚙️
+See [assembly.md](assembly.md) for full details.
 
 ---
 
-## 🔗 Namespace Access
+## Namespace Access
 
 ```c
 // Access a namespace member with ':'
