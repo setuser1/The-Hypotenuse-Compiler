@@ -1,14 +1,14 @@
-# 🚨 C△ Error Reference
+# C△ Error Reference
 
 <p align="center">
   <img src="../assets/logo.png" alt="C△ Logo" width="120"/>
 </p>
 
-This document covers all compiler and runtime errors produced by the Hypotenuse Compiler. C△ errors include **personality messages** — randomized, community-contributed flavor text that makes errors a little more human. 🎭
+This document covers all compiler and runtime errors produced by the Hypotenuse Compiler. C△ errors include **personality messages** — randomized, community-contributed flavor text that makes errors a little more human.
 
 ---
 
-## 🧱 Syntax Errors
+## Syntax Errors
 
 Raised by the **parser** when the token stream doesn't match expected grammar.
 
@@ -23,7 +23,7 @@ Raised by the **parser** when the token stream doesn't match expected grammar.
 
 ---
 
-## 🚫 Deprecated Keyword Errors
+## Deprecated Keyword Errors
 
 Raised immediately when a deprecated C11 keyword is encountered.
 
@@ -34,7 +34,7 @@ Raised immediately when a deprecated C11 keyword is encountered.
 
 ---
 
-## 🔁 Scope Errors
+## Scope Errors
 
 Raised by the **structurer** when the scope graph detects conflicts.
 
@@ -44,7 +44,7 @@ Raised by the **structurer** when the scope graph detects conflicts.
 
 ---
 
-## 🧠 Memory Errors
+## Memory Errors
 
 Raised by the **simulation pass**.
 
@@ -56,7 +56,7 @@ Raised by the **simulation pass**.
 
 ---
 
-## 📁 File Errors
+## File Errors
 
 | Error | Cause |
 |---|---|
@@ -65,8 +65,8 @@ Raised by the **simulation pass**.
 
 ---
 
-## 🔍 Debugging Tips
+## Debugging Tips
 
-- Run with `-t` to see the full token stream and scope graph before errors hit 🔬
-- Check for unclosed `{` braces — the most common cause of EOF errors
-- Remember that `for` loop init declarations are scoped to the loop, not the enclosing function 🔁
+- Run with `-t` to see the full token stream and scope graph before errors hit.
+- Check for unclosed `{` braces — the most common cause of EOF errors.
+- Remember that `for` loop init declarations are scoped to the loop, not the enclosing function.
