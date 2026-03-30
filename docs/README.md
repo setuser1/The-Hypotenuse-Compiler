@@ -4,7 +4,7 @@
   <img src="../assets/logo.png" alt="C△ Logo" width="180"/>
 </p>
 
-Welcome to the official documentation for the **C△ (C Triangle)** programming language and the **Hypotenuse Compiler**. 🔺
+Welcome to the official documentation for the **C△ (C Triangle)** programming language and the **Hypotenuse Compiler**.
 
 ---
 
