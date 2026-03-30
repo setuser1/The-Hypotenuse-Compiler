@@ -1,7 +1,7 @@
 # C△ Standard Library (plstd)
 
 <p align="center">
-  <img src="../assets/logo.jpg" alt="C△ Logo" width="120"/>
+  <img src="../assets/logo.png" alt="C△ Logo" width="120"/>
 </p>
 
 **plstd** is the C△ standard library. It is implemented in C△ itself, with `asm` blocks only where syscalls or low-level primitives are needed.
