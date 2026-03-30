@@ -1,14 +1,14 @@
-# ⚙️ C△ Inline Assembly
+# C△ Inline Assembly
 
 <p align="center">
   <img src="../assets/logo.png" alt="C△ Logo" width="120"/>
 </p>
 
-C△ supports **inline assembly blocks** via the `asm` keyword. Each `asm` block is compiled to a separate `.asm` file, assembled with NASM, and linked into the final binary. 🔧
+C△ supports **inline assembly blocks** via the `asm` keyword. Each `asm` block is compiled to a separate `.asm` file, assembled with NASM, and linked into the final binary.
 
 ---
 
-## 📝 Syntax
+## Syntax
 
 ```c
 asm functionName(params) {
@@ -21,11 +21,11 @@ asm functionName(params) {
 - **Parameters** use native C△ type declarations instead of assembler directives.
 - syntax describes what syntax is being used
 - `return` replaces `ret` — implicit return defaults to `rax` on x86_64.
-- Each `asm` block becomes its **own `.asm` file**. 📄
+- Each `asm` block becomes its **own `.asm` file**.
 
 ---
 
-## 🧮 Example — Add Two Integers
+## Example — Add Two Integers
 
 ```c
 asm int addInts(int a, int b) {
@@ -38,7 +38,7 @@ asm int addInts(int a, int b) {
 }
 ```
 
-Call it just like a normal function: 📞
+Call it just like a normal function:
 
 ```c
 int result = addInts(3, 7);   // result = 10
@@ -46,7 +46,7 @@ int result = addInts(3, 7);   // result = 10
 
 ---
 
-## 🖥️ Example — Raw Syscall
+## Example — Raw Syscall
 
 ```c
 asm void exitProcess(int code) {
@@ -58,7 +58,7 @@ asm void exitProcess(int code) {
 
 ---
 
-## 🎯 Target
+## Target
 
 | Property | Value |
 |---|---|
@@ -69,22 +69,22 @@ asm void exitProcess(int code) {
 
 ---
 
-## ⚠️ Rules
+## Rules
 
-- 🔒 `asm` blocks are **opaque** to the simulation pass — no last-use analysis inside them
-- 📛 The function name becomes the **global label** in the `.asm` file
-- 🚫 Do not use assembler directives (`db`, `dw`, `section`, etc.) — use C△ declarations instead
-- ✅ Use `return` instead of `ret`
-- ⚡ `asm` functions are assembled with NASM and linked by GCC
+- `asm` blocks are **opaque** to the simulation pass — no last-use analysis inside them
+- The function name becomes the **global label** in the `.asm` file
+- Do not use assembler directives (`db`, `dw`, `section`, etc.) — use C△ declarations instead
+- Use `return` instead of `ret`
+- `asm` functions are assembled with NASM and linked by GCC
 
 ---
 
-## 🔗 Linking
+## Linking
 
 The compiler pipeline handles everything automatically:
 
 ```
 .ctri source
   └──▶ code gen  ──▶  .c file  ──▶  GCC
-  └──▶ asm blocks ──▶  .asm files  ──▶  NASM  ──▶  GCC linker  ──▶  binary 🎉
+  └──▶ asm blocks ──▶  .asm files  ──▶  NASM  ──▶  GCC linker  ──▶  binary
 ```
