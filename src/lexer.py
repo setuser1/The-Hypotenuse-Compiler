@@ -75,6 +75,7 @@ Tokens = [
     ("NOT", re.compile(r"!")),
     ("AND", re.compile(r"&&")),
     ("OR", re.compile(r"\|\|")),
+    ("AMPERSAND", re.compile(r"&")),  # must come after AND (&&)
     ("DOT", re.compile(r"\.")),
     ("LBRACKET", re.compile(r"\[")),
     ("RBRACKET", re.compile(r"]")),

@@ -39,7 +39,7 @@ def print_tokens(tokens):
 
 def print_objects(objects):
     """Pretty-print the Callee/Caller graph objects grouped by scope."""
-    from structure import Callee, Caller
+    from structure import Callee, Caller, callee_value_display_parts
 
     # Group by scope name
     by_scope = {}
@@ -51,11 +51,14 @@ def print_objects(objects):
     for scope_name, nodes in by_scope.items():
         parent = nodes[0].scope.parent
         parent_str = f"  (parent: {parent.name})" if parent else ""
-        print(f"│")
+        print("│")
         print(f"│  scope: {scope_name}{parent_str}")
         for node in nodes:
             if isinstance(node, Callee):
-                print(f"│    Callee  {node.name!r:<20} value={node.value!r}")
+                kind, val_repr = callee_value_display_parts(node.value)
+                print(
+                    f"│    Callee  {node.name!r:<20} kind={kind:<12} value={val_repr}"
+                )
             elif isinstance(node, Caller):
                 callee_name = node.dependencies[0][0].name if node.dependencies else "?"
                 args = node.dependencies[0][1] if node.dependencies else []

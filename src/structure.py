@@ -2,7 +2,6 @@ from parser import (
     Program, Function, Declaration, Compound,
     If, While, For, Return, ExprStmt,
     Assignment, Binary, Unary, Literal, Var, Call, ArrayAccess,
-    Node as ASTNode,
 )
 
 
@@ -64,12 +63,11 @@ class Callee(Node):
         self.value = value
 
     def __repr__(self):
-        val_repr = (
-            repr(self.value)
-            if not isinstance(self.value, Node)
-            else f"<Node {type(self.value).__name__}>"
+        kind, val_repr = callee_value_display_parts(self.value)
+        return (
+            f"Callee(name={self.name!r}, kind={kind}, value={val_repr}, "
+            f"scope={self.scope.name!r})"
         )
-        return f"Callee(name={self.name!r}, value={val_repr}, scope={self.scope.name!r})"
 
     def eval(self, *args, **kwargs):
         if callable(self.value):
@@ -129,8 +127,51 @@ class Lib:
 
 
 # ============================================================
+# Callee value display (issue #83)
+# ============================================================
+
+
+def callee_value_display_parts(value):
+    """Return (kind_label, repr_string) for a Callee.value."""
+    if value is None:
+        return "unknown", "None"
+    if callable(value):
+        return "function", repr(value)
+    if type(value) is bool:
+        return "boolean", repr(value)
+    if type(value) is int:
+        return "integer", repr(value)
+    if type(value) is float:
+        return "float", repr(value)
+    if isinstance(value, Node):
+        return "graph_node", f"<Node {type(value).__name__}>"
+    return "other", repr(value)
+
+
+# ============================================================
 # Literal value extraction from AST expressions
 # ============================================================
+
+def _numeric_binary(op, left, right):
+    """Apply a binary op to two numeric constants; None if unsupported or invalid."""
+    if right == 0 and op in ("/", "%"):
+        return None
+    if op == "+":
+        return left + right
+    if op == "-":
+        return left - right
+    if op == "*":
+        return left * right
+    if op == "/":
+        if isinstance(left, int) and isinstance(right, int):
+            return left // right
+        return left / right
+    if op == "**":
+        return left**right
+    if op == "%":
+        return left % right
+    return None
+
 
 def _extract_literal(expr):
     """Return a Python value from a simple AST expression, or None.
@@ -138,14 +179,32 @@ def _extract_literal(expr):
     Handles:
     - Literal nodes          -> the literal value cast to int/float where possible
     - Unary('-', Literal)    -> negative numeric literal (fix for issue #61)
+    - Unary('+', Literal)    -> unary plus on a constant
+    - Unary('&' / '*', ...)  -> no constant value (issue #87 groundwork)
+    - Binary on constants    -> folded + - * / ** % (issue #43)
     - Anything else          -> None (non-constant expression)
     """
     if isinstance(expr, Literal):
         return _cast_literal(expr.value)
-    if isinstance(expr, Unary) and expr.op == '-' and expr.prefix:
-        inner = _extract_literal(expr.operand)
-        if isinstance(inner, (int, float)):
-            return -inner
+    if isinstance(expr, Unary) and expr.prefix:
+        if expr.op == "-":
+            inner = _extract_literal(expr.operand)
+            if isinstance(inner, (int, float)):
+                return -inner
+        elif expr.op == "+":
+            inner = _extract_literal(expr.operand)
+            if isinstance(inner, (int, float)):
+                return inner
+        elif expr.op in ("&", "*"):
+            return None
+    if isinstance(expr, Binary):
+        left = _extract_literal(expr.left)
+        right = _extract_literal(expr.right)
+        if left is None or right is None:
+            return None
+        if not isinstance(left, (int, float)) or not isinstance(right, (int, float)):
+            return None
+        return _numeric_binary(expr.op, left, right)
     return None
 
 
@@ -192,6 +251,7 @@ class Structor:
         self.objects = {}
         self._order = {}
         self._counter = 0
+        self._func_callee_stack: list = []
 
     def _next_id(self):
         self._counter += 1
@@ -214,6 +274,10 @@ class Structor:
     def build_from_ast(self):
         """Walk self.ast and return an ordered list of graph nodes."""
         program_scope = Scope("program")
+        user_funcs = {
+            d.name for d in self.ast.declarations if isinstance(d, Function)
+        }
+        self._seed_stdlib(program_scope, skip=user_funcs)
         self._walk_program(self.ast, program_scope)
         self._link_callee_children()
         sorted_keys = sorted(self._order, key=lambda k: self._order[k])
@@ -222,6 +286,17 @@ class Structor:
     # ------------------------------------------------------------------
     # Walkers
     # ------------------------------------------------------------------
+
+    def _seed_stdlib(self, scope: Scope, skip: set | frozenset | None = None):
+        """Register common libc symbols so calls resolve without lazy stubs (issue #88)."""
+        skip = skip or frozenset()
+        for name in ("printf",):
+            if name in skip:
+                continue
+            if name in scope.callees:
+                continue
+            callee = Callee(name, scope, None)
+            self._register(callee, scope)
 
     def _walk_program(self, node: Program, scope: Scope):
         for decl in node.declarations:
@@ -244,6 +319,10 @@ class Structor:
         elif isinstance(node, Return):
             if node.expr is not None:
                 self._walk_expr(node.expr, scope)
+                if self._func_callee_stack:
+                    v = _extract_literal(node.expr)
+                    if v is not None:
+                        self._func_callee_stack[-1].value = v
         elif isinstance(node, ExprStmt):
             if node.expr is not None:
                 self._walk_expr(node.expr, scope)
@@ -257,7 +336,11 @@ class Structor:
         callee = Callee(node.name, parent_scope, None)
         self._register(callee, parent_scope)
         func_scope = Scope(node.name, parent_scope)
-        self._walk_compound(node.body, func_scope)
+        self._func_callee_stack.append(callee)
+        try:
+            self._walk_compound(node.body, func_scope)
+        finally:
+            self._func_callee_stack.pop()
 
     def _walk_declaration(self, node: Declaration, scope: Scope):
         """Register a variable declaration as a Callee with its initial value."""

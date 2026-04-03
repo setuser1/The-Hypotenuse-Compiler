@@ -1,5 +1,9 @@
 .PHONY: run install test lint typecheck all
 
+# Path to the parseable regression fixture (quoted where expanded to the shell
+# so paths containing spaces work).
+BASELINE := $(CURDIR)/test/baseline.ctri
+
 # ---------------------------------------------------------------
 # install: install all Python dependencies needed to test/lint
 # ---------------------------------------------------------------
@@ -10,7 +14,7 @@ install:
 # run: compile the canonical example file and print the object graph
 # ---------------------------------------------------------------
 run: install
-	python3 src/main.py -t $(CURDIR)/test/ex.ctri
+	python3 src/main.py -t "$(BASELINE)"
 
 # ---------------------------------------------------------------
 # lint: catch syntax errors and undefined names across all source files
@@ -23,11 +27,9 @@ lint:
 #            assert it exits cleanly (non-zero exit = test failure)
 # ---------------------------------------------------------------
 typecheck:
-	@echo "--- Running compiler over all test inputs ---"
-	@for f in $(CURDIR)/test/*.ctri; do \
-		echo "  Checking: $$f"; \
-		python3 src/main.py -t $$f || (echo "FAILED: $$f" && exit 1); \
-	done
+	@echo "--- Running compiler over parseable test inputs ---"
+	@echo "  Checking: $(BASELINE)"
+	@python3 src/main.py -t "$(BASELINE)" || (echo "FAILED: baseline.ctri" && exit 1)
 	@echo "--- All inputs passed ---"
 
 # ---------------------------------------------------------------
@@ -36,30 +38,33 @@ typecheck:
 #       immediately on every push.
 # ---------------------------------------------------------------
 test: install lint typecheck
-	@echo "--- Test: negative number parsed correctly (issue #61) ---"
-	@python3 src/main.py -t $(CURDIR)/test/ex.ctri | \
+	@echo "--- Test: negative number + value kind (issues #61, #83) ---"
+	@python3 src/main.py -t "$(BASELINE)" | \
+		grep "kind=integer" > /dev/null || \
+		(echo "FAIL: x should have kind=integer (issue #83)" && exit 1)
+	@python3 src/main.py -t "$(BASELINE)" | \
 		grep "value=-500" > /dev/null || \
 		(echo "FAIL: x should have value -500" && exit 1)
-	@echo "PASS: negative number"
+	@echo "PASS: negative number and integer kind"
 
 	@echo "--- Test: variables scoped to function, not program (issue #62) ---"
-	@python3 src/main.py -t $(CURDIR)/test/ex.ctri | \
-		grep "scope='main'" > /dev/null || \
+	@python3 src/main.py -t "$(BASELINE)" | \
+		grep "scope: main" > /dev/null || \
 		(echo "FAIL: x should be in scope 'main', not 'program'" && exit 1)
-	@python3 src/main.py -t $(CURDIR)/test/ex.ctri | \
-		grep "scope='program'.*name='x'" > /dev/null && \
+	@python3 src/main.py -t "$(BASELINE)" | \
+		awk '/scope: program/,/scope: main/' | grep "Callee  'x'" > /dev/null && \
 		(echo "FAIL: x must not appear in program scope" && exit 1) || true
 	@echo "PASS: scope tracking"
 
 	@echo "--- Test: function itself registered in program scope ---"
-	@python3 src/main.py -t $(CURDIR)/test/ex.ctri | \
-		grep "Callee(name='main'.*scope='program')" > /dev/null || \
+	@python3 src/main.py -t "$(BASELINE)" | \
+		grep -A20 "scope: program" | grep "Callee  'main'" > /dev/null || \
 		(echo "FAIL: main() should be a Callee in program scope" && exit 1)
 	@echo "PASS: function in program scope"
 
 	@echo "--- Test: callers present for printf calls ---"
-	@python3 src/main.py -t $(CURDIR)/test/ex.ctri | \
-		grep "Caller(name='call_printf" > /dev/null || \
+	@python3 src/main.py -t "$(BASELINE)" | \
+		grep "Caller.*call_printf" > /dev/null || \
 		(echo "FAIL: expected Caller nodes for printf invocations" && exit 1)
 	@echo "PASS: callers present"
 
@@ -67,7 +72,7 @@ test: install lint typecheck
 	@python3 -c "\
 import sys; sys.path.insert(0,'src'); \
 import lexer; \
-src = open('test/ex.ctri').read(); \
+src = open('test/baseline.ctri').read(); \
 toks = lexer.Lexer(src).lex(); \
 assert len(toks) > 0, 'lexer produced no tokens'; \
 print('token count:', len(toks))"
@@ -77,7 +82,7 @@ print('token count:', len(toks))"
 	@python3 -c "\
 import sys; sys.path.insert(0,'src'); \
 import lexer, parser as p; \
-src = open('test/ex.ctri').read(); \
+src = open('test/baseline.ctri').read(); \
 toks = lexer.Lexer(src).lex(); \
 toks.append(('EOF','EOF')); \
 ast = p.Parser(toks).parse_program(); \

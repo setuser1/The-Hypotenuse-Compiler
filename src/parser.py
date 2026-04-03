@@ -543,6 +543,14 @@ class Parser:
             op = self.advance()[1]
             operand = self.parse_unary()
             return Unary(op=op, operand=operand, prefix=True)
+        if token[0] == "MULTIPLY":
+            self.advance()
+            operand = self.parse_unary()
+            return Unary(op="*", operand=operand, prefix=True)
+        if token[0] == "AMPERSAND":
+            self.advance()
+            operand = self.parse_unary()
+            return Unary(op="&", operand=operand, prefix=True)
         return self.parse_postfix()
 
     def parse_postfix(self) -> Node:
