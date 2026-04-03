@@ -152,8 +152,31 @@ def callee_value_display_parts(value):
 # Literal value extraction from AST expressions
 # ============================================================
 
+
+def _is_int_const(x):
+    """True for plain int constants (not bool, which is a Python int subclass)."""
+    return type(x) is int
+
+
+def _c_int_div(a: int, b: int) -> int:
+    """C integer division: truncates toward zero (C99), not Python floor division."""
+    c = abs(a) // abs(b)
+    if (a < 0) ^ (b < 0):
+        c = -c
+    return c
+
+
+def _c_int_mod(a: int, b: int) -> int:
+    """C integer remainder: a - (a/b)*b using truncation division (C99)."""
+    return a - _c_int_div(a, b) * b
+
+
 def _numeric_binary(op, left, right):
-    """Apply a binary op to two numeric constants; None if unsupported or invalid."""
+    """Apply a binary op to two numeric constants; None if unsupported or invalid.
+
+    Integer ``/`` and ``%`` follow C99 truncation-toward-zero rules, not Python's
+    ``//`` (floor) or ``%`` (divisor-sign remainder).
+    """
     if right == 0 and op in ("/", "%"):
         return None
     if op == "+":
@@ -163,12 +186,14 @@ def _numeric_binary(op, left, right):
     if op == "*":
         return left * right
     if op == "/":
-        if isinstance(left, int) and isinstance(right, int):
-            return left // right
+        if _is_int_const(left) and _is_int_const(right):
+            return _c_int_div(left, right)
         return left / right
     if op == "**":
         return left**right
     if op == "%":
+        if _is_int_const(left) and _is_int_const(right):
+            return _c_int_mod(left, right)
         return left % right
     return None
 
