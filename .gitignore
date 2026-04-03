@@ -11,6 +11,10 @@
 !**/*.hpp
 !Makefile
 
+.zed/
+.zed 2/
+.cursor/
+
 # User-specific stuff
 .idea/**/workspace.xml
 .idea/**/tasks.xml
