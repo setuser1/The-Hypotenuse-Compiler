@@ -8,6 +8,21 @@ Welcome to the official documentation for the **C△ (C Triangle)** programming 
 
 ---
 
+## Quick Start
+
+```bash
+# Install dependencies
+make install
+
+# Compile a C△ source file
+python3 src/main.py hello.ctri
+
+# Debug: view tokens and scope graph
+python3 src/main.py -t hello.ctri
+```
+
+---
+
 ## Documents
 
 | File | Description |

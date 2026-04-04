@@ -125,7 +125,7 @@ auto result = double(5);  // result = 10
 
 ```c
 struct Point(int x, int y) {
-    init() {
+    init {
         self.x = x;
         self.y = y;
     }
@@ -141,7 +141,7 @@ struct Point(int x, int y) {
 
 ```c
 typed struct Animal(string name) {
-    init() {...}
+    init {...}
     string speak() {
         return "...";
     }
