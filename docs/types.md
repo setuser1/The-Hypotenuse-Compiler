@@ -112,7 +112,7 @@ Constructors, member functions, **no inheritance**, not a native type.
 ```c
 struct Vec2(float x, float y) {
     init() { self.x = 0.0; self.y = 0.0; }
-    end()  { /* cleanup */ }
+    end { /* cleanup */ }
 
     float length() {
         return sqrt(x*x + y*y);
