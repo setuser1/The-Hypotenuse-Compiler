@@ -6,6 +6,8 @@
 
 **plstd** is the C△ standard library. It is implemented in C△ itself, with `asm` blocks only where syscalls or low-level primitives are needed.
 
+> Unlike C/C++ headers (`.h` / `.hpp`), plstd libraries are written in C△ and can use all C△ features: `dynam` arrays, `typed struct` inheritance, custom types, etc. Libraries share the same language as user code — no separate preprocessor or header syntax.
+
 ---
 
 ## Importing plstd
