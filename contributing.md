@@ -23,15 +23,15 @@ Thank you for your interest in contributing! 🎉 Whether you're fixing bugs, ad
 
 ## 🌿 Branch Naming
 
-| Prefix | Purpose |
-|---|---|
-| `fix/` | Bug fixes 🐛 |
-| `feat/` | New features ✨ |
-| `refactor/` | Code restructuring 🔧 |
-| `docs/` | Documentation updates 📝 |
-| `assets/` | Images, logos, media 🖼️ |
-| `test/` | Tests and test infrastructure 🧪 |
-| `patch/` | Hotfixes and patches 🩹 |
+| Prefix      | Purpose                          |
+| ----------- | -------------------------------- |
+| `fix/`      | Bug fixes 🐛                     |
+| `feat/`     | New features ✨                  |
+| `refactor/` | Code restructuring 🔧            |
+| `docs/`     | Documentation updates 📝         |
+| `assets/`   | Images, logos, media 🖼️          |
+| `test/`     | Tests and test infrastructure 🧪 |
+| `patch/`    | Hotfixes and patches 🩹          |
 
 ---
 
@@ -57,7 +57,7 @@ Tests live in the `test/` directory. Add a test for any bug you fix or feature y
 
 ## 📦 Project Structure
 
-```
+```txt
 📁 The-Hypotenuse-Compiler/
 ├── 📂 src/          ← compiler source (lexer, parser, structurer, main)
 ├── 📂 docs/         ← language and compiler documentation
