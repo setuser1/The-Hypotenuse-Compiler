@@ -84,7 +84,7 @@ asm void exitProcess(int code) {
 
 The compiler pipeline handles everything automatically:
 
-```txt
+```
 .ctri source
   └──▶ code gen  ──▶  .c file  ──▶  GCC
   └──▶ asm blocks ──▶  .asm files  ──▶  NASM  ──▶  GCC linker  ──▶  binary

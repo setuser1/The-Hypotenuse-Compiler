@@ -38,7 +38,7 @@ allocate int x(64);  // allocates a single int with 64 bytes
 ## `free` — Manual Deallocation
 
 ```c
-allocate int x;
+allocate int x(8);  // 8 bytes
 x = 42;
 free x;   // manually release
 ```
@@ -81,7 +81,7 @@ int* backup = &data;
 
 ## Lifecycle Summary
 
-```txt
+```
 [allocate]  →  [use]  →  [free]          ← manual
 [autoremove allocate]  →  [use]  →  [auto-free at last use]  ← simulation pass
 [autoremove]  →  [robbery]  →  [plain heap variable]  ← ownership transfer

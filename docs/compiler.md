@@ -10,7 +10,7 @@ The Hypotenuse Compiler transforms C△ source files into native Linux ELF x86_6
 
 ## Compiler Pipeline
 
-```txt
+```
 .ctri source
      │
      ▼
