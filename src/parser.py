@@ -303,7 +303,21 @@ class Parser:
 
                 if not self.accept("RPAREN"):
                     while True:
+                        # Handle type qualifiers (const, volatile, etc.)
+                        type_qualifiers = []
+                        while self.peek()[0] in ("CONST", "VOLATILE"):
+                            type_qualifiers.append(self.advance()[1])
+
                         ptype = self.advance()[1]
+                        # Handle pointer types in parameters (e.g., const char* s)
+                        while self.peek()[0] == "MULTIPLY":
+                            self.advance()
+                            ptype += "*"
+
+                        # Prepend qualifiers if any
+                        if type_qualifiers:
+                            ptype = " ".join(type_qualifiers) + " " + ptype
+
                         pname = self.expect("IDENTIFIER")[1]
                         params.append((ptype, pname))
                         if self.accept("COMMA"):
