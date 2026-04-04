@@ -23,6 +23,28 @@ C△ supports all C11 primitive types plus several new first-class types designe
 
 ---
 
+## Pointers
+
+C△ supports standard C-style pointers with the `*` syntax.
+
+### Declaration
+
+```c
+int* ptr;           // Pointer to int
+int** ptr2;         // Pointer to pointer
+char* str;          // Pointer to char (string)
+```
+
+### Address-of and Dereference
+
+```c
+int x = 42;
+int* ptr = &x;      // Address-of operator &
+int y = *ptr;       // Dereference operator *
+```
+
+---
+
 ## *NEW* C△ New Types
 
 ### `string` — First-class string

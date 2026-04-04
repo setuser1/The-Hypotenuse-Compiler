@@ -55,7 +55,12 @@ def print_objects(objects):
         print(f"│  scope: {scope_name}{parent_str}")
         for node in nodes:
             if isinstance(node, Callee):
-                kind, val_repr = callee_value_display_parts(node.value)
+                # Show pointer type if available, otherwise fall back to value-based kind
+                if node.var_type and "*" in node.var_type:
+                    kind = node.var_type
+                else:
+                    kind, val_repr = callee_value_display_parts(node.value)
+                val_repr = repr(node.value)
                 print(
                     f"│    Callee  {node.name!r:<20} kind={kind:<12} value={val_repr}"
                 )
