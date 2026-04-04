@@ -88,7 +88,7 @@ int size = len(numbers);
 ```
 
 > `dynam` arrays grow and shrink at runtime. No fixed capacity.
-> `len()` is a base function — see [stdlib.md](stdlib.md).
+> `len()` is a base function — see [syntax.md](syntax.md#base-functions).
 
 ---
 
@@ -102,7 +102,7 @@ int t_len = len(t);   // 4
 ```
 
 > Tuples are declared with `[]` and can hold mixed types.
-> `len()` is a base function — see [stdlib.md](stdlib.md).
+> `len()` is a base function — see [syntax.md](syntax.md#base-functions).
 
 ---
 

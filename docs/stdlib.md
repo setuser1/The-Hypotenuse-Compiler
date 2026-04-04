@@ -55,27 +55,6 @@ printfs("{x} squared = {x*x}\n"); // 42 squared = 1764
 
 ---
 
-## Base Functions
-
-### `len(collection)` — Length
-
-Returns the length of strings, `dynam` arrays, and `tuple` collections.
-
-```c
-string s = "hello";
-int l = len(s);        // l = 5
-
-dynam int arr = [1, 2, 3];
-int n = len(arr);      // n = 3
-
-tuple t = [1, "hi", 3.14];
-int t_len = len(t);    // t_len = 3
-```
-
-> `len()` is a **base function** — built into the language, not part of plstd.
-
----
-
 ## plstd Implementation
 
 - Written entirely in base **C△** + `asm` blocks for syscalls

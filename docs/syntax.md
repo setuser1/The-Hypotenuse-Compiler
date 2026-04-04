@@ -19,6 +19,27 @@ The compiler detects whether a file is an **executable** (has a `main` function)
 
 ---
 
+## Base Functions
+
+These functions are built into the language itself, not part of plstd.
+
+### `len(collection)` — Length
+
+Returns the length of strings, `dynam` arrays, and `tuple` collections.
+
+```c
+string s = "hello";
+int l = len(s);        // l = 5
+
+dynam int arr = [1, 2, 3];
+int n = len(arr);      // n = 3
+
+tuple t = [1, "hi", 3.14];
+int t_len = len(t);    // t_len = 3
+```
+
+---
+
 ## Imports
 
 ```c
