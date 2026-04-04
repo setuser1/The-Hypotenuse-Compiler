@@ -57,7 +57,7 @@ Tests live in the `test/` directory. Add a test for any bug you fix or feature y
 
 ## 📦 Project Structure
 
-```txt
+```
 📁 The-Hypotenuse-Compiler/
 ├── 📂 src/          ← compiler source (lexer, parser, structurer, main)
 ├── 📂 docs/         ← language and compiler documentation

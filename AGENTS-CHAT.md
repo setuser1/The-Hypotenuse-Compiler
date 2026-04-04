@@ -36,7 +36,7 @@ This file defines the conventions for **inter‑agent chat** within the _Hypoten
 
 ## Example Interaction
 
-```txt
+```
 **Agent A**: I need to add a helper function to `src/utils.py`.  Do you want me to create the file?
 **Agent B**: Yes, create `src/utils.py` with a `def hello() -> str:` placeholder and run `make lint`.
 **Agent A**: ... (writes file, runs lint) ...
