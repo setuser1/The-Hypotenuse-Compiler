@@ -1,7 +1,20 @@
 from parser import (
-    Program, Function, Declaration, Compound,
-    If, While, For, Return, ExprStmt,
-    Assignment, Binary, Unary, Literal, Var, Call, ArrayAccess,
+    Program,
+    Function,
+    Declaration,
+    Compound,
+    If,
+    While,
+    For,
+    Return,
+    ExprStmt,
+    Assignment,
+    Binary,
+    Unary,
+    Literal,
+    Var,
+    Call,
+    ArrayAccess,
 )
 
 
@@ -9,13 +22,14 @@ from parser import (
 # Scope / graph nodes
 # ============================================================
 
+
 class Scope:
     def __init__(self, name, parent=None):
         self.name = name
         self.parent = parent
-        self.children = {}   # generic children
-        self.callees = {}    # name -> Callee
-        self.callers = {}    # name -> Caller
+        self.children = {}  # generic children
+        self.callees = {}  # name -> Callee
+        self.callers = {}  # name -> Caller
 
     def __repr__(self):
         parent_name = self.parent.name if self.parent else None
@@ -46,6 +60,7 @@ class Scope:
 
 class Node:
     """Base graph node."""
+
     def __init__(self, name, scope):
         self.name = name
         self.scope = scope
@@ -58,15 +73,23 @@ class Node:
 
 class Callee(Node):
     """A value provider or function."""
-    def __init__(self, name, scope, value):
+
+    def __init__(self, name, scope, value, var_type=None):
         super().__init__(name, scope)
         self.value = value
+        self.var_type = var_type  # Store variable type for pointers
 
     def __repr__(self):
-        kind, val_repr = callee_value_display_parts(self.value)
+        val_repr = repr(self.value)
+        # Determine kind based on type (for pointers) or value
+        if self.var_type and "*" in self.var_type:
+            kind = f"{self.var_type}"
+        else:
+            kind, _ = callee_value_display_parts(self.value)
+        type_info = f", type={self.var_type!r}" if self.var_type else ""
         return (
             f"Callee(name={self.name!r}, kind={kind}, value={val_repr}, "
-            f"scope={self.scope.name!r})"
+            f"scope={self.scope.name!r}{type_info})"
         )
 
     def eval(self, *args, **kwargs):
@@ -80,6 +103,7 @@ class Callee(Node):
 
 class Caller(Node):
     """A node that depends on and calls other nodes."""
+
     def __init__(self, name, scope, value=None):
         super().__init__(name, scope)
         self.value = value
@@ -111,6 +135,7 @@ class Caller(Node):
 
 class Lib:
     """Library scope containing callable or value nodes."""
+
     def __init__(self, name, parent_scope=None):
         self.name = name
         self.scope = Scope(name, parent_scope)
@@ -252,6 +277,7 @@ def _cast_literal(raw):
 # Structor: AST walker that builds the Callee/Caller/Scope graph
 # ============================================================
 
+
 class Structor:
     """Builds the Callee/Caller/Scope graph by walking a parser AST.
 
@@ -299,9 +325,7 @@ class Structor:
     def build_from_ast(self):
         """Walk self.ast and return an ordered list of graph nodes."""
         program_scope = Scope("program")
-        user_funcs = {
-            d.name for d in self.ast.declarations if isinstance(d, Function)
-        }
+        user_funcs = {d.name for d in self.ast.declarations if isinstance(d, Function)}
         self._seed_stdlib(program_scope, skip=user_funcs)
         self._walk_program(self.ast, program_scope)
         self._link_callee_children()
@@ -351,7 +375,9 @@ class Structor:
         elif isinstance(node, ExprStmt):
             if node.expr is not None:
                 self._walk_expr(node.expr, scope)
-        elif isinstance(node, (Assignment, Binary, Unary, Call, ArrayAccess, Var, Literal)):
+        elif isinstance(
+            node, (Assignment, Binary, Unary, Call, ArrayAccess, Var, Literal)
+        ):
             self._walk_expr(node, scope)
         # Other node types (Break, Continue, etc.) have no graph impact yet
 
@@ -369,8 +395,10 @@ class Structor:
 
     def _walk_declaration(self, node: Declaration, scope: Scope):
         """Register a variable declaration as a Callee with its initial value."""
-        value = _extract_literal(node.initializer) if node.initializer is not None else None
-        callee = Callee(node.name, scope, value)
+        value = (
+            _extract_literal(node.initializer) if node.initializer is not None else None
+        )
+        callee = Callee(node.name, scope, value, var_type=node.var_type)
         self._register(callee, scope)
         # Also walk initializer for any embedded calls
         if node.initializer is not None:

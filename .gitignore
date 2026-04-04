@@ -5,6 +5,9 @@
 !*/
 !*.*
 
+.ai-stuff/
+.ruff_cache/
+
 # Do not ignore C source and header files
 !**/*.c
 !**/*.h

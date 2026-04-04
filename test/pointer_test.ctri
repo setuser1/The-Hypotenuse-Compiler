@@ -1,0 +1,9 @@
+// Test file for pointer support (Issue #87)
+
+int main() {
+    int x = 42;
+    int* ptr = &x;      // Pointer declaration and address-of
+    int y = *ptr;       // Dereference
+    
+    return 0;
+}

@@ -284,6 +284,10 @@ class Parser:
             "UNKNOWN",
         ):
             typ = self.advance()[1]
+            # Handle pointer type: int* ptr or char** ptr2
+            while self.peek()[0] == "MULTIPLY":
+                self.advance()
+                typ += "*"
             # Expected Identifier error handling
             if self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
@@ -355,30 +359,40 @@ class Parser:
 
         if t[0] == "FOR":
             self.advance()
-            self.expect('LPAREN')
+            self.expect("LPAREN")
             init = None
-            if self.peek()[0] != 'SEMICOLON':
+            if self.peek()[0] != "SEMICOLON":
                 if self.peek()[0] in (
-                    'INT', 'CHAR', 'VOID', 'FLOAT', 'DOUBLE', 'LONG', 'SHORT',
-                    'SIGNED', 'UNSIGNED', 'STRUCT', 'UNION', 'ENUM',
+                    "INT",
+                    "CHAR",
+                    "VOID",
+                    "FLOAT",
+                    "DOUBLE",
+                    "LONG",
+                    "SHORT",
+                    "SIGNED",
+                    "UNSIGNED",
+                    "STRUCT",
+                    "UNION",
+                    "ENUM",
                 ):
                     typ = self.advance()[1]
-                    idtok = self.expect('IDENTIFIER')
+                    idtok = self.expect("IDENTIFIER")
                     name = idtok[1]
                     init = Declaration(var_type=typ, name=name, initializer=None)
-                    if self.accept('ASSIGN'):
+                    if self.accept("ASSIGN"):
                         init.initializer = self.parse_expression()
                 else:
                     init = self.parse_expression()
-            self.expect('SEMICOLON')
+            self.expect("SEMICOLON")
             cond = None
-            if self.peek()[0] != 'SEMICOLON':
+            if self.peek()[0] != "SEMICOLON":
                 cond = self.parse_expression()
-            self.expect('SEMICOLON')
+            self.expect("SEMICOLON")
             post = None
-            if self.peek()[0] != 'RPAREN':
+            if self.peek()[0] != "RPAREN":
                 post = self.parse_expression()
-            self.expect('RPAREN')
+            self.expect("RPAREN")
             body = self.parse_statement()
             return For(init=init, cond=cond, post=post, body=body)
 
@@ -411,6 +425,10 @@ class Parser:
             "ENUM",
         ):
             typ = self.advance()[1]
+            # Handle pointer type: int* ptr or char** ptr2
+            while self.peek()[0] == "MULTIPLY":
+                self.advance()
+                typ += "*"
             if self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
                 raise SyntaxError(
