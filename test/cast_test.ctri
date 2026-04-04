@@ -1,0 +1,5 @@
+void test() {
+    int x = (char)(65);
+    int y = (int)(3.14);
+    int z = (long long)(x);
+}
