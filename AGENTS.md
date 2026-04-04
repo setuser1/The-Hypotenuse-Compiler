@@ -66,7 +66,6 @@
 
 #### ⚙️ Error Handling
 
-- Raise **custom exceptions** defined in `src/errors.py` (see `docs/errors.md`).
 - The CLI catches these, prints a concise message to `stderr`, and exits with a non‑zero status.
 - Prefer specific exception catches; avoid bare `except:`.
 
@@ -86,7 +85,7 @@
 #### 📦 Packaging & Distribution
 
 - The repository is not a pip‑installable package; it is invoked via `src/main.py`.
-- If a library distribution becomes necessary, introduce a `setup.py` or `pyproject.toml` and update CI accordingly.
+- If a library distribution becomes necessary, introduce a `setup.py` using the terminal.
 
 ---
 
@@ -122,11 +121,13 @@ update/addition:
 
 ### 4️⃣ CI / GitHub‑Actions Overview
 
+There are five github actions. The main one used here is build CI where it automates building and compiling a test file.
+
 ---
 
-### 5️⃣ C△ (C Triangle) Language Documentation
+## 5️⃣ C△ (C Triangle) Language Documentation
 
-## The Language: C△ (C Triangle)
+### The Language: C△ (C Triangle)
 
 C△ source files use the `.ctri` extension. Library files use `.plib`.
 
