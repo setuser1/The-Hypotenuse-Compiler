@@ -204,7 +204,10 @@ typed struct PoliceDog&Dog&Animal(string name, int badge) { ... }
 ## Memory Model
 
 - **Stack**: normal variable declaration; freed on scope exit
-- **Heap**: `allocate type name[size]` or `allocate type name(bytesize)`; must be freed manually or via `autoremove`
+- **Heap**: 
+  - Array allocation: `allocate int buf[64]` - allocates array of 64 `int` elements
+  - Byte-sized allocation: `allocate int x(64)` - allocates ONE variable with 64-byte size
+  - Must be freed manually via `free()` or automatically via `autoremove`
 - **`autoremove`**: simulation pass inserts `free` at last use — compile‑time, zero runtime cost
 - **Robbery**: if another pointer takes the address of an `autoremove` variable before it drops (`int* q = &p`), ownership transfers; the new pointer becomes a plain heap variable; no `free` needed; validated by the simulation pass
 
