@@ -61,12 +61,12 @@ asm void exitProcess(int code) {
 
 ## Target
 
-| Property | Value |
-|---|---|
-| Architecture | x86_64 |
-| Platform | Linux |
-| Syntax | NASM (Intel syntax) |
-| Output | ELF object file per asm block |
+| Property     | Value                         |
+| ------------ | ----------------------------- |
+| Architecture | x86_64                        |
+| Platform     | Linux                         |
+| Syntax       | NASM (Intel syntax)           |
+| Output       | ELF object file per asm block |
 
 ---
 
@@ -84,7 +84,7 @@ asm void exitProcess(int code) {
 
 The compiler pipeline handles everything automatically:
 
-```
+```txt
 .ctri source
   └──▶ code gen  ──▶  .c file  ──▶  GCC
   └──▶ asm blocks ──▶  .asm files  ──▶  NASM  ──▶  GCC linker  ──▶  binary

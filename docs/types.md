@@ -10,16 +10,16 @@ C△ supports all C11 primitive types plus several new first-class types designe
 
 ## Primitive Types (inherited from C11)
 
-| Type | Size | Description |
-|---|---|---|
-| `int` | 4 bytes | Signed 32-bit integer |
-| `unsigned int` | 4 bytes | Unsigned 32-bit integer |
-| `short` | 2 bytes | Signed 16-bit integer |
-| `long` | 8 bytes | Signed 64-bit integer |
-| `char` | 1 byte | Single byte / ASCII character |
-| `float` | 4 bytes | Single-precision float |
-| `double` | 8 bytes | Double-precision float |
-| `void` | — | No type |
+| Type           | Size    | Description                   |
+| -------------- | ------- | ----------------------------- |
+| `int`          | 4 bytes | Signed 32-bit integer         |
+| `unsigned int` | 4 bytes | Unsigned 32-bit integer       |
+| `short`        | 2 bytes | Signed 16-bit integer         |
+| `long`         | 8 bytes | Signed 64-bit integer         |
+| `char`         | 1 byte  | Single byte / ASCII character |
+| `float`        | 4 bytes | Single-precision float        |
+| `double`       | 8 bytes | Double-precision float        |
+| `void`         | —       | No type                       |
 
 ---
 
@@ -45,7 +45,7 @@ int y = *ptr;       // Dereference operator *
 
 ---
 
-## *NEW* C△ New Types
+## _NEW_ C△ New Types
 
 ### `string` — First-class string
 
@@ -88,6 +88,7 @@ int size = len(numbers);
 ```
 
 > `dynam` arrays grow and shrink at runtime. No fixed capacity.
+> `len()` is a base function — see [stdlib.md](stdlib.md).
 
 ---
 
@@ -97,9 +98,11 @@ int size = len(numbers);
 tuple t = [1, "hello", 3.14, 'x'];
 auto first = t[0];    // 1
 auto second = t[1];   // "hello"
+int t_len = len(t);   // 4
 ```
 
 > Tuples are declared with `[]` and can hold mixed types.
+> `len()` is a base function — see [stdlib.md](stdlib.md).
 
 ---
 
@@ -161,10 +164,10 @@ typed struct PoliceDog&Dog&Animal(string name, int badge) {
 
 ## Type Format Specifiers
 
-| Specifier | Type |
-|---|---|
-| `%d` | `int` |
-| `%f` | `float` / `double` |
-| `%s` | `string` / `char*` |
-| `%c` | `char` |
-| `%k` | `auto` (type-aware) *NEW* |
+| Specifier | Type                      |
+| --------- | ------------------------- |
+| `%d`      | `int`                     |
+| `%f`      | `float` / `double`        |
+| `%s`      | `string` / `char*`        |
+| `%c`      | `char`                    |
+| `%k`      | `auto` (type-aware) _NEW_ |

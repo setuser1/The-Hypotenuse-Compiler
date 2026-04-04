@@ -10,7 +10,7 @@ The Hypotenuse Compiler transforms C△ source files into native Linux ELF x86_6
 
 ## Compiler Pipeline
 
-```
+```txt
 .ctri source
      │
      ▼
@@ -59,6 +59,7 @@ Walks the AST and builds a **Callee/Caller/Scope graph** — the internal repres
 ### 4. Simulation Pass
 
 A static analysis pass that performs:
+
 - Constant folding
 - Last-use analysis (for `autoremove`)
 - Robbery validation
@@ -84,11 +85,11 @@ GCC links all objects into the final native ELF binary. 🎉
 python3 src/main.py [options] <file>
 ```
 
-| Flag | Description |
-|---|---|
+| Flag              | Description                                   |
+| ----------------- | --------------------------------------------- |
 | `-t` / `--tokens` | Print lexed tokens and scope graph, then exit |
-| `-o PATH` | Write compiled output to PATH |
-| `-a` / `--asm` | Show generated assembly |
+| `-o PATH`         | Write compiled output to PATH                 |
+| `-a` / `--asm`    | Show generated assembly                       |
 
 ### Example
 
@@ -104,10 +105,10 @@ python3 src/main.py -t hello.ctri
 
 ## Target
 
-| Property | Value |
-|---|---|
-| Architecture | x86_64 |
-| Platform | Linux |
-| Output format | ELF |
-| Backend | GCC + NASM |
-| Compiler language | Python 3 |
+| Property          | Value      |
+| ----------------- | ---------- |
+| Architecture      | x86_64     |
+| Platform          | Linux      |
+| Output format     | ELF        |
+| Backend           | GCC + NASM |
+| Compiler language | Python 3   |

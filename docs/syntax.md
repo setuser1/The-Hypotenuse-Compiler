@@ -10,10 +10,10 @@ A complete reference for C△ syntax with examples. C△ inherits C11 syntax and
 
 ## File Extensions
 
-| Extension | Purpose |
-|---|---|
-| `.ctri` | C△ source file |
-| `.plib` | C△ library file |
+| Extension | Purpose         |
+| --------- | --------------- |
+| `.ctri`   | C△ source file  |
+| `.plib`   | C△ library file |
 
 The compiler detects whether a file is an **executable** (has a `main` function) or a **library** (`.plib` extension).
 
@@ -106,7 +106,7 @@ int sum(auto args*) {
 
 ---
 
-## Lambdas (`lamb`) *NEW*
+## Lambdas (`lamb`) _NEW_
 
 Named lambdas — return type is optional.
 
@@ -137,7 +137,7 @@ struct Point(int x, int y) {
 }
 ```
 
-### Typed Struct (Native Type + Inheritance) *NEW*
+### Typed Struct (Native Type + Inheritance) _NEW_
 
 ```c
 typed struct Animal(string name) {
@@ -187,27 +187,31 @@ int* q = &p;   // q becomes a plain variable, p drops
 
 ---
 
-## Dynamic Arrays (`dynam`) *NEW*
+## Dynamic Arrays (`dynam`) _NEW_
 
 ```c
 dynam int numbers = [1, 2, 3, 4, 5];
 numbers.push(6);
 numbers.remove(0);
-int len = len(numbers);
+int count = len(numbers);
 ```
+
+> `len()` is a base function — built into the language.
 
 ---
 
-## Tuples *NEW*
+## Tuples _NEW_
 
 ```c
 tuple t = [1, "hello", 3.14];
-auto first = t[0];
+int count = len(t);   // count = 3
 ```
+
+> `len()` is a base function — built into the language.
 
 ---
 
-## Inline Assembly (`asm`) *NEW*
+## Inline Assembly (`asm`) _NEW_
 
 ```c
 asm addInts(int a, int b) {

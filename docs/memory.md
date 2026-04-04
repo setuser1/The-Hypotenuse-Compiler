@@ -10,10 +10,10 @@ C△ gives you full control over memory while adding safer, more expressive tool
 
 ## Stack vs Heap
 
-| Location | How | Notes |
-|---|---|---|
-| Stack | Normal variable declaration | Freed automatically on scope exit |
-| Heap | `allocate` keyword | Must be freed manually or via `autoremove` |
+| Location | How                         | Notes                                      |
+| -------- | --------------------------- | ------------------------------------------ |
+| Stack    | Normal variable declaration | Freed automatically on scope exit          |
+| Heap     | `allocate` keyword          | Must be freed manually or via `autoremove` |
 
 ---
 
@@ -78,7 +78,7 @@ int* backup = &data;
 
 ## Lifecycle Summary
 
-```
+```txt
 [allocate]  →  [use]  →  [free]          ← manual
 [autoremove allocate]  →  [use]  →  [auto-free at last use]  ← simulation pass
 [autoremove]  →  [robbery]  →  [plain heap variable]  ← ownership transfer

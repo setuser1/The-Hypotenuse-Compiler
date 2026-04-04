@@ -25,16 +25,16 @@ python3 src/main.py -t hello.ctri
 
 ## Documents
 
-| File | Description |
-|---|---|
-| [keywords.md](keywords.md) | Full keyword and operator reference |
-| [syntax.md](syntax.md) | Complete syntax guide with examples |
-| [types.md](types.md) | Type system — primitives, auto, string, dynam, tuple, structs |
-| [memory.md](memory.md) | Memory model — allocate, free, autoremove, robbery |
-| [assembly.md](assembly.md) | Inline assembly — asm blocks, syntax targets, rules |
-| [stdlib.md](stdlib.md) | Standard library (plstd) — printd, printfs, len, error handling |
-| [compiler.md](compiler.md) | Compiler architecture, pipeline stages, and CLI reference |
-| [errors.md](errors.md) | Error reference — all compiler and runtime errors |
+| File                               | Description                                                      |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| [keywords.md](keywords.md)         | Full keyword and operator reference                              |
+| [syntax.md](syntax.md)             | Complete syntax guide with examples                              |
+| [types.md](types.md)               | Type system — primitives, auto, string, dynam, tuple, structs    |
+| [memory.md](memory.md)             | Memory model — allocate, free, autoremove, robbery               |
+| [assembly.md](assembly.md)         | Inline assembly — asm blocks, syntax targets, rules              |
+| [stdlib.md](stdlib.md)             | Standard library (plstd) — printd, printfs, len, error handling  |
+| [compiler.md](compiler.md)         | Compiler architecture, pipeline stages, and CLI reference        |
+| [errors.md](errors.md)             | Error reference — all compiler and runtime errors                |
 | [contributing.md](contributing.md) | Contributing guide — workflow, style, tests, error personalities |
 
 ---
@@ -50,4 +50,4 @@ C△ is designed around three principles:
 - **Extensible over fixed** — the language can grow itself through libraries
 
 The compiler is called **The Hypotenuse Compiler** and is available at:
-https://github.com/setuser1/The-Hypotenuse-Compiler
+<https://github.com/setuser1/The-Hypotenuse-Compiler>
