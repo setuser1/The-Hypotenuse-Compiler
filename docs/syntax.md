@@ -17,7 +17,7 @@ A complete reference for C△ syntax with examples. C△ inherits C11 syntax and
 
 The compiler detects whether a file is an **executable** (has a `main` function) or a **library** (`.plib` extension).
 
-> Library files (`.plib`) are written in C△ using the same features as regular code: `dynam` arrays, `typed struct` inheritance, custom types, etc. Unlike C/C++ headers, there's no separate header syntax or preprocessor — libraries use the full language.
+> Library files (`.plib`) are written in C△ using the same features as regular code: `dynam` arrays, `typed struct` inheritance, custom types, etc. Unlike C/C++ headers, there's no separate header syntax, preprocessor, or implementation file — a `.plib` file is complete and self-contained.
 
 ---
 
