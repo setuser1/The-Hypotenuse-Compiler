@@ -151,7 +151,7 @@ C△ source files use the `.ctri` extension. Library files use `.plib`.
 
 ```ctri
 struct Point(int x, int y) {
-    init() { self.x = x; self.y = y; }
+    init { self.x = x; self.y = y; }
     end { }
     int distanceTo(Point other) { ... }
 }
@@ -161,7 +161,7 @@ struct Point(int x, int y) {
 
 ```ctri
 typed struct Animal(string name) {
-    init() { ... }
+    init { ... }
     string speak() { return "..."; }
     end { ... }
 }
