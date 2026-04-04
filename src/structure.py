@@ -74,16 +74,19 @@ class Node:
 class Callee(Node):
     """A value provider or function."""
 
-    def __init__(self, name, scope, value, var_type=None):
+    def __init__(self, name, scope, value, var_type=None, is_library=False):
         super().__init__(name, scope)
         self.value = value
         self.var_type = var_type  # Store variable type for pointers
+        self.is_library = is_library
 
     def __repr__(self):
         val_repr = repr(self.value)
         # Determine kind based on type (for pointers) or value
         if self.var_type and "*" in self.var_type:
             kind = f"{self.var_type}"
+        elif self.is_library:
+            kind = "library"
         else:
             kind, _ = callee_value_display_parts(self.value)
         type_info = f", type={self.var_type!r}" if self.var_type else ""
@@ -159,7 +162,7 @@ class Lib:
 def callee_value_display_parts(value):
     """Return (kind_label, repr_string) for a Callee.value."""
     if value is None:
-        return "unknown", "None"
+        return "library", "None"
     if callable(value):
         return "function", repr(value)
     if type(value) is bool:
@@ -303,6 +306,7 @@ class Structor:
         self._order = {}
         self._counter = 0
         self._func_callee_stack: list = []
+        self._user_funcs: set = set()
 
     def _next_id(self):
         self._counter += 1
@@ -325,27 +329,38 @@ class Structor:
     def build_from_ast(self):
         """Walk self.ast and return an ordered list of graph nodes."""
         program_scope = Scope("program")
-        user_funcs = {d.name for d in self.ast.declarations if isinstance(d, Function)}
-        self._seed_stdlib(program_scope, skip=user_funcs)
+        self._collect_user_funcs(self.ast)
         self._walk_program(self.ast, program_scope)
         self._link_callee_children()
         sorted_keys = sorted(self._order, key=lambda k: self._order[k])
         return [self.objects[k] for k in sorted_keys]
 
+    def _collect_user_funcs(self, node):
+        """Collect all user-defined function names from the AST."""
+        if isinstance(node, Program):
+            for decl in node.declarations:
+                self._collect_user_funcs(decl)
+        elif isinstance(node, Function):
+            self._user_funcs.add(node.name)
+            self._collect_user_funcs(node.body)
+        elif hasattr(node, "body"):
+            self._collect_user_funcs(node.body)
+        elif hasattr(node, "then"):
+            self._collect_user_funcs(node.then)
+            if getattr(node, "else", None):
+                self._collect_user_funcs(getattr(node, "else"))
+        elif hasattr(node, "init"):
+            self._collect_user_funcs(node.init)
+            if node.cond:
+                self._collect_user_funcs(node.cond)
+            if node.incr:
+                self._collect_user_funcs(node.incr)
+            if node.body:
+                self._collect_user_funcs(node.body)
+
     # ------------------------------------------------------------------
     # Walkers
     # ------------------------------------------------------------------
-
-    def _seed_stdlib(self, scope: Scope, skip: set | frozenset | None = None):
-        """Register common libc symbols so calls resolve without lazy stubs (issue #88)."""
-        skip = skip or frozenset()
-        for name in ("printf",):
-            if name in skip:
-                continue
-            if name in scope.callees:
-                continue
-            callee = Callee(name, scope, None)
-            self._register(callee, scope)
 
     def _walk_program(self, node: Program, scope: Scope):
         for decl in node.declarations:
@@ -384,6 +399,7 @@ class Structor:
     def _walk_function(self, node: Function, parent_scope: Scope):
         """Register function as a Callee in the parent scope, then walk its
         body in a new child scope named after the function."""
+        self._user_funcs.add(node.name)
         callee = Callee(node.name, parent_scope, None)
         self._register(callee, parent_scope)
         func_scope = Scope(node.name, parent_scope)
@@ -472,7 +488,8 @@ class Structor:
                 callee_node = found
             else:
                 # Forward declaration / extern — register lazily in current scope
-                callee_node = Callee(callee_name, scope, None)
+                is_library = callee_name not in self._user_funcs
+                callee_node = Callee(callee_name, scope, None, is_library=is_library)
                 self._register(callee_node, scope)
 
         # Build arg list (raw AST nodes for now)

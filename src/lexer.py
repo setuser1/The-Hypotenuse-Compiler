@@ -53,19 +53,25 @@ Tokens = [
     # NOTE: multi-character operators must appear before their single-character
     # prefixes so the lexer matches the longer token first.
     ("INCREMENT", re.compile(r"\+\+")),
+    ("PLUS_ASSIGN", re.compile(r"\+=")),  # must come before PLUS
     ("PLUS", re.compile(r"\+")),
     ("DECREMENT", re.compile(r"--")),
-    ("ARROW", re.compile(r"->")),
+    ("MINUS_ASSIGN", re.compile(r"-=")),  # must come before MINUS
     ("MINUS", re.compile(r"-")),
-    ("POWER", re.compile(r"\*\*")),   # must come before MULTIPLY
+    ("ARROW", re.compile(r"->")),
+    ("POWER", re.compile(r"\*\*")),  # must come before MULTIPLY
+    ("MULTIPLY_ASSIGN", re.compile(r"\*=")),  # must come before MULTIPLY
     ("MULTIPLY", re.compile(r"\*")),
+    ("DIVIDE_ASSIGN", re.compile(r"/=")),  # must come before DIVIDE
     ("DIVIDE", re.compile(r"/")),
+    ("MOD_ASSIGN", re.compile(r"%=")),  # must come before MODULO
+    ("MODULO", re.compile(r"%")),
     ("LPAREN", re.compile(r"\(")),
     ("RPAREN", re.compile(r"\)")),
-    ("LE", re.compile(r"<=")),         # must come before LT
-    ("GE", re.compile(r">=")),         # must come before GT
-    ("EQ", re.compile(r"==")),         # must come before ASSIGN
-    ("NEQ", re.compile(r"!=")),        # must come before NOT
+    ("LE", re.compile(r"<=")),  # must come before LT
+    ("GE", re.compile(r">=")),  # must come before GT
+    ("EQ", re.compile(r"==")),  # must come before ASSIGN
+    ("NEQ", re.compile(r"!=")),  # must come before NOT
     ("ASSIGN", re.compile(r"=")),
     ("SEMICOLON", re.compile(r";")),
     ("COMMA", re.compile(r",")),
@@ -76,6 +82,7 @@ Tokens = [
     ("AND", re.compile(r"&&")),
     ("OR", re.compile(r"\|\|")),
     ("AMPERSAND", re.compile(r"&")),  # must come after AND (&&)
+    ("ELLIPSIS", re.compile(r"\.\.\.")),  # must come before DOT
     ("DOT", re.compile(r"\.")),
     ("LBRACKET", re.compile(r"\[")),
     ("RBRACKET", re.compile(r"]")),

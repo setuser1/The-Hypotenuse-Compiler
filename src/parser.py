@@ -86,10 +86,33 @@ class For(Node):
 
 
 @dataclass
+class Switch(Node):
+    """Switch statement with case labels."""
+
+    expr: Node
+    cases: List[Tuple[Optional[Node], Node]]  # (case_value, body) - None for default
+
+
+@dataclass
+class Case(Node):
+    """Case label within a switch."""
+
+    value: Optional[Node]  # None for default case
+    body: Node
+
+
+@dataclass
 class Return(Node):
     """Return statement."""
 
     expr: Optional[Node]
+
+
+@dataclass
+class Break(Node):
+    """Break statement."""
+
+    pass
 
 
 @dataclass
@@ -136,6 +159,13 @@ class Var(Node):
 
 
 @dataclass
+class TypeExpr(Node):
+    """Type expression (used in va_arg and casts)."""
+
+    type_name: str
+
+
+@dataclass
 class Assignment(Node):
     """Assignment expression."""
 
@@ -157,6 +187,14 @@ class ArrayAccess(Node):
 
     array: Node
     index: Node
+
+
+@dataclass
+class Cast(Node):
+    """C-style cast expression: (type) expr"""
+
+    cast_type: str
+    operand: Node
 
 
 # ============================================================
@@ -284,6 +322,20 @@ class Parser:
             "UNKNOWN",
         ):
             typ = self.advance()[1]
+            # Handle compound types: long long, unsigned long, etc.
+            if self.peek()[0] in (
+                "INT",
+                "CHAR",
+                "VOID",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+                "SIGNED",
+                "UNSIGNED",
+            ):
+                typ2 = self.advance()[1]
+                typ = f"{typ} {typ2}"
             # Handle pointer type: int* ptr or char** ptr2
             while self.peek()[0] == "MULTIPLY":
                 self.advance()
@@ -309,6 +361,20 @@ class Parser:
                             type_qualifiers.append(self.advance()[1])
 
                         ptype = self.advance()[1]
+                        # Handle compound types in parameters (e.g., long long, unsigned long)
+                        if self.peek()[0] in (
+                            "INT",
+                            "CHAR",
+                            "VOID",
+                            "FLOAT",
+                            "DOUBLE",
+                            "SHORT",
+                            "LONG",
+                            "SIGNED",
+                            "UNSIGNED",
+                        ):
+                            ptype2 = self.advance()[1]
+                            ptype = f"{ptype} {ptype2}"
                         # Handle pointer types in parameters (e.g., const char* s)
                         while self.peek()[0] == "MULTIPLY":
                             self.advance()
@@ -321,6 +387,11 @@ class Parser:
                         pname = self.expect("IDENTIFIER")[1]
                         params.append((ptype, pname))
                         if self.accept("COMMA"):
+                            # Handle variadic functions with ...
+                            if self.accept("ELLIPSIS"):
+                                params.append(("...", "..."))
+                                self.expect("RPAREN")
+                                break
                             continue
                         self.expect("RPAREN")
                         break
@@ -416,6 +487,61 @@ class Parser:
             self.expect("SEMICOLON")
             return Return(expr)
 
+        if t[0] == "BREAK":
+            self.advance()
+            self.expect("SEMICOLON")
+            return Break()
+
+        if t[0] == "CONTINUE":
+            self.advance()
+            self.expect("SEMICOLON")
+            return type("Continue", (), {})()
+
+        if t[0] == "SWITCH":
+            self.advance()
+            self.expect("LPAREN")
+            expr = self.parse_expression()
+            self.expect("RPAREN")
+            body = self.parse_compound()
+            cases = []
+            i = 0
+            while i < len(body.stmts):
+                stmt = body.stmts[i]
+                if hasattr(stmt, "case_label"):
+                    case_value = stmt.case_label
+                    case_body = []
+                    i += 1
+                    while i < len(body.stmts) and not (
+                        hasattr(body.stmts[i], "case_label")
+                        or hasattr(body.stmts[i], "is_default")
+                    ):
+                        case_body.append(body.stmts[i])
+                        i += 1
+                    cases.append(
+                        (case_value, Compound(case_body) if case_body else Compound([]))
+                    )
+                else:
+                    i += 1
+            return Switch(expr, cases)
+
+        if t[0] == "CASE":
+            case_label_node = type(
+                "CaseLabel", (), {"case_label": None, "is_default": False}
+            )()
+            self.advance()
+            case_value = self.parse_expression()
+            case_label_node.case_label = case_value
+            self.expect("COLON")
+            return case_label_node
+
+        if t[0] == "DEFAULT":
+            default_label_node = type(
+                "DefaultLabel", (), {"case_label": None, "is_default": True}
+            )()
+            self.advance()
+            self.expect("COLON")
+            return default_label_node
+
         # Reject deprecated / removed keywords in statement position too.
         if t[0] in ("RESTRICT", "BOOLEAN"):
             raise SyntaxError(
@@ -437,12 +563,42 @@ class Parser:
             "STRUCT",
             "UNION",
             "ENUM",
-        ):
-            typ = self.advance()[1]
+            "CONST",
+            "VOLATILE",
+        ) or (t[0] == "IDENTIFIER" and t[1] in ("va_list",)):
+            qualifiers = []
+            # Collect any leading type qualifiers
+            while self.peek()[0] in ("CONST", "VOLATILE"):
+                qualifiers.append(self.advance()[1])
+
+            # Get the base type
+            base_type = self.advance()[1]
+
+            # Handle compound types in local declarations (e.g., long long, unsigned long)
+            if self.peek()[0] in (
+                "INT",
+                "CHAR",
+                "VOID",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+                "SIGNED",
+                "UNSIGNED",
+            ):
+                base_type2 = self.advance()[1]
+                base_type = f"{base_type} {base_type2}"
+
+            # Build the full type: [qualifiers] base_type [pointers]
+            typ = base_type
+            if qualifiers:
+                typ = " ".join(qualifiers) + " " + typ
+
             # Handle pointer type: int* ptr or char** ptr2
             while self.peek()[0] == "MULTIPLY":
                 self.advance()
                 typ += "*"
+
             if self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
                 raise SyntaxError(
@@ -451,7 +607,23 @@ class Parser:
                     f"Got '{bad_tok[0]}'."
                 )
             name = self.advance()[1]
-            init = self.parse_expression() if self.accept("ASSIGN") else None
+
+            # Handle array declarations: char temp[32]
+            if self.peek()[0] == "LBRACKET":
+                self.advance()  # consume '['
+                if self.peek()[0] == "INT_LITERAL":
+                    self.advance()  # consume array size
+                self.expect("RBRACKET")
+
+            # Handle initialization - only if followed by '='
+            init = None
+            if self.peek()[0] == "ASSIGN":
+                self.advance()
+                init = self.parse_expression()
+            elif self.peek()[0] == "LBRACE":
+                # Array initializer without '='
+                init = self.parse_expression()
+
             self.expect("SEMICOLON")
             return Declaration(typ, name, init)
 
@@ -491,6 +663,21 @@ class Parser:
         node = self.parse_conditional()
         if self.accept("ASSIGN"):
             return Assignment(node, self.parse_assignment())
+        # Handle compound assignment operators (+=, -=, *=, /=, %=, etc.)
+        compound_ops = [
+            "PLUS_ASSIGN",
+            "MINUS_ASSIGN",
+            "MULTIPLY_ASSIGN",
+            "DIVIDE_ASSIGN",
+            "MOD_ASSIGN",
+        ]
+        for op in compound_ops:
+            if self.accept(op):
+                # Convert += to op = node + value
+                op_name = op.replace("_ASSIGN", "")  # += -> +
+                # Create the compound assignment: node = node + value
+                right = self.parse_assignment()
+                return Assignment(node, Binary(op_name, node, right))
         return node
 
     def parse_conditional(self) -> Node:
@@ -550,7 +737,7 @@ class Parser:
     def parse_term(self) -> Node:
         """Parse multiplication and division expressions."""
         left = self.parse_power()
-        while self.peek()[0] in ("MULTIPLY", "DIVIDE"):
+        while self.peek()[0] in ("MULTIPLY", "DIVIDE", "MODULO"):
             op = self.advance()[1]
             right = self.parse_power()
             left = Binary(op, left, right)
@@ -594,9 +781,37 @@ class Parser:
                 self.advance()
                 args = []
                 if self.peek()[0] != "RPAREN":
-                    args.append(self.parse_assignment())
-                    while self.accept("COMMA"):
+                    # Check if first arg is a type keyword (for va_arg)
+                    if self.peek()[0] in (
+                        "INT",
+                        "CHAR",
+                        "VOID",
+                        "FLOAT",
+                        "DOUBLE",
+                        "SHORT",
+                        "LONG",
+                        "SIGNED",
+                        "UNSIGNED",
+                    ):
+                        args.append(self.parse_type_expression())
+                    else:
                         args.append(self.parse_assignment())
+                    while self.accept("COMMA"):
+                        # Check if subsequent args are type keywords
+                        if self.peek()[0] in (
+                            "INT",
+                            "CHAR",
+                            "VOID",
+                            "FLOAT",
+                            "DOUBLE",
+                            "SHORT",
+                            "LONG",
+                            "SIGNED",
+                            "UNSIGNED",
+                        ):
+                            args.append(self.parse_type_expression())
+                        else:
+                            args.append(self.parse_assignment())
                 self.expect("RPAREN")
                 node = Call(node, args)
             elif self.peek()[0] == "LBRACKET":
@@ -613,6 +828,41 @@ class Parser:
                 break
         return node
 
+    def parse_type_expression(self) -> Node:
+        """Parse a type keyword or compound type (e.g., int, long long)."""
+        if self.peek()[0] in (
+            "INT",
+            "CHAR",
+            "VOID",
+            "FLOAT",
+            "DOUBLE",
+            "SHORT",
+            "LONG",
+            "SIGNED",
+            "UNSIGNED",
+        ):
+            type1 = self.advance()[1]
+            # Handle compound types like long long, unsigned long, etc.
+            if self.peek()[0] in (
+                "INT",
+                "CHAR",
+                "VOID",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+                "SIGNED",
+                "UNSIGNED",
+            ):
+                type2 = self.advance()[1]
+                type1 = f"{type1} {type2}"
+            # Handle pointer types in type expressions (e.g., char*)
+            while self.peek()[0] == "MULTIPLY":
+                self.advance()
+                type1 += "*"
+            return TypeExpr(type1)
+        raise SyntaxError(f"Expected type keyword, got {self.peek()}")
+
     def parse_primary(self) -> Node:
         """Parse the most basic expression forms."""
         tok = self.peek()
@@ -622,9 +872,41 @@ class Parser:
             return Literal(self.advance()[1])
         if tok[0] == "LPAREN":
             self.advance()
+            if self.peek()[0] in (
+                "INT",
+                "CHAR",
+                "VOID",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+                "SIGNED",
+                "UNSIGNED",
+                "CONST",
+                "VOLATILE",
+            ):
+                type_node = self.parse_type_expression()
+                while self.peek()[0] == "MULTIPLY":
+                    self.advance()
+                    type_node.type_name += "*"
+                self.expect("RPAREN")
+                operand = self.parse_unary()
+                return Cast(cast_type=type_node.type_name, operand=operand)
             expr = self.parse_expression()
             self.expect("RPAREN")
             return expr
+        if tok[0] in (
+            "INT",
+            "CHAR",
+            "VOID",
+            "FLOAT",
+            "DOUBLE",
+            "SHORT",
+            "LONG",
+            "SIGNED",
+            "UNSIGNED",
+        ):
+            return TypeExpr(self.advance()[1])
         raise SyntaxError(f"Unexpected token {tok} in primary expression")
 
 
