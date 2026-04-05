@@ -474,7 +474,7 @@ def _numeric_binary(op, left, right):
             return _c_int_div(left, right)
         return left / right
     if op == "**":
-        return left ** right
+        return left**right
     if op == "%":
         if _is_int_const(left) and _is_int_const(right):
             return _c_int_mod(left, right)
@@ -520,7 +520,10 @@ def _extract_literal(expr, scope=None):
         for store in (scope.children, scope.callees, scope.callers):
             if expr.name in store:
                 callee = store[expr.name]
-                if hasattr(callee, "has_constant_value") and callee.has_constant_value():
+                if (
+                    hasattr(callee, "has_constant_value")
+                    and callee.has_constant_value()
+                ):
                     return callee.value
         if scope.parent:
             return _extract_literal(expr, scope.parent)
@@ -535,6 +538,39 @@ def _extract_literal(expr, scope=None):
         if expr.op == "!" and inner is not None:
             return int(not inner)  # C semantics: returns 0 or 1
         if expr.op in ("&", "*"):
+            return None
+        if expr.op == "sizeof":
+            from parser import TypeExpr
+
+            if isinstance(expr.operand, TypeExpr):
+                type_name = expr.operand.type_name
+                if type_name in ("int", "signed", "signed int"):
+                    return 4
+                elif type_name in ("char", "signed char"):
+                    return 1
+                elif type_name in ("long", "long int", "signed long"):
+                    return 8
+                elif type_name in ("short", "short int", "signed short"):
+                    return 2
+                elif type_name in ("float",):
+                    return 4
+                elif type_name in ("double",):
+                    return 8
+                elif type_name in ("void",):
+                    return 0
+                elif type_name in (
+                    "unsigned",
+                    "unsigned int",
+                    "unsigned char",
+                    "unsigned long",
+                    "unsigned short",
+                    "signed",
+                ):
+                    return 4
+                elif type_name in ("long long", "unsigned long long"):
+                    return 8
+                elif "*" in type_name:
+                    return 8
             return None
 
     if isinstance(expr, Binary):
@@ -761,7 +797,9 @@ class Structor:
             self._walk_expr(node.left, scope)
             self._walk_expr(node.right, scope)
             if left_val is not None and right_val is not None:
-                if isinstance(left_val, (int, float)) and isinstance(right_val, (int, float)):
+                if isinstance(left_val, (int, float)) and isinstance(
+                    right_val, (int, float)
+                ):
                     return _numeric_binary(node.op, left_val, right_val)
             return None
         if isinstance(node, Unary):
@@ -773,6 +811,39 @@ class Structor:
                     return operand_val
                 if node.op == "!":
                     return int(not operand_val)
+            if node.op == "sizeof":
+                from parser import TypeExpr
+
+                if isinstance(node.operand, TypeExpr):
+                    type_name = node.operand.type_name
+                    if type_name in ("int", "signed", "signed int"):
+                        return 4
+                    elif type_name in ("char", "signed char"):
+                        return 1
+                    elif type_name in ("long", "long int", "signed long"):
+                        return 8
+                    elif type_name in ("short", "short int", "signed short"):
+                        return 2
+                    elif type_name in ("float",):
+                        return 4
+                    elif type_name in ("double",):
+                        return 8
+                    elif type_name in ("void",):
+                        return 0
+                    elif type_name in (
+                        "unsigned",
+                        "unsigned int",
+                        "unsigned char",
+                        "unsigned long",
+                        "unsigned short",
+                        "signed",
+                    ):
+                        return 4
+                    elif type_name in ("long long", "unsigned long long"):
+                        return 8
+                    elif "*" in type_name:
+                        return 8
+                return None
             return None
         if isinstance(node, ArrayAccess):
             self._walk_expr(node.array, scope)
