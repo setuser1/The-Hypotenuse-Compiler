@@ -97,10 +97,10 @@ class Optimizer:
         """Collect static function and variable definitions and usages."""
         for node in self._walk_ast(self.ast):
             if isinstance(node, Function):
-                if hasattr(node, "storage") and node.storage == "static":
+                if getattr(node, "storage", None) == "static":
                     self._defined_static_funcs.add(node.name)
             if isinstance(node, Declaration):
-                if hasattr(node, "storage") and node.storage == "static":
+                if getattr(node, "storage", None) == "static":
                     self._defined_static_vars.add(node.name)
         for node in self._walk_ast(self.ast):
             if isinstance(node, Call):
@@ -399,7 +399,7 @@ class Optimizer:
         for i, decl in enumerate(declarations):
             if isinstance(decl, Function):
                 if getattr(decl, "name", None) == name:
-                    if hasattr(decl, "storage") and decl.storage == "static":
+                    if getattr(decl, "storage", None) == "static":
                         declarations.pop(i)
                         return True
         return False
@@ -410,7 +410,7 @@ class Optimizer:
         for i, decl in enumerate(declarations):
             if isinstance(decl, Declaration):
                 if getattr(decl, "name", None) == name:
-                    if hasattr(decl, "storage") and decl.storage == "static":
+                    if getattr(decl, "storage", None) == "static":
                         declarations.pop(i)
                         return True
         return False
