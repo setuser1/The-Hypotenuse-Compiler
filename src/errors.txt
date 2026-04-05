@@ -2,13 +2,13 @@
 E001|Unexpected token {found} at {line}:{col}
 E001|Found {found} but expected {expected}
 E001|Syntax error: unexpected {found}
-E002|Missing semicolon after {statement} at {line}:{col}
-E002|Syntax error: expected ';' before {found}
-E003|Invalid expression syntax near {found}
-E003|Expression expected, found {found}
-E004|Invalid statement syntax: {found}
-E004|Malformed statement near {found}
-E005|Unmatched parenthesis in expression at {line}:{col}
+E002|Missing semicolon after {statement} at {line}:{col}. PUT THE DAMN SEMICOLON!
+E002|Syntax error: expected ';' before {found} -- we serious right?
+E003|Invalid expression syntax near {found}, try again buddy.
+E003|Expression expected, found {found}, DO BETTER.
+E004|Invalid statement syntax: {found}; programmers like you need to die. 
+E004|Malformed statement near {found}, maybe you just suck.
+E005|Unmatched parenthesis in expression at {line}:{col}, try putting them there next time.
 E005|Extra closing parenthesis found
 E006|Missing closing brace at {line}:{col}
 E006|Expected '}' after {statement}
