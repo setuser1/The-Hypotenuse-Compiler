@@ -198,10 +198,11 @@ class Cast(Node):
 
 
 @dataclass
-class InitList(Node):
-    """Brace-enclosed initializer list: { expr, expr, ... }"""
+class Include(Node):
+    """#include directive."""
 
-    elements: List[Node]
+    path: str
+    is_system: bool  # True for <foo>, False for "foo"
 
 
 # ============================================================
@@ -317,16 +318,36 @@ class Parser:
             decls.append(self.parse_external())
         return Program(decls)
 
+    def _parse_preprocessor(self, directive: str) -> Node:
+        """Parse a preprocessor directive."""
+        stripped = directive.strip()
+        if stripped.startswith("#include"):
+            rest = stripped[len("#include") :].strip()
+            if rest.startswith("<") and ">" in rest:
+                start = rest.index("<")
+                end = rest.index(">")
+                path = rest[start + 1 : end]
+                return Include(path, is_system=True)
+            elif rest.startswith('"') and rest.count('"') >= 2:
+                start = rest.index('"')
+                end = rest.index('"', start + 1)
+                path = rest[start + 1 : end]
+                return Include(path, is_system=False)
+        return None
+
     def parse_external(self) -> Node:
         """
         Parse global declarations:
         - Functions
         - Function prototypes
         - Global variables
+        - Include directives
         """
         t = self.peek()
 
         # Preprocessor directives and comments are skipped silently.
+        # C△ does not process #include / #define etc. — those are handled
+        # by the C backend after code generation.
         if t[0] in ("PREPROCESSOR", "COMMENT_MULTI", "COMMENT_LINE"):
             self.advance()
             return self.parse_external()

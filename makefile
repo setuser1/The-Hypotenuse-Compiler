@@ -26,6 +26,8 @@ lint:
 # ---------------------------------------------------------------
 # typecheck: run the compiler against every .ctri test file and
 #            assert it exits cleanly (non-zero exit = test failure)
+#
+# Note: library_import.ctri requires Linux with standard headers
 # ---------------------------------------------------------------
 typecheck:
 	@echo "--- Running compiler over parseable test inputs ---"

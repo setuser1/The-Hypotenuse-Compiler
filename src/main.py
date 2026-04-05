@@ -92,7 +92,7 @@ def compile_file(path):
     tokens = lexer.Lexer(content).lex()
     tokens.append(("EOF", "EOF"))
     ast = p.Parser(tokens).parse_program()
-    structor = structure.Structor(ast)
+    structor = structure.Structor(ast, content)
     return tokens, structor.build_from_ast()
 
 

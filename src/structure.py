@@ -1,3 +1,8 @@
+import logging
+import os
+import platform
+from typing import Optional
+
 from parser import (
     Program,
     Function,
@@ -21,6 +26,214 @@ from parser import (
 # ============================================================
 # Scope / graph nodes
 # ============================================================
+
+logger = logging.getLogger(__name__)
+
+SYSTEM_INCLUDE_PATHS = {
+    "linux": [
+        "/usr/include",
+        "/usr/local/include",
+    ],
+    "darwin": [
+        "/usr/include",
+        "/usr/local/include",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
+        "/Library/Developer/CommandLineTools/usr/lib/clang/*/include",
+    ],
+}
+
+HOMEBObrew_INCLUDE_PATHS = [
+    "/opt/homebrew/include",
+    "/usr/local/include",
+]
+
+
+def get_system_include_paths():
+    system = platform.system().lower()
+    paths = list(SYSTEM_INCLUDE_PATHS.get(system, []))
+
+    if system == "darwin":
+        xcode_sdk_path = (
+            "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
+        )
+        if xcode_sdk_path not in paths:
+            if os.path.isdir(xcode_sdk_path):
+                paths.append(xcode_sdk_path)
+        for hb_path in HOMEBObrew_INCLUDE_PATHS:
+            if hb_path not in paths and os.path.isdir(hb_path):
+                paths.append(hb_path)
+
+    return paths
+
+
+class IncludeNode:
+    """Represents a #include directive with lazy import tracking."""
+
+    def __init__(self, path, is_system, exists=None, used_definitions=None):
+        self.path = path
+        self.is_system = is_system
+        self.exists = exists
+        self.used_definitions = used_definitions or []
+        self._resolved_path = None
+        self._all_definitions = []
+        self._checked = False
+
+    def __repr__(self):
+        status = (
+            "valid"
+            if self.exists
+            else ("unknown" if self.exists is None else "missing")
+        )
+        used_count = len(self.used_definitions)
+        return f"Include(path={self.path!r}, is_system={self.is_system}, status={status}, used={used_count})"
+
+    def resolve_path(self, base_dir=None):
+        """Resolve the include path to an absolute path on the current OS."""
+        if self._resolved_path:
+            return self._resolved_path
+
+        search_paths = get_system_include_paths()
+        if base_dir:
+            search_paths.insert(0, base_dir)
+            search_paths.insert(0, os.path.join(base_dir, "include"))
+
+        import glob as glob_module
+
+        found = False
+        for search_dir in search_paths:
+            if "*" in search_dir:
+                matched_paths = glob_module.glob(search_dir)
+                for matched in matched_paths:
+                    full_path = os.path.join(matched, self.path)
+                    if os.path.isfile(full_path):
+                        self._resolved_path = full_path
+                        self.exists = True
+                        found = True
+                        break
+                if found:
+                    break
+            else:
+                full_path = os.path.join(search_dir, self.path)
+                if os.path.isfile(full_path):
+                    self._resolved_path = full_path
+                    self.exists = True
+                    found = True
+                    break
+
+        self._checked = True
+        if not found:
+            self._resolved_path = None
+            if self.exists is not False:
+                logger.warning(
+                    "Header not found in system paths: %s (搜索了 %s)",
+                    self.path,
+                    search_paths,
+                )
+            self.exists = False
+
+        return self._resolved_path
+
+    def parse_header(self):
+        """Parse the header file to extract all exported definitions."""
+        resolved = self.resolve_path()
+        if not resolved or not self.exists:
+            return
+
+        try:
+            with open(resolved, "r") as f:
+                content = f.read()
+        except OSError:
+            return
+
+        self._parse_content(content, {resolved})
+
+    def _parse_content(self, content, visited_files):
+        """Recursively parse header content and included files."""
+        import re
+
+        decl_blocks = re.findall(
+            r"__BEGIN_DECLS\s*(.*?)\s*__END_DECLS", content, re.DOTALL
+        )
+        if decl_blocks:
+            decl_section = " ".join(decl_blocks)
+        else:
+            decl_section = content
+
+        functions = re.findall(
+            r"^\s*(?:extern\s+)?(\w+)\s+(\w+)\s*\([^;{]*\)\s*;",
+            decl_section,
+            re.MULTILINE,
+        )
+        for ret_type, name in functions:
+            self._all_definitions.append(("function", name, ret_type.strip()))
+
+        functions_with_attr = re.findall(
+            r"^\s*(?:extern\s+)?(\w+)\s+(\w+)\s*\([^;]*\)\s*(?:\([^)]*\))?\s*;",
+            decl_section,
+            re.MULTILINE,
+        )
+        for ret_type, name in functions_with_attr:
+            if name not in [d[1] for d in self._all_definitions if d[0] == "function"]:
+                self._all_definitions.append(("function", name, ret_type.strip()))
+
+        variables = re.findall(
+            r"^\s*extern\s+([\w\s\*]+?)\s+(\w+)\s*;\s*$",
+            decl_section,
+            re.MULTILINE,
+        )
+        for var_type, name in variables:
+            self._all_definitions.append(("variable", name, var_type.strip()))
+
+        structs = re.findall(r"^\s*struct\s+(\w+)\s*\{", decl_section, re.MULTILINE)
+        for name in structs:
+            self._all_definitions.append(("struct", name, "struct"))
+
+        typedefs = re.findall(
+            r"^\s*typedef\s+(?:struct\s+)?\w+\s+(\w+)\s*;", decl_section, re.MULTILINE
+        )
+        for name in typedefs:
+            self._all_definitions.append(("typedef", name, "typedef"))
+
+        enums = re.findall(r"^\s*enum\s+(\w+)\s*\{", decl_section, re.MULTILINE)
+        for name in enums:
+            self._all_definitions.append(("enum", name, "enum"))
+
+        includes = re.findall(r"#include\s+<\s*([^>]+)\s*>", content)
+        for inc in includes:
+            inc_path = inc
+            inc_resolved = None
+            for search_dir in get_system_include_paths():
+                full_path = os.path.join(search_dir, inc_path)
+                if os.path.isfile(full_path) and full_path not in visited_files:
+                    inc_resolved = full_path
+                    break
+            if inc_resolved:
+                new_visited = visited_files | {inc_resolved}
+                try:
+                    with open(inc_resolved, "r") as f:
+                        inc_content = f.read()
+                    self._parse_content(inc_content, new_visited)
+                except OSError:
+                    pass
+
+    def track_used_definitions(self, source_content):
+        """Track which definitions from the header are used in the source."""
+        if not self._all_definitions:
+            self.parse_header()
+
+        if not source_content:
+            self.used_definitions = list(self._all_definitions)
+            return
+
+        import re
+
+        used = set()
+        for def_type, name, type_info in self._all_definitions:
+            pattern = r"\b" + re.escape(name) + r"\b"
+            if re.search(pattern, source_content):
+                used.add((def_type, name, type_info))
+
+        self.used_definitions = list(used)
 
 
 class Scope:
@@ -374,13 +587,15 @@ class Structor:
     - ``Compound`` / ``If`` / ``While`` share the enclosing scope
     """
 
-    def __init__(self, ast: Program):
+    def __init__(self, ast: Program, source_content: Optional[str] = None):
         self.ast = ast
         self.objects = {}
         self._order = {}
         self._counter = 0
         self._func_callee_stack: list = []
         self._user_funcs: set = set()
+        self._includes: list = []
+        self._source_content = source_content or ""
 
     def _next_id(self):
         self._counter += 1
@@ -406,7 +621,6 @@ class Structor:
         self._collect_user_funcs(self.ast)
         self._walk_program(self.ast, program_scope)
         self._link_callee_children()
-        self._propagate_all_values()
         sorted_keys = sorted(self._order, key=lambda k: self._order[k])
         return [self.objects[k] for k in sorted_keys]
 
@@ -442,6 +656,8 @@ class Structor:
 
     def _walk_node(self, node, scope: Scope):
         """Dispatch to the appropriate walker based on AST node type."""
+        from parser import Include as ParserInclude
+
         if isinstance(node, Function):
             self._walk_function(node, scope)
         elif isinstance(node, Declaration):
@@ -467,6 +683,8 @@ class Structor:
         elif isinstance(node, ExprStmt):
             if node.expr is not None:
                 self._walk_expr(node.expr, scope)
+        elif isinstance(node, ParserInclude):
+            self._walk_include(node, scope)
         elif isinstance(
             node, (Assignment, Binary, Unary, Call, ArrayAccess, Var, Literal)
         ):
@@ -481,7 +699,7 @@ class Structor:
         func_scope = Scope(node.name, parent_scope)
         self._func_callee_stack.append(callee)
         try:
-            self._walk_compound(node.body, func_scope)
+            self._walk_node(node.body, func_scope)
         finally:
             self._func_callee_stack.pop()
 
@@ -603,6 +821,15 @@ class Structor:
         for arg in node.args:
             self._walk_expr(arg, scope)
 
+    def _walk_include(self, node, scope: Scope):
+        """Process an Include node with lazy import tracking."""
+        include = IncludeNode(node.path, node.is_system)
+        include.resolve_path()
+        include.parse_header()
+        if hasattr(self, "_source_content"):
+            include.track_used_definitions(self._source_content)
+        self._includes.append(include)
+
     # ------------------------------------------------------------------
     # Post-processing
     # ------------------------------------------------------------------
@@ -616,14 +843,6 @@ class Structor:
                     "callers": callee_node.scope.callers,
                     "generic": callee_node.scope.children,
                 }
-
-    def _propagate_all_values(self):
-        """Propagate constant values from callees to callers where possible."""
-        for obj in self.objects.values():
-            if isinstance(obj, Caller) and obj._callee_ref is not None:
-                callee = obj._callee_ref
-                if callee.has_constant_value():
-                    obj.propagated_value = callee.value
 
 
 # ============================================================
