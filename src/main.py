@@ -3,6 +3,7 @@ import sys
 import lexer
 import parser as p
 import structure
+import codegen
 
 
 def parse_args():
@@ -76,7 +77,9 @@ def print_objects(objects):
                 callee_name = node.dependencies[0][0].name if node.dependencies else "?"
                 args = node.dependencies[0][1] if node.dependencies else []
                 args_str = ", ".join(repr(a) for a in args)
-                print(f"\u2502    Caller  {node.name!r:<20} -> {callee_name}({args_str})")
+                print(
+                    f"\u2502    Caller  {node.name!r:<20} -> {callee_name}({args_str})"
+                )
     print("\u2502")
     print("\u2514" + "\u2500" * 54 + "\u2518")
 
@@ -84,7 +87,7 @@ def print_objects(objects):
 def compile_file(path):
     """Lex, parse, and structure a single source file.
 
-    Returns (tokens, objects).
+    Returns (tokens, ast, structor).
     """
     with open(path, "r") as f:
         content = f.read()
@@ -93,7 +96,8 @@ def compile_file(path):
     tokens.append(("EOF", "EOF"))
     ast = p.Parser(tokens).parse_program()
     structor = structure.Structor(ast, content)
-    return tokens, structor.build_from_ast()
+    objects = structor.build_from_ast()
+    return tokens, ast, structor, objects
 
 
 def main():
@@ -107,7 +111,7 @@ def main():
             print("Error: no input file provided for token printing")
             sys.exit(1)
         try:
-            tokens, objects = compile_file(args.files[0])
+            tokens, ast, structor, objects = compile_file(args.files[0])
             print_tokens(tokens)
             print_objects(objects)
             return objects
@@ -130,8 +134,12 @@ def main():
 
     for path in args.files:
         try:
-            tokens, objects = compile_file(path)
-            print_objects(objects)
+            tokens, ast, structor, objects = compile_file(path)
+            if args.asm:
+                codegen_obj = codegen.CodeGen(ast, structor)
+                print(codegen_obj.generate())
+            else:
+                print_objects(objects)
             return objects
         except FileNotFoundError:
             print(f"Error: file not found {path}")

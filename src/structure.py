@@ -20,6 +20,11 @@ from parser import (
     Var,
     Call,
     ArrayAccess,
+    StructDef,
+    UnionDef,
+    EnumDef,
+    Typedef,
+    FieldAccess,
 )
 
 
@@ -46,6 +51,19 @@ HOMEBObrew_INCLUDE_PATHS = [
     "/opt/homebrew/include",
     "/usr/local/include",
 ]
+
+C11_SIZEOF = {
+    "char": 1,
+    "short": 2,
+    "int": 4,
+    "long": 8,
+    "long long": 8,
+    "float": 4,
+    "double": 8,
+    "long double": 16,
+    "void*": 8,
+    "_Bool": 1,
+}
 
 
 def get_system_include_paths():
@@ -401,6 +419,25 @@ class Lib:
         return self.scope.called(name)
 
 
+class StructInfo:
+    """Information about a struct definition."""
+
+    def __init__(self, name, fields, size=0, alignment=1):
+        self.name = name
+        self.fields = fields
+        self.size = size
+        self.alignment = alignment
+        self.offset_of = {}
+
+
+class TypedefInfo:
+    """Information about a typedef alias."""
+
+    def __init__(self, alias, actual_type):
+        self.alias = alias
+        self.actual_type = actual_type
+
+
 # ============================================================
 # Callee value display
 # ============================================================
@@ -632,6 +669,8 @@ class Structor:
         self._user_funcs: set = set()
         self._includes: list = []
         self._source_content = source_content or ""
+        self._structs = {}
+        self._typedefs = {}
 
     def _next_id(self):
         self._counter += 1
@@ -657,6 +696,7 @@ class Structor:
         self._collect_user_funcs(self.ast)
         self._walk_program(self.ast, program_scope)
         self._link_callee_children()
+        self._compute_struct_info()
         sorted_keys = sorted(self._order, key=lambda k: self._order[k])
         return [self.objects[k] for k in sorted_keys]
 
@@ -725,6 +765,16 @@ class Structor:
             node, (Assignment, Binary, Unary, Call, ArrayAccess, Var, Literal)
         ):
             self._walk_expr(node, scope)
+        elif isinstance(node, StructDef):
+            self._walk_struct_def(node, scope)
+        elif isinstance(node, UnionDef):
+            self._walk_union_def(node, scope)
+        elif isinstance(node, EnumDef):
+            self._walk_enum_def(node, scope)
+        elif isinstance(node, Typedef):
+            self._walk_typedef(node, scope)
+        elif isinstance(node, FieldAccess):
+            self._walk_field_access(node, scope)
 
     def _walk_function(self, node: Function, parent_scope: Scope):
         self._user_funcs.add(node.name)
@@ -901,6 +951,77 @@ class Structor:
             include.track_used_definitions(self._source_content)
         self._includes.append(include)
 
+    def _walk_struct_def(self, node, scope: Scope):
+        """Register a struct definition and compute basic info."""
+        fields = []
+        if hasattr(node, "fields") and node.fields:
+            for field in node.fields:
+                if isinstance(field, tuple) and len(field) == 2:
+                    fields.append(field)
+                elif hasattr(field, "type_name") and hasattr(field, "name"):
+                    fields.append((field.type_name, field.name))
+        struct_name = getattr(node, "name", None)
+        if struct_name:
+            self._structs[struct_name] = StructInfo(struct_name, fields)
+        else:
+            anon_name = f"__anon_struct_{self._next_id()}"
+            self._structs[anon_name] = StructInfo(None, fields)
+
+    def _walk_union_def(self, node, scope: Scope):
+        """Register a union definition and compute basic info."""
+        fields = []
+        if hasattr(node, "fields") and node.fields:
+            for field in node.fields:
+                if isinstance(field, tuple) and len(field) == 2:
+                    fields.append(field)
+                elif hasattr(field, "type_name") and hasattr(field, "name"):
+                    fields.append((field.type_name, field.name))
+        union_name = getattr(node, "name", None)
+        if union_name:
+            self._structs[union_name] = StructInfo(union_name, fields)
+        else:
+            anon_name = f"__anon_union_{self._next_id()}"
+            self._structs[anon_name] = StructInfo(None, fields)
+
+    def _walk_enum_def(self, node, scope: Scope):
+        """Register an enum definition."""
+        enum_name = getattr(node, "name", None)
+        values = getattr(node, "values", [])
+        if enum_name:
+            self._structs[enum_name] = StructInfo(enum_name, values)
+        else:
+            anon_name = f"__anon_enum_{self._next_id()}"
+            self._structs[anon_name] = StructInfo(None, values)
+
+    def _walk_typedef(self, node, scope: Scope):
+        """Register a typedef mapping."""
+        alias = getattr(node, "alias", None)
+        actual_type = getattr(node, "actual_type", None)
+        if alias:
+            self._typedefs[alias] = TypedefInfo(alias, actual_type)
+
+    def _walk_field_access(self, node, scope: Scope):
+        """Process field access expression."""
+        self._walk_expr(node.obj, scope)
+
+    def get_struct_info(self, name):
+        """Get StructInfo by struct name or typedef target."""
+        return self._structs.get(name)
+
+    def resolve_typedef(self, type_name):
+        """Resolve typedef chain to canonical type."""
+        if type_name in self._typedefs:
+            return self.resolve_typedef(self._typedefs[type_name].actual_type)
+        return type_name
+
+    def get_structs(self):
+        """Return all registered struct infos."""
+        return self._structs
+
+    def get_typedefs(self):
+        """Return all registered typedef infos."""
+        return self._typedefs
+
     # ------------------------------------------------------------------
     # Post-processing
     # ------------------------------------------------------------------
@@ -914,6 +1035,50 @@ class Structor:
                     "callers": callee_node.scope.callers,
                     "generic": callee_node.scope.children,
                 }
+
+    def _compute_struct_info(self):
+        """Compute sizes and alignments for all structs."""
+        for struct_info in self._structs.values():
+            offset = 0
+            max_align = 1
+            for field_type, field_name in struct_info.fields:
+                field_size = self._sizeof_type(field_type)
+                field_align = self._alignof_type(field_type)
+                if offset % field_align != 0:
+                    offset = (offset // field_align + 1) * field_align
+                struct_info.offset_of[field_name] = offset
+                offset += field_size
+                if field_align > max_align:
+                    max_align = field_align
+            if offset % max_align != 0:
+                offset = (offset // max_align + 1) * max_align
+            struct_info.size = offset
+            struct_info.alignment = max_align
+
+    def _sizeof_type(self, type_name):
+        """Return size of a type in bytes."""
+        if type_name is None:
+            return 0
+        type_str = str(type_name)
+        if type_str in C11_SIZEOF:
+            return C11_SIZEOF[type_str]
+        if type_str.endswith("*"):
+            return 8
+        if type_str.endswith("]"):
+            base = type_str.split("[")[0]
+            return self._sizeof_type(base)
+        return 4
+
+    def _alignof_type(self, type_name):
+        """Return alignment of a type in bytes."""
+        if type_name is None:
+            return 1
+        type_str = str(type_name)
+        if type_str in C11_SIZEOF:
+            return C11_SIZEOF.get(type_str, 1)
+        if type_str.endswith("*"):
+            return 8
+        return 1
 
 
 # ============================================================

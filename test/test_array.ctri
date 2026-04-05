@@ -1,0 +1,6 @@
+int arr[5];
+
+void test(void) {
+    arr[0] = 1;
+    int x = arr[2];
+}

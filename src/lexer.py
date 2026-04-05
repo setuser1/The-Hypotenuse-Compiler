@@ -30,6 +30,7 @@ Tokens = [
     ("LONG", re.compile(r"\blong\b")),
     ("SIGNED", re.compile(r"\bsigned\b")),
     ("UNSIGNED", re.compile(r"\bunsigned\b")),
+    ("SIZE_T", re.compile(r"\bsize_t\b")),
     ("STRUCT", re.compile(r"\bstruct\b")),
     ("UNION", re.compile(r"\bunion\b")),
     ("ENUM", re.compile(r"\benum\b")),
@@ -41,53 +42,59 @@ Tokens = [
     ("INLINE", re.compile(r"\binline\b")),
     ("REGISTER", re.compile(r"\bregister\b")),
     ("AUTO", re.compile(r"\bauto\b")),
+    ("NORETURN", re.compile(r"\b_Noreturn\b")),
     ("SIZEOF", re.compile(r"\bsizeof\b")),
     ("RESTRICT", re.compile(r"\brestrict\b")),
     ("BOOLEAN", re.compile(r"\b_Bool\b")),
+    ("UNDERSCORE_GENERIC", re.compile(r"\b_Generic\b")),
     # DATA TYPES
     ("STRING_LITERAL", re.compile(r'"(?:\\.|[^"\\])*"')),
     ("CHAR_LITERAL", re.compile(r"'(?:\\.|[^'\\])*'")),
-    ("FLOAT_LITERAL", re.compile(r"\b\d+\.\d+\b")),
-    ("INT_LITERAL", re.compile(r"\b\d+\b")),
+    ("FLOAT_LITERAL", re.compile(r"\b\d+\.\d+[fFlL]?\b")),
+    ("HEX_LITERAL", re.compile(r"\b0[xX][0-9a-fA-F]+\b")),
+    ("BINARY_LITERAL", re.compile(r"\b0[bB][01]+\b")),
+    ("INT_LITERAL", re.compile(r"\b\d+[uUlL]*\b")),
     # OPERATORS AND DELIMITERS AND SYMBOLS
     # NOTE: multi-character operators must appear before their single-character
     # prefixes so the lexer matches the longer token first.
     ("INCREMENT", re.compile(r"\+\+")),
-    ("PLUS_ASSIGN", re.compile(r"\+=")),   # must come before PLUS
+    ("PLUS_ASSIGN", re.compile(r"\+=")),  # must come before PLUS
     ("PLUS", re.compile(r"\+")),
     # ARROW must come before DECREMENT and MINUS so that -> is matched first.
     ("ARROW", re.compile(r"->")),
     ("DECREMENT", re.compile(r"--")),
-    ("MINUS_ASSIGN", re.compile(r"-=")),   # must come before MINUS
+    ("MINUS_ASSIGN", re.compile(r"-=")),  # must come before MINUS
     ("MINUS", re.compile(r"-")),
-    ("POWER", re.compile(r"\*\*")),        # must come before MULTIPLY
-    ("MULTIPLY_ASSIGN", re.compile(r"\*=")), # must come before MULTIPLY
+    ("POWER", re.compile(r"\*\*")),  # must come before MULTIPLY
+    ("MULTIPLY_ASSIGN", re.compile(r"\*=")),  # must come before MULTIPLY
     ("MULTIPLY", re.compile(r"\*")),
     ("DIVIDE_ASSIGN", re.compile(r"/=")),  # must come before DIVIDE
     ("DIVIDE", re.compile(r"/")),
-    ("MOD_ASSIGN", re.compile(r"%=")),    # must come before MODULO
+    ("MOD_ASSIGN", re.compile(r"%=")),  # must come before MODULO
     ("MODULO", re.compile(r"%")),
     ("LPAREN", re.compile(r"\(")),
     ("RPAREN", re.compile(r"\)")),
-    ("LE", re.compile(r"<=")),             # must come before LT
-    ("GE", re.compile(r">=")),             # must come before GT
-    ("EQ", re.compile(r"==")),             # must come before ASSIGN
-    ("NEQ", re.compile(r"!=")),            # must come before NOT
+    ("LE", re.compile(r"<=")),  # must come before LT
+    ("GE", re.compile(r">=")),  # must come before GT
+    ("LSHIFT", re.compile(r"<<")),  # must come before LT
+    ("RSHIFT", re.compile(r">>")),  # must come before GT
+    ("EQ", re.compile(r"==")),  # must come before ASSIGN
+    ("NEQ", re.compile(r"!=")),  # must come before NOT
     ("ASSIGN", re.compile(r"=")),
     ("SEMICOLON", re.compile(r";")),
     ("COMMA", re.compile(r",")),
     ("COLON", re.compile(r":")),
-    ("QUESTION", re.compile(r"\?")),        # ternary operator
+    ("QUESTION", re.compile(r"\?")),  # ternary operator
     ("LT", re.compile(r"<")),
     ("GT", re.compile(r">")),
     ("NOT", re.compile(r"!")),
     ("AND", re.compile(r"&&")),
     ("OR", re.compile(r"\|\|")),
-    ("BITWISE_OR", re.compile(r"\|")),     # must come after OR (||)
+    ("BITWISE_OR", re.compile(r"\|")),  # must come after OR (||)
     ("BITWISE_XOR", re.compile(r"\^")),
     ("BITWISE_NOT", re.compile(r"~")),
-    ("AMPERSAND", re.compile(r"&")),        # must come after AND (&&)
-    ("ELLIPSIS", re.compile(r"\.\.\.")),   # must come before DOT
+    ("AMPERSAND", re.compile(r"&")),  # must come after AND (&&)
+    ("ELLIPSIS", re.compile(r"\.\.\.")),  # must come before DOT
     ("DOT", re.compile(r"\.")),
     ("LBRACKET", re.compile(r"\[")),
     ("RBRACKET", re.compile(r"]")),
@@ -112,7 +119,7 @@ def get_tokens(string):
                 lexeme = match.group(0)
                 if token[0] not in ("WHITESPACE", "COMMENT_LINE", "COMMENT_MULTI"):
                     tokens.append((token[0], lexeme))
-                var = var[len(lexeme):]
+                var = var[len(lexeme) :]
                 break
         else:
             tokens.append(("UNKNOWN", var[0]))
@@ -169,7 +176,7 @@ class Lexer:
                 elif c in (";", ",") and paren == 0 and bracket == 0:
                     break
             self.pos += 1
-        value = self.text[start:self.pos].strip()
+        value = self.text[start : self.pos].strip()
         return "EXPR", value
 
     def lex(self):

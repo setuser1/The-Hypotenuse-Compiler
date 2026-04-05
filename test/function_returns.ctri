@@ -1,3 +1,4 @@
+#include <stdio.h>
 // Test file for function return values
 // Covers: variable returns, binary expressions, function calls, mixed expressions
 
@@ -55,28 +56,28 @@ int testNestedCalls() {
 
 int main() {
     int r1 = testVarReturn();
-    printf(r1);
+    printf("%d", r1);
     
     int r2 = testAddExpr();
-    printf(r2);
+    printf("%d", r2);
     
     int r3 = testMulExpr();
-    printf(r3);
+    printf("%d", r3);
     
     int r4 = testFuncCallNoArgs();
-    printf(r4);
+    printf("%d", r4);
     
     int r5 = testFuncCallWithArgs();
-    printf(r5);
+    printf("%d", r5);
     
     int r6 = testMixedExpr();
-    printf(r6);
+    printf("%d", r6);
     
     int r7 = testMixedExpr2();
-    printf(r7);
+    printf("%d", r7);
     
     int r8 = testNestedCalls();
-    printf(r8);
+    printf("%d", r8);
     
     return 0;
 }

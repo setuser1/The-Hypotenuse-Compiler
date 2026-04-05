@@ -1,0 +1,112 @@
+[SYNTAX]
+E001|Unexpected token {found} at {line}:{col}
+E001|Found {found} but expected {expected}
+E001|Syntax error: unexpected {found}
+E002|Missing semicolon after {statement} at {line}:{col}
+E002|Syntax error: expected ';' before {found}
+E003|Invalid expression syntax near {found}
+E003|Expression expected, found {found}
+E004|Invalid statement syntax: {found}
+E004|Malformed statement near {found}
+E005|Unmatched parenthesis in expression at {line}:{col}
+E005|Extra closing parenthesis found
+E006|Missing closing brace at {line}:{col}
+E006|Expected '}' after {statement}
+E007|Invalid token {found} in declaration
+E007|Cannot start declaration with {found}
+E008|Missing identifier after {keyword} at {line}:{col}
+E008|Expected identifier, found {found}
+
+[TYPE]
+E101|Type mismatch: cannot convert {type1} to {type2}
+E101|Cannot assign {type1} value to variable of type {type2}
+E101|Operand of type {type1} cannot be used with {type2}
+E102|Invalid type {type} in this context
+E102|Unknown type {type} at {line}:{col}
+E103|sizeof cannot be applied to type {type}
+E103|Invalid operand for sizeof: {type}
+E104|Cannot cast {type1} to {type2}
+E104|Invalid type cast from {type1} to {type2}
+E105|Arithmetic operands must have numeric types, found {type}
+E105|Invalid operands for binary operator: {type1} and {type2}
+E106|Logical operands must have scalar types, found {type}
+E107|Operand of type {type} cannot be used as boolean
+
+[INCLUDE]
+E201|Include file not found: {file}
+E201|Cannot open include file '{file}'
+E202|Invalid include path: {path}
+E202|Malformed include directive at {line}:{col}
+E203|System include not found: {file}
+E203|Header file {file} not found in system directories
+E204|Circular include detected: {file}
+E204|Include nesting too deep in {file}
+
+[CALL]
+E301|Too few arguments to function {name}: expected {expected}, got {count}
+E301|Missing argument {count} for parameter {expected} in {name}
+E302|Too many arguments to function {name}: expected {expected}, got {count}
+E302|Excess arguments passed to {name}, expected {expected}
+E303|Argument {count} type mismatch in call to {name}: expected {expected}, got {type}
+E303|Type error: argument {count} of {name} expects {expected}, found {type}
+E304|Unknown function {name} at {line}:{col}
+E304|Function {name} is not defined
+E305|Cannot call non-function {name}
+E305|Variable {name} is not callable
+
+[RETURN]
+E401|Missing return statement in non-void function {name}
+E401|Control reaches end of function {name} without returning a value
+E402|Invalid return type: expected {expected}, got {type}
+E402|Return type mismatch in function {name}: cannot return {type}
+E403|Return statement in void function {name}
+E403|Void function {name} cannot return a value
+E404|Return outside of function context
+E405|Expected expression in return statement
+
+[STRUCT]
+E501|Unknown struct name {name} at {line}:{col}
+E501|Struct {name} is not defined
+E502|Invalid field access on type {type}
+E502|Cannot access field {field} of non-struct type {type}
+E503|Struct {name} redefinition at {line}:{col}
+E503|Multiple definition of struct {name}
+E504|Invalid struct initialization for type {type}
+E504|Cannot initialize struct {name} with these values
+E505|Field {field} not found in struct {name}
+E505|Struct {name} has no member named {field}
+
+[PARSE]
+E601|Parse failure at token {found} on line {line}
+E601|Failed to parse {found} at {line}:{col}
+E602|Unexpected end of input
+E602|Unexpected end of file in {file}
+E603|Invalid declaration near {found}
+E603|Malformed declaration: {found}
+E604|Expected {expected} at {line}:{col}, found {found}
+E604|Garbage at end of input: {found}
+E605|Cannot parse expression starting with {found}
+E606|Missing token {expected} after {found}
+
+[ASM]
+E701|Invalid asm syntax near {found}
+E701|Malformed assembly block at {line}:{col}
+E702|Unknown syntax in asm block: {found}
+E702|Invalid assembly instruction: {found}
+E703|Unclosed asm block: missing closing '}'
+E703|Assembly block started at {line} is never closed
+E704|Invalid operand in asm: {found}
+E704|Assembly constraint {found} is not supported
+E705|Empty asm block at {line}:{col}
+
+[GENERAL]
+E901|Internal compiler error at {line}:{col}
+E901|Compiler bug detected while processing {file}
+E902|Compilation failed due to errors
+E902|Build failed with {count} error(s)
+E903|Unexpected error occurred: {message}
+E903|An error occurred while processing {name}: {message}
+E904|Cannot open file {file} for reading
+E904|File {file} does not exist or is not accessible
+E905|Out of memory during compilation
+E905|Memory allocation failed at {line}:{col}
