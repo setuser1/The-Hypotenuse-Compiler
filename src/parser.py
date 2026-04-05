@@ -481,7 +481,7 @@ class Parser:
             decls.append(self.parse_external())
         return Program(decls)
 
-    def _parse_preprocessor(self, directive: str) -> Node:
+    def _parse_preprocessor(self, directive: str) -> Optional[Node]:
         """Parse a preprocessor directive."""
         stripped = directive.strip()
         if stripped.startswith("#include"):

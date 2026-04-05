@@ -13,24 +13,39 @@ def parse_args():
         description="C triangle compiler.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("files", nargs="*", help="Source file(s) to compile")
+
+    parser.add_argument("files", nargs="+", help="Source file(s) to compile")
+
     parser.add_argument(
-        "-t", "--tokens", action="store_true", help="Print lexical tokens and exit"
+        "-t", "--tokens",
+        action="store_true",
+        help="Print lexical tokens and exit"
     )
+
+    parser.add_argument(
+        "-p", "--print",
+        action="store_true",
+        help="Print structure graph instead of compiling"
+    )
+
     parser.add_argument(
         "-o",
         "--output",
         metavar="PATH",
-        help="Write compiled output to PATH (not yet implemented)",
+        help="Write compiled output to PATH"
     )
+
     parser.add_argument(
-        "-a", "--asm", action="store_true", help="Show generated assembly"
+        "-a", "--asm",
+        action="store_true",
+        help="Show generated assembly (WIP)"
     )
+
     return parser.parse_args()
 
 
 def print_tokens(tokens):
-    """Pretty-print a token list, one token per line."""
+    """Pretty-print a token list."""
     width = max(len(t[0]) for t in tokens)
     print("\u250c\u2500 Tokens " + "\u2500" * (width + 24) + "\u2510")
     for typ, val in tokens:
@@ -42,7 +57,6 @@ def print_objects(objects):
     """Pretty-print the Callee/Caller graph objects grouped by scope."""
     from structure import Callee, Caller, callee_value_display_parts
 
-    # Group by scope name
     by_scope = {}
     for obj in objects:
         scope_name = obj.scope.name
@@ -54,13 +68,9 @@ def print_objects(objects):
         parent_str = f"  (parent: {parent.name})" if parent else ""
         print("\u2502")
         print(f"\u2502  scope: {scope_name}{parent_str}")
+
         for node in nodes:
             if isinstance(node, Callee):
-                # Determine kind correctly:
-                # 1. Pointer variables -> their type string
-                # 2. Library callees   -> 'library'
-                # 3. User functions    -> 'function'  (is_variable=False, value=None)
-                # 4. Variables         -> kind from value (integer/float/string/none)
                 if node.var_type and "*" in node.var_type:
                     kind = node.var_type
                 elif node.is_library:
@@ -69,90 +79,95 @@ def print_objects(objects):
                     kind = "function"
                 else:
                     kind, _ = callee_value_display_parts(node.value)
-                val_repr = repr(node.value)
+
                 print(
-                    f"\u2502    Callee  {node.name!r:<20} kind={kind:<12} value={val_repr}"
+                    f"\u2502    Callee  {node.name!r:<20} "
+                    f"kind={kind:<12} value={repr(node.value)}"
                 )
+
             elif isinstance(node, Caller):
                 callee_name = node.dependencies[0][0].name if node.dependencies else "?"
                 args = node.dependencies[0][1] if node.dependencies else []
                 args_str = ", ".join(repr(a) for a in args)
+
                 print(
-                    f"\u2502    Caller  {node.name!r:<20} -> {callee_name}({args_str})"
+                    f"\u2502    Caller  {node.name!r:<20} "
+                    f"-> {callee_name}({args_str})"
                 )
+
     print("\u2502")
     print("\u2514" + "\u2500" * 54 + "\u2518")
 
 
 def compile_file(path):
-    """Lex, parse, and structure a single source file.
-
-    Returns (tokens, ast, structor).
-    """
+    """Lex, parse, structure, and generate code for a file."""
     with open(path, "r") as f:
         content = f.read()
 
     tokens = lexer.Lexer(content).lex()
     tokens.append(("EOF", "EOF"))
+
     ast = p.Parser(tokens).parse_program()
     structor = structure.Structor(ast, content)
     objects = structor.build_from_ast()
-    return tokens, ast, structor, objects
+
+    # 🔥 ACTUAL COMPILATION
+    codegen_obj = codegen.CodeGen(ast, structor)
+    output = codegen_obj.generate()
+
+    return tokens, output, objects
+
+
+def write_output(path, data):
+    with open(path, "w") as f:
+        f.write(data)
 
 
 def main():
     args = parse_args()
 
-    # -------------------------------------------------
-    #  Token-only mode (-t / --tokens)
-    # -------------------------------------------------
-    if args.tokens:
-        if not args.files:
-            print("Error: no input file provided for token printing")
-            sys.exit(1)
-        try:
-            tokens, ast, structor, objects = compile_file(args.files[0])
-            print_tokens(tokens)
-            print_objects(objects)
-            return objects
-        except FileNotFoundError:
-            print(f"Error: file not found {args.files[0]}")
-            sys.exit(1)
-        except SyntaxError as error:
-            print(f"Syntax error: {error}")
-            sys.exit(1)
-        except Exception as error:
-            print(f"Compilation error: {error}")
-            sys.exit(1)
-
-    # -------------------------------------------------
-    #  Normal compilation path (one or more files)
-    # -------------------------------------------------
-    if not args.files:
-        print("Error: no input file provided")
-        sys.exit(1)
-
     for path in args.files:
         try:
-            tokens, ast, structor, objects = compile_file(path)
-            if args.asm:
-                codegen_obj = codegen.CodeGen(ast, structor)
-                print(codegen_obj.generate())
-            else:
+            tokens, output, objects = compile_file(path)
+
+            # -----------------------------
+            # Token mode
+            # -----------------------------
+            if args.tokens:
+                print_tokens(tokens)
+                continue
+
+            # -----------------------------
+            # Structure graph mode
+            # -----------------------------
+            if args.print:
                 print_objects(objects)
-            return objects
+                continue
+
+            # -----------------------------
+            # ASM mode (WIP)
+            # -----------------------------
+            if args.asm:
+                print("Error: assembly output is not implemented yet (WIP)")
+                continue
+
+            # -----------------------------
+            # Default: compiled output
+            # -----------------------------
+            if args.output:
+                write_output(args.output, output)
+            else:
+                print(output)
+
         except FileNotFoundError:
             print(f"Error: file not found {path}")
-            sys.exit(1)
         except OSError as error:
             print(f"Error reading file: {error}")
-            sys.exit(1)
         except SyntaxError as error:
             print(f"Syntax error: {error}")
-            sys.exit(1)
         except Exception as error:
             print(f"Compilation error: {error}")
-            sys.exit(1)
 
 
-main()
+if __name__ == "__main__":
+    main()
