@@ -69,11 +69,12 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 
 ## Module / Import Keywords
 
-| Keyword | Description                            |
-| ------- | -------------------------------------- |
-| `using` | _NEW_ Import a symbol from a library   |
-| `show`  | _NEW_ Globalize a library or namespace |
-| `lib:`  | _NEW_ Explicit plstd access prefix     |
+| Keyword     | Description                               |
+| ----------- | ----------------------------------------- |
+| `using`     | _NEW_ Import a symbol from a library      |
+| `show`      | _NEW_ Globalize a library or namespace    |
+| `lib:`      | _NEW_ Explicit plstd access prefix        |
+| `overwrite` | overwrite base syntax with library syntax |
 
 ---
 

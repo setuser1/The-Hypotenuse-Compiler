@@ -63,6 +63,10 @@ show lib:io
 
 // Intra-file immutable reference
 using scope&myVar
+
+// overwrite of syntax
+overwrite(int, lib:int)
+overwrite(base, examplelib) // overwriting base keywords with examplelib keywords.
 ```
 
 > The compiler auto-imports what is used — manual `using` is optional style.
