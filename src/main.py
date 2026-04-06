@@ -121,6 +121,9 @@ def main():
     args = parse_args()
 
     for path in args.files:
+        if not path.endswith(".ctri"):
+            print(f"Error: Only .ctri files are supported, got '{path}'")
+            continue
         try:
             tokens, output, objects = compile_file(path)
 
