@@ -446,6 +446,9 @@ class Parser:
     def _parse_local_declaration(self) -> Node:
         """Parse a local variable declaration inside a function."""
         typ = self.advance()[1]
+        # Handle typedef alias - resolve to actual type for declarations
+        if typ in self._typedefs:
+            typ = self._typedefs[typ]
         # Handle compound types: long long, unsigned long, etc.
         if self.peek()[0] in _BASE_TYPE_TOKENS:
             typ2 = self.advance()[1]
@@ -540,7 +543,9 @@ class Parser:
         if t[0] == "ENUM":
             return self.parse_enum_definition()
 
-        if t[0] in _TYPE_TOKENS:
+        if t[0] in _TYPE_TOKENS or t[0] == "IDENTIFIER":
+            if t[0] == "IDENTIFIER" and t[1] not in self._typedefs:
+                raise SyntaxError(f"Unexpected identifier at top-level: '{t[1]}")
             typ = self.advance()[1]
             # Handle typedef alias - resolve to actual type for declarations
             if typ in self._typedefs:
@@ -578,18 +583,25 @@ class Parser:
                         params = []
                     else:
                         while True:
-                            # Handle type qualifiers (const, volatile, etc.)
+                            # Handle type qualifiers BEFORE base type (const, volatile, etc.)
                             type_qualifiers = []
                             while self.peek()[0] in ("CONST", "VOLATILE"):
                                 type_qualifiers.append(self.advance()[1])
 
                             ptype = self.advance()[1]
+                            # Handle typedef alias - resolve to actual type for declarations
+                            if ptype in self._typedefs:
+                                ptype = self._typedefs[ptype]
                             # Handle compound types in parameters
                             if self.peek()[0] in _BASE_TYPE_TOKENS:
                                 ptype2 = self.advance()[1]
                                 ptype = f"{ptype} {ptype2}"
                             # Handle pointer types in parameters
                             ptype = self._consume_pointer_stars(ptype)
+
+                            # Handle type qualifiers AFTER pointer (like const after *)
+                            while self.peek()[0] in ("CONST", "VOLATILE"):
+                                type_qualifiers.append(self.advance()[1])
 
                             # Prepend qualifiers if any
                             if type_qualifiers:
@@ -668,6 +680,12 @@ class Parser:
                 actual_type += self.advance()[1] + " "
                 if self.peek()[0] in _BASE_TYPE_TOKENS:
                     actual_type += self.advance()[1] + " "
+            elif tok[0] == "IDENTIFIER":
+                # Check if this is the alias (next token is SEMICOLON)
+                # In that case, don't consume it as part of the type
+                if self.tokens[self.i + 1][0] == "SEMICOLON":
+                    break
+                actual_type += self.advance()[1] + " "
             elif tok[0] == "STRUCT":
                 actual_type += self.advance()[1]
                 if self.peek()[0] == "IDENTIFIER":
@@ -891,6 +909,9 @@ class Parser:
 
         # Handle type declarations (including size_t)
         if t[0] in _BASE_TYPE_TOKENS:
+            return self._parse_local_declaration()
+        # Handle typedef aliases
+        if t[0] == "IDENTIFIER" and t[1] in self._typedefs:
             return self._parse_local_declaration()
 
         if t[0] == "LBRACE":
@@ -1337,6 +1358,16 @@ class Parser:
     def parse_unary(self) -> Node:
         """Parse unary prefix expressions (e.g. -x, !y, ++x, --x)."""
         token = self.peek()
+        # Handle signed integer literals directly to preserve integer kind for negatives
+        if token[0] == "MINUS":
+            # Peek at next token to check if it's an integer literal
+            next_token = (
+                self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
+            )
+            if next_token and next_token[0] == "INT_LITERAL":
+                self.advance()  # consume MINUS
+                lit_val = self.advance()[1]
+                return Literal(f"-{lit_val}")
         if token[0] in ("PLUS", "MINUS", "NOT", "BITWISE_NOT"):
             op = self.advance()[1]
             operand = self.parse_unary()

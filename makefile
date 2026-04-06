@@ -51,31 +51,31 @@ typecheck:
 # ---------------------------------------------------------------
 test: install lint typecheck
 	@echo "--- Test: negative number + value kind (issues #61, #83) ---"
-	@python3 src/main.py -t "$(BASELINE)" | \
+	@python3 src/main.py -p "$(BASELINE)" | \
 		grep "kind=integer" > /dev/null || \
 		(echo "FAIL: x should have kind=integer (issue #83)" && exit 1)
-	@python3 src/main.py -t "$(BASELINE)" | \
+	@python3 src/main.py -p "$(BASELINE)" | \
 		grep "value=-500" > /dev/null || \
 		(echo "FAIL: x should have value -500" && exit 1)
 	@echo "PASS: negative number and integer kind"
 
 	@echo "--- Test: variables scoped to function, not program (issue #62) ---"
-	@python3 src/main.py -t "$(BASELINE)" | \
+	@python3 src/main.py -p "$(BASELINE)" | \
 		grep "scope: main" > /dev/null || \
 		(echo "FAIL: x should be in scope 'main', not 'program'" && exit 1)
-	@python3 src/main.py -t "$(BASELINE)" | \
+	@python3 src/main.py -p "$(BASELINE)" | \
 		awk '/scope: program/,/scope: main/' | grep "Callee  'x'" > /dev/null && \
 		(echo "FAIL: x must not appear in program scope" && exit 1) || true
 	@echo "PASS: scope tracking"
 
 	@echo "--- Test: function itself registered in program scope ---"
-	@python3 src/main.py -t "$(BASELINE)" | \
+	@python3 src/main.py -p "$(BASELINE)" | \
 		grep -A20 "scope: program" | grep "Callee  'main'" > /dev/null || \
 		(echo "FAIL: main() should be a Callee in program scope" && exit 1)
 	@echo "PASS: function in program scope"
 
 	@echo "--- Test: callers present for printf calls ---"
-	@python3 src/main.py -t "$(BASELINE)" | \
+	@python3 src/main.py -p "$(BASELINE)" | \
 		grep "Caller.*call_printf" > /dev/null || \
 		(echo "FAIL: expected Caller nodes for printf invocations" && exit 1)
 	@echo "PASS: callers present"

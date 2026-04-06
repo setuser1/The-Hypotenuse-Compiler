@@ -1,5 +1,6 @@
 import argparse
-import sys
+
+# import sys  # removed unused import
 import lexer
 import parser as p
 import structure
@@ -17,28 +18,22 @@ def parse_args():
     parser.add_argument("files", nargs="+", help="Source file(s) to compile")
 
     parser.add_argument(
-        "-t", "--tokens",
-        action="store_true",
-        help="Print lexical tokens and exit"
+        "-t", "--tokens", action="store_true", help="Print lexical tokens and exit"
     )
 
     parser.add_argument(
-        "-p", "--print",
+        "-p",
+        "--print",
         action="store_true",
-        help="Print structure graph instead of compiling"
+        help="Print structure graph instead of compiling",
     )
 
     parser.add_argument(
-        "-o",
-        "--output",
-        metavar="PATH",
-        help="Write compiled output to PATH"
+        "-o", "--output", metavar="PATH", help="Write compiled output to PATH"
     )
 
     parser.add_argument(
-        "-a", "--asm",
-        action="store_true",
-        help="Show generated assembly (WIP)"
+        "-a", "--asm", action="store_true", help="Show generated assembly (WIP)"
     )
 
     return parser.parse_args()
@@ -91,8 +86,7 @@ def print_objects(objects):
                 args_str = ", ".join(repr(a) for a in args)
 
                 print(
-                    f"\u2502    Caller  {node.name!r:<20} "
-                    f"-> {callee_name}({args_str})"
+                    f"\u2502    Caller  {node.name!r:<20} -> {callee_name}({args_str})"
                 )
 
     print("\u2502")

@@ -130,7 +130,7 @@ class CodeGen:
                     )
                 ):
                     return val
-                return f'"{ val }"'
+                return f'"{val}"'
             return str(val)
 
         if isinstance(node, Var):
@@ -206,9 +206,7 @@ class CodeGen:
 
         if isinstance(node, Generic):
             expr = self._expr(node.expr)
-            assocs = ", ".join(
-                f"{t}: {self._expr(v)}" for t, v in node.associations
-            )
+            assocs = ", ".join(f"{t}: {self._expr(v)}" for t, v in node.associations)
             return f"_Generic({expr}, {assocs})"
 
         # Fallback
@@ -280,7 +278,10 @@ class CodeGen:
         ret_type = self._map_type(node.ret_type)
         params = []
         for ptype, pname in node.params:
-            params.append(f"{self._map_type(ptype)} {pname}")
+            if ptype == "...":
+                params.append("...")
+            else:
+                params.append(f"{self._map_type(ptype)} {pname}")
         param_str = ", ".join(params) if params else "void"
         self._emit(f"{ret_type} {node.name}({param_str}) {{")
         self._indent += 1
