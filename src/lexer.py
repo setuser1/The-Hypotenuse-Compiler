@@ -109,7 +109,18 @@ Tokens = [
 
 
 def get_tokens(string):
-    var = string
+    # Handle line continuations (backslash at end of line)
+    result = []
+    i = 0
+    while i < len(string):
+        if string[i] == "\\" and i + 1 < len(string) and string[i + 1] in "\n\r":
+            # Skip backslash and the newline
+            i += 2
+        else:
+            result.append(string[i])
+            i += 1
+    var = "".join(result)
+
     tokens = []
 
     while var:
