@@ -1,2 +1,0 @@
-// Step 2: Array initialization
-int nums[5] = {1, 2, 3, 4, 5};

@@ -1,5 +1,0 @@
-// Test backslash continuation
-int \
-main() {
-    return 0;
-}

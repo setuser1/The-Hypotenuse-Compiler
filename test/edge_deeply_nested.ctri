@@ -1,5 +1,0 @@
-/* This is a
-   /* nested /* deeply /* comment */ */ */ */
-int main() {
-    return 0;
-}

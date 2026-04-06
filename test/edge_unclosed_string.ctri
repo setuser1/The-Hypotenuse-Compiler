@@ -1,4 +1,0 @@
-int main() {
-    int x = "unclosed string;
-    return 0;
-}

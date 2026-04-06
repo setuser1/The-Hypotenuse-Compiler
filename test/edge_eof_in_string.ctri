@@ -1,4 +1,0 @@
-// Edge case: missing closing brace at EOF
-int main() {
-    int x = 5;
-    return 0;

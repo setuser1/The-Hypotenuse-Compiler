@@ -1,7 +1,0 @@
-#include <stdio.h>
-#include "local.h"
-#define MAX 100
-
-int main() {
-    return 0;
-}

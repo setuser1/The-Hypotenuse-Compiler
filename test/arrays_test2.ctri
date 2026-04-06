@@ -1,7 +1,0 @@
-// Test arrays step by step
-void func1(int data[]) { }
-void func2(int mat[][5]) { }
-
-int main() {
-    return 0;
-}

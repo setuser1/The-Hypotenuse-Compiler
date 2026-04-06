@@ -1,6 +1,0 @@
-// Minimal array test
-void func(int data[]) { }
-
-int main() {
-    return 0;
-}
