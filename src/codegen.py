@@ -23,6 +23,7 @@ from parser import (
     Cast,
     Assignment,
     Include,
+    Define,
     InitList,
     Switch,
     StructDef,
@@ -206,6 +207,13 @@ class CodeGen:
 
         if isinstance(node, FieldAccess):
             obj = self._expr(node.obj)
+            # If object is a dereference (Unary *), use arrow notation
+            # The Unary was added by the parser when converting -> to (*).field
+            # So we don't need another *
+            if isinstance(node.obj, Unary) and node.obj.op == "*":
+                # Get the operand of the unary (the pointer variable)
+                ptr = self._expr(node.obj.operand)
+                return f"{ptr}->{node.field_name}"
             return f"{obj}.{node.field_name}"
 
         if isinstance(node, InitList):
@@ -272,6 +280,9 @@ class CodeGen:
             self._gen_expr_stmt(node)
         elif isinstance(node, Include):
             self._gen_include(node)
+        elif isinstance(node, Define):
+            # Emit #define directives as-is
+            self._emit(node.directive)
         elif isinstance(node, Switch):
             self._gen_switch(node)
         elif isinstance(node, StructDef):
@@ -362,14 +373,26 @@ class CodeGen:
 
     def _gen_while(self, node: While):
         cond = self._expr(node.cond)
-        # Wrap condition in extra parens ONLY if it contains an assignment
-        has_assignment = isinstance(node.cond, Assignment) or (
-            isinstance(node.cond, Binary) and self._contains_assignment(node.cond)
-        )
-        if has_assignment:
-            self._emit(f"while (({cond})) {{")
-        else:
-            self._emit(f"while ({cond}) {{")
+        # Detect the problematic pattern: (assignment != comparison)
+        # This happens when parsing "entry = readdir(dir) != NULL"
+        # which becomes Binary("!=", Assignment(...), NULL)
+        # Output: while ((entry = readdir(dir)) != NULL) {
+        # NOT: while ((entry = readdir(dir) != NULL)) {
+
+        # Check if it's a binary with assignment on the left and comparison
+        needs_fix = False
+        if isinstance(node.cond, Binary) and isinstance(node.cond.left, Assignment):
+            # The binary left is an assignment - need special handling
+            needs_fix = True
+
+        if needs_fix:
+            # Reconstruct: (assignment) op right
+            left = self._expr(node.cond.left)
+            op = node.cond.op
+            right = self._expr(node.cond.right)
+            cond = f"({left}) {op} {right}"
+
+        self._emit(f"while ({cond}) {{")
         self._indent += 1
         body = node.body
         if isinstance(body, Compound):

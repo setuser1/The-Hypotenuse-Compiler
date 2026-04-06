@@ -238,6 +238,13 @@ class Include(Node):
 
 
 @dataclass
+class Define(Node):
+    """#define directive - stored for emission."""
+
+    directive: str  # The full directive text
+
+
+@dataclass
 class InitList(Node):
     """Brace-enclosed initializer list: { expr, expr, ... }"""
 
@@ -502,6 +509,9 @@ class Parser:
                 end = rest.index('"', start + 1)
                 path = rest[start + 1 : end]
                 return Include(path, is_system=False)
+        elif stripped.startswith("#define"):
+            # Store #define as a special node that will be emitted as-is
+            return Define(directive)
         return None
 
     def parse_external(self) -> Node:
@@ -1295,85 +1305,58 @@ class Parser:
         return node
 
     def parse_logical_or(self) -> Node:
-        """Parse logical OR expressions (||)."""
-        left = self.parse_logical_and()
-        while self.peek()[0] == "OR":
-            op = self.advance()[1]
+        node = self.parse_logical_and()
+        while self.accept("OR"):
             right = self.parse_logical_and()
-            left = Binary(op, left, right)
-        return left
+            node = Binary("||", node, right)
+        return node
 
     def parse_logical_and(self) -> Node:
-        """Parse logical AND expressions (&&)."""
-        left = self.parse_equality()
-        while self.peek()[0] == "AND":
-            op = self.advance()[1]
+        node = self.parse_equality()
+        while self.accept("AND"):
             right = self.parse_equality()
-            left = Binary(op, left, right)
-        return left
+            node = Binary("&&", node, right)
+        return node
 
     def parse_equality(self) -> Node:
-        """Parse equality expressions (== !=)."""
-        left = self.parse_relational()
+        node = self.parse_relational()
         while self.peek()[0] in ("EQ", "NEQ"):
             op = self.advance()[1]
             right = self.parse_relational()
-            left = Binary(op, left, right)
-        return left
-
-    def parse_bitwise(self) -> Node:
-        """Parse bitwise expressions (| ^ & << >>)."""
-        left = self.parse_add()
-        while self.peek()[0] in (
-            "BITWISE_OR",
-            "BITWISE_XOR",
-            "BITWISE_NOT",
-            "AMPERSAND",
-        ):
-            op = self.advance()[1]
-            right = self.parse_add()
-            left = Binary(op, left, right)
-
-        while self.peek()[0] in ("LSHIFT", "RSHIFT"):
-            op = self.advance()[1]
-            right = self.parse_add()
-            left = Binary(op, left, right)
-        return left
+            node = Binary(op, node, right)
+        return node
 
     def parse_relational(self) -> Node:
-        """Parse relational expressions (< > <= >=)."""
-        left = self.parse_bitwise()
+        node = self.parse_bitwise()
         while self.peek()[0] in ("LT", "GT", "LE", "GE"):
             op = self.advance()[1]
             right = self.parse_bitwise()
-            left = Binary(op, left, right)
-        return left
+            node = Binary(op, node, right)
+        return node
+
+    def parse_bitwise(self) -> Node:
+        node = self.parse_add()
+        while self.peek()[0] in ("BITWISE_OR", "BITWISE_XOR"):
+            op = self.advance()[1]
+            right = self.parse_add()
+            node = Binary(op, node, right)
+        return node
 
     def parse_add(self) -> Node:
-        """Parse addition and subtraction expressions."""
-        left = self.parse_term()
+        node = self.parse_term()
         while self.peek()[0] in ("PLUS", "MINUS"):
             op = self.advance()[1]
             right = self.parse_term()
-            left = Binary(op, left, right)
-        return left
+            node = Binary(op, node, right)
+        return node
 
     def parse_term(self) -> Node:
-        """Parse multiplication and division expressions."""
-        left = self.parse_power()
+        node = self.parse_unary()
         while self.peek()[0] in ("MULTIPLY", "DIVIDE", "MODULO"):
             op = self.advance()[1]
-            right = self.parse_power()
-            left = Binary(op, left, right)
-        return left
-
-    def parse_power(self) -> Node:
-        """Parse exponentiation expressions (right-associative)."""
-        left = self.parse_unary()
-        if self.accept("POWER"):
-            right = self.parse_power()  # Right-associative
-            return Binary("**", left, right)
-        return left
+            right = self.parse_unary()
+            node = Binary(op, node, right)
+        return node
 
     def parse_unary(self) -> Node:
         """Parse unary prefix expressions (e.g. -x, !y, ++x, --x)."""
