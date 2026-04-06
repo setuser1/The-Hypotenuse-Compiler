@@ -13,6 +13,7 @@
 !**/*.h
 !**/*.hpp
 !Makefile
+!makefile
 
 .zed/
 .zed 2/
@@ -813,5 +814,4 @@ CMakeUserPresets.json
 
 # PyInstaller build artifacts
 build/
-dist/
 hypotenuse.spec
