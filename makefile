@@ -1,4 +1,4 @@
-.PHONY: run install test lint typecheck all build binary clean full-install
+.PHONY: run install test lint typecheck all build binary clean full-install uninstall
 
 # Path to the parseable regression fixture (quoted where expanded to the shell
 # so paths containing spaces work).
@@ -142,4 +142,18 @@ full-install: build
 		chmod +x ~/.local/bin/hypotenuse; \
 		echo "Installed to ~/.local/bin/hypotenuse"; \
 		echo "Add ~/.local/bin to your PATH if not already present"; \
+	fi
+
+# ---------------------------------------------------------------
+# uninstall: remove the binary from system
+# ---------------------------------------------------------------
+uninstall:
+	@if [ -f /usr/local/bin/hypotenuse ]; then \
+		rm /usr/local/bin/hypotenuse; \
+		echo "Removed /usr/local/bin/hypotenuse"; \
+	elif [ -f ~/.local/bin/hypotenuse ]; then \
+		rm ~/.local/bin/hypotenuse; \
+		echo "Removed ~/.local/bin/hypotenuse"; \
+	else \
+		echo "hypotenuse not found in /usr/local/bin or ~/.local/bin"; \
 	fi
