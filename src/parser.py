@@ -463,6 +463,9 @@ class Parser:
         if self.accept("LBRACKET"):
             if self.peek()[0] == "INT_LITERAL":
                 array_size = int(self.advance()[1])
+            elif self.peek()[0] == "IDENTIFIER":
+                # Handle macro constants in array sizes
+                array_size = self.advance()[1]
             self.expect("RBRACKET")
 
         # Handle initializer
@@ -633,6 +636,11 @@ class Parser:
             while self.accept("LBRACKET"):
                 if self.peek()[0] == "INT_LITERAL":
                     sizes.append(int(self.advance()[1]))
+                elif self.peek()[0] == "IDENTIFIER":
+                    # Handle macro constants in array sizes (e.g., #define BUFF 1024)
+                    ident = self.advance()[1]
+                    # Try to resolve as a known macro or leave as identifier
+                    sizes.append(ident)  # Keep as string for later resolution
                 else:
                     sizes.append(0)  # flexible array
                 self.expect("RBRACKET")
@@ -648,6 +656,10 @@ class Parser:
                 while self.accept("LBRACKET"):
                     if self.peek()[0] == "INT_LITERAL":
                         extra_sizes.append(int(self.advance()[1]))
+                    elif self.peek()[0] == "IDENTIFIER":
+                        # Handle macro constants in array sizes
+                        ident = self.advance()[1]
+                        extra_sizes.append(ident)
                     else:
                         extra_sizes.append(0)
                     self.expect("RBRACKET")
@@ -907,12 +919,20 @@ class Parser:
             self.advance()
             return self.parse_statement()
 
-        # Handle type declarations (including size_t)
+        # Handle type declarations (including size_t and system types like mode_t, uid_t, etc.)
         if t[0] in _BASE_TYPE_TOKENS:
             return self._parse_local_declaration()
         # Handle typedef aliases
         if t[0] == "IDENTIFIER" and t[1] in self._typedefs:
             return self._parse_local_declaration()
+        # Handle system type aliases (mode_t, uid_t, gid_t, etc.) - check if next token looks like a variable
+        if t[0] == "IDENTIFIER":
+            # Peek at next token - if it's an identifier, this is likely a type declaration
+            next_idx = self.i + 1
+            if next_idx < len(self.tokens):
+                next_tok = self.tokens[next_idx]
+                if next_tok[0] in ("IDENTIFIER", "MULTIPLY"):
+                    return self._parse_local_declaration()
 
         if t[0] == "LBRACE":
             return self.parse_compound()
@@ -1422,6 +1442,13 @@ class Parser:
                 self.advance()
                 field_name = self.expect("IDENTIFIER")[1]
                 node = FieldAccess(node, field_name)
+            elif self.peek()[0] == "ARROW":
+                # Arrow operator: expr->field (pointer dereference field access)
+                self.advance()
+                field_name = self.expect("IDENTIFIER")[1]
+                # Convert arrow to (*expr).field for AST representation
+                deref = Unary(op="*", operand=node, prefix=True)
+                node = FieldAccess(deref, field_name)
             else:
                 break
         return node

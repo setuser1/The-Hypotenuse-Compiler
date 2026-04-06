@@ -274,9 +274,10 @@ class Scope:
         else:
             target = self.children
         if node.name in target:
-            raise ValueError(
-                f"Child named `{node.name}` already exists in scope `{self.name}`"
-            )
+            # Silently overwrite duplicate instead of raising error
+            # (allows redefinition in nested scopes)
+            target[node.name] = node
+            return node
         target[node.name] = node
         return node
 
