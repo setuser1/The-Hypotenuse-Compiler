@@ -1,0 +1,113 @@
+// Array Handling Test Suite for C△
+
+// Test 1: Simple array declaration
+int arr[10];
+
+// Test 2: Multi-dimensional arrays
+int matrix[5][5];
+float grid[3][3][3];
+
+// Test 3: Array initialization
+int nums[5] = {1, 2, 3, 4, 5};
+float decimals[] = {1.1, 2.2, 3.3};
+char chars[4] = {'a', 'b', 'c', '\0'};
+
+// Test 4: Array indexing
+void test_indexing() {
+    int i = 0;
+    arr[0] = 10;
+    arr[1] = 20;
+    arr[i] = 30;
+    arr[i + 1] = 40;
+    
+    int x = arr[0];
+    int y = arr[i];
+    int z = arr[arr[0]];
+}
+
+// Test 5: Multi-dimensional array indexing
+void test_multi_index() {
+    matrix[0][0] = 1;
+    matrix[1][2] = 5;
+    
+    int row = 1;
+    int col = 2;
+    int val = matrix[row][col];
+}
+
+// Test 6: String arrays
+string names[3] = {"Alice", "Bob", "Charlie"};
+string messages[] = {"Hello", "World"};
+
+// Test 7: Array parameters in functions
+int sum_array(int data[], int size) {
+    int total = 0;
+    int i = 0;
+    while (i < size) {
+        total = total + data[i];
+        i = i + 1;
+    }
+    return total;
+}
+
+void process_matrix(int mat[][5], int rows) {
+    int i = 0;
+    while (i < rows) {
+        mat[i][0] = i;
+        i = i + 1;
+    }
+}
+
+void print_strings(string strs[], int count) {
+    int i = 0;
+    while (i < count) {
+        printfs("{strs[i]}");
+        i = i + 1;
+    }
+}
+
+// Test 8: Array in struct
+struct Container(int capacity) {
+    init { 
+        self.capacity = capacity; 
+    }
+    int items[10];
+    int count;
+}
+
+// Test 9: Dynamic array usage
+dynam int dynamic_nums = [1, 2, 3, 4, 5];
+
+// Test 10: Array in loops
+void array_loops() {
+    int arr[5] = {1, 2, 3, 4, 5};
+    int i = 0;
+    int sum = 0;
+    
+    while (i < 5) {
+        sum = sum + arr[i];
+        i = i + 1;
+    }
+}
+
+// Test 11: Complex array expressions
+void complex_expressions() {
+    int a[5] = {1, 2, 3, 4, 5};
+    int b[5] = {5, 4, 3, 2, 1};
+    int i = 2;
+    
+    int x = a[b[i]];
+    int y = a[i] + b[i];
+    int z = a[a[i]];
+}
+
+int main() {
+    test_indexing();
+    test_multi_index();
+    array_loops();
+    complex_expressions();
+    
+    int result = sum_array(nums, 5);
+    
+    return 0;
+}

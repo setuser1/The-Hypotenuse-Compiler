@@ -1,0 +1,185 @@
+// C11-Specific Features Test File
+// This tests advanced C11 features that were added to the compiler
+
+#include <stdio.h>
+#include <stddef.h>
+
+// ============================================
+// Test 1: Typedef declarations
+// ============================================
+typedef unsigned int socklen_t;
+typedef unsigned long long uint64_t;
+typedef int* int_ptr;
+typedef int (*func_ptr)(int, int);
+
+// ============================================
+// Test 2: Array parameters (function declarations)
+// ============================================
+
+// Array parameter with pointer type
+void process_args(int argc, char *argv[]);
+
+// Multiple array parameters
+int sum_array(int arr[], int n);
+
+// Pointer to array
+void print_matrix(int rows, int cols, int *matrix[]);
+
+// ============================================
+// Test 3: Struct definitions with typedef members
+// ============================================
+
+struct SocketAddress {
+    int family;
+    socklen_t addr_len;
+    uint64_t timestamp;
+};
+
+struct Container {
+    int_ptr data;
+    func_ptr callback;
+    struct SocketAddress addr;
+};
+
+// ============================================
+// Test 4: Struct return types
+// ============================================
+
+struct Point {
+    int x;
+    int y;
+};
+
+struct Point create_point(int x, int y);
+struct Point add_points(struct Point a, struct Point b);
+struct SocketAddress make_address(int family, socklen_t len);
+
+// ============================================
+// Test 5: Storage specifiers
+// ============================================
+
+// Static variables
+static int counter = 0;
+static float pi = 3.14159f;
+
+// Extern declarations
+extern int errno;
+extern void external_func(void);
+
+// Inline function
+inline int max(int a, int b) {
+    return (a > b) ? a : b;
+}
+
+// ============================================
+// Test 6: Adjacent string literals
+// ============================================
+
+void test_strings(void) {
+    // Adjacent string literals should be concatenated
+    char* msg1 = "Hello, " "World!";
+    char* msg2 = "This " "is " "a " "test";
+    char* multi = "Line 1\n"
+                  "Line 2\n"
+                  "Line 3";
+}
+
+// ============================================
+// Test 7: Hex literals with suffixes
+// ============================================
+
+void test_hex_literals(void) {
+    // Various hex literal suffixes
+    unsigned int hex1 = 0xFFu;
+    unsigned long hex2 = 0xABCDul;
+    unsigned long long hex3 = 0xABCULL;
+    long long hex4 = 0x123456789LL;
+    unsigned int hex5 = 0xDEADBEEFU;
+    
+    // Mixed case
+    unsigned long long hex6 = 0xAbCdEf0123456789ull;
+}
+
+// ============================================
+// Test 8: Function implementations
+// ============================================
+
+void process_args(int argc, char *argv[]) {
+    for (int i = 0; i < argc; i++) {
+        printf("Arg %d: %s\n", i, argv[i]);
+    }
+}
+
+int sum_array(int arr[], int n) {
+    int sum = 0;
+    for (int i = 0; i < n; i++) {
+        sum += arr[i];
+    }
+    return sum;
+}
+
+struct Point create_point(int x, int y) {
+    struct Point p;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+struct Point add_points(struct Point a, struct Point b) {
+    struct Point result;
+    result.x = a.x + b.x;
+    result.y = a.y + b.y;
+    return result;
+}
+
+struct SocketAddress make_address(int family, socklen_t len) {
+    struct SocketAddress addr;
+    addr.family = family;
+    addr.addr_len = len;
+    addr.timestamp = 0ULL;
+    return addr;
+}
+
+// ============================================
+// Test 9: More complex combinations
+// ============================================
+
+// Function returning pointer to struct
+struct Point* create_point_ptr(int x, int y);
+
+// Function with struct parameter
+void print_point(struct Point p);
+
+// Static struct
+static struct Point origin = {0, 0};
+
+// ============================================
+// Main function
+// ============================================
+
+int main(void) {
+    // Test array parameters
+    int numbers[] = {1, 2, 3, 4, 5};
+    int total = sum_array(numbers, 5);
+    
+    // Test struct return
+    struct Point p1 = create_point(10, 20);
+    struct Point p2 = create_point(5, 15);
+    struct Point p3 = add_points(p1, p2);
+    
+    // Test typedef in struct
+    struct SocketAddress addr = make_address(2, 16);
+    
+    // Test static counter
+    static int call_count = 0;
+    call_count++;
+    
+    // Test inline function
+    int m = max(10, 20);
+    
+    // Test hex literals
+    unsigned long long big_val = 0xDEADBEEFCAFEBABEULL;
+    
+    printf("Tests completed!\n");
+    return 0;
+}

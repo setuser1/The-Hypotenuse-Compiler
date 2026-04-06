@@ -1,0 +1,2 @@
+// Test: Very long file with no newline at end
+int x = 5;

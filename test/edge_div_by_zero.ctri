@@ -1,0 +1,5 @@
+int main() {
+    // Test division by zero - should this be caught?
+    int x = 10 / 0;
+    return 0;
+}

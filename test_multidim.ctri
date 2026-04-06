@@ -1,0 +1,22 @@
+void print_matrix(int rows, int cols, int mat[rows][cols]) {
+    for(int i=0; i<rows; i++) {
+        for(int j=0; j<cols; j++) {
+            printf("%d ", mat[i][j]);
+        }
+        printf("\n");
+    }
+}
+
+int sum_all(int n, int m, int arr[][10]) {
+    int total = 0;
+    for(int i=0; i<n; i++) {
+        for(int j=0; j<m; j++) {
+            total = total + arr[i][j];
+        }
+    }
+    return total;
+}
+
+int main() {
+    return 0;
+}

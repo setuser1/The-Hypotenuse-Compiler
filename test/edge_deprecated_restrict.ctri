@@ -1,0 +1,4 @@
+int main() {
+    int *restrict ptr;
+    return 0;
+}

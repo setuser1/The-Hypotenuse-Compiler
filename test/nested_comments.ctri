@@ -1,0 +1,10 @@
+void test() {
+    /* level 1 /* level 2 /* level 3 */ level 2 continued */ level 1 continued */
+    int x = 5;
+}
+
+int main() {
+    /* simple comment */
+    /* outer /* inner */ still outer */
+    return 0;
+}

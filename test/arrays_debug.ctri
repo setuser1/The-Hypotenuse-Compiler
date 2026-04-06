@@ -1,0 +1,15 @@
+// Debug: Find which function causes the issue
+
+// Test 1: Basic arrays
+int arr[10];
+
+// Test 2: Functions without string
+void func1(int data[], int size) { }
+void func2(int mat[][5]) { }
+
+// Test 3: Functions with string - this might be the issue
+void func3(string strs[]) { }
+
+int main() {
+    return 0;
+}

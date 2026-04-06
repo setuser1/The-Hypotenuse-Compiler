@@ -1,0 +1,16 @@
+// Typedef in struct fields
+#include <stdio.h>
+
+typedef unsigned int socklen_t;
+typedef unsigned long long uint64_t;
+
+struct SocketAddr {
+    int family;
+    socklen_t addr_len;
+    uint64_t timestamp;
+};
+
+int main(void) {
+    struct SocketAddr addr;
+    return 0;
+}

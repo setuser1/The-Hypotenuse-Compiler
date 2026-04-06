@@ -1,0 +1,97 @@
+// Complete Array Handling Test Suite for C△
+
+// Test 1: Simple array declarations
+int arr[10];
+int arr2[5];
+
+// Test 2: Multi-dimensional arrays
+int matrix[5][5];
+float grid[3][3][3];
+
+// Test 3: Array initialization with initializer lists
+int nums[5] = {1, 2, 3, 4, 5};
+float decimals[] = {1.1, 2.2, 3.3};
+char chars[4] = {'a', 'b', 'c', '\0'};
+
+// Test 4: Array indexing - basic access
+void test_basic_indexing() {
+    arr[0] = 10;
+    arr[1] = 20;
+    int x = arr[0];
+    int y = arr[1];
+}
+
+// Test 5: Array indexing with variables
+void test_variable_indexing() {
+    int i = 0;
+    arr[i] = 30;
+    int j = arr[i];
+    int k = arr[i + 1];
+}
+
+// Test 6: Multi-dimensional array indexing
+void test_multi_index() {
+    matrix[0][0] = 1;
+    matrix[1][2] = 5;
+    matrix[2][3] = matrix[0][0] + matrix[1][2];
+}
+
+// Test 7: String arrays
+string names[3] = {"Alice", "Bob", "Charlie"};
+string messages[] = {"Hello", "World"};
+
+// Test 8: Array parameters in functions
+int sum_array(int data[], int size) {
+    int total = 0;
+    int i = 0;
+    while (i < size) {
+        total = total + data[i];
+        i = i + 1;
+    }
+    return total;
+}
+
+void process_matrix(int mat[][5], int rows) {
+    int i = 0;
+    while (i < rows) {
+        mat[i][0] = i;
+        i = i + 1;
+    }
+}
+
+void print_strings(string strs[], int count) {
+    int i = 0;
+    while (i < count) {
+        i = i + 1;
+    }
+}
+
+// Test 9: Nested array indexing
+void test_nested_indexing() {
+    int a[5] = {1, 2, 3, 4, 5};
+    int b[5] = {4, 3, 2, 1, 0};
+    int x = a[b[0]];
+}
+
+// Test 10: Array in loops
+void array_loops() {
+    int arr[5] = {1, 2, 3, 4, 5};
+    int i = 0;
+    int sum = 0;
+    while (i < 5) {
+        sum = sum + arr[i];
+        i = i + 1;
+    }
+}
+
+int main() {
+    test_basic_indexing();
+    test_variable_indexing();
+    test_multi_index();
+    test_nested_indexing();
+    array_loops();
+    
+    int result = sum_array(nums, 5);
+    
+    return 0;
+}

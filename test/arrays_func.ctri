@@ -1,0 +1,2 @@
+// Test array parameters
+void func(int data[], int size) { }

@@ -43,8 +43,12 @@ def print_tokens(tokens):
     """Pretty-print a token list."""
     width = max(len(t[0]) for t in tokens)
     print("\u250c\u2500 Tokens " + "\u2500" * (width + 24) + "\u2510")
-    for typ, val in tokens:
-        print(f"\u2502  {typ:<{width}}  {val!r}")
+    for t in tokens:
+        typ, val = t[0], t[1]
+        line = t[2] if len(t) > 2 else 0
+        col = t[3] if len(t) > 3 else 0
+        pos = f" @ {line}:{col}" if line > 0 else ""
+        print(f"\u2502  {typ:<{width}}  {val!r}{pos}")
     print("\u2514" + "\u2500" * (width + 26) + "\u2518")
 
 
@@ -99,7 +103,7 @@ def compile_file(path):
         content = f.read()
 
     tokens = lexer.Lexer(content).lex()
-    tokens.append(("EOF", "EOF"))
+    tokens.append(("EOF", "EOF", 0, 0))
 
     ast = p.Parser(tokens).parse_program()
     structor = structure.Structor(ast, content)

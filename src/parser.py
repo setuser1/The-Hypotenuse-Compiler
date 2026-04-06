@@ -399,12 +399,12 @@ class Parser:
     def peek(self):
         """Return current token without consuming it.
 
-        Returns an ('EOF', '') sentinel when the token stream is exhausted
+        Returns an ('EOF', '', 0, 0) sentinel when the token stream is exhausted
         so callers never receive an IndexError.
         """
         if self.i < len(self.tokens):
             return self.tokens[self.i]
-        return ("EOF", "")
+        return ("EOF", "", 0, 0)
 
     def advance(self):
         """Consume and return current token."""
@@ -417,8 +417,10 @@ class Parser:
         tok = self.peek()
         if tok[0] == type_name:
             return self.advance()
+        line = tok[2] if len(tok) > 2 else 0
+        col = tok[3] if len(tok) > 3 else 0
         raise SyntaxError(
-            f"Expected {type_name} at token index {self.i}, got {tok[0]} ({tok[1]!r})"
+            f"Expected {type_name} at line {line}, column {col}, got {tok[0]} ({tok[1]!r})"
         )
 
     def accept(self, type_name: str):
@@ -455,11 +457,42 @@ class Parser:
         typ = self.advance()[1]
         if typ in self._typedefs:
             typ = self._typedefs[typ]
-        if self.peek()[0] in _BASE_TYPE_TOKENS:
+        # Handle compound types: long long, unsigned long, etc.
+        # Use while loop to handle multiple type qualifiers (long long)
+        while self.peek()[0] in _BASE_TYPE_TOKENS:
+            next_tok = self.peek()
+            # Stop if we hit a literal (handles suffixes like ULL)
+            if next_tok[0] in (
+                "INT_LITERAL",
+                "HEX_LITERAL",
+                "BINARY_LITERAL",
+                "OCTAL_LITERAL",
+                "CHAR_LITERAL",
+                "STRING_LITERAL",
+                "FLOAT_LITERAL",
+            ):
+                break
             typ2 = self.advance()[1]
             typ = f"{typ} {typ2}"
         typ = self._consume_pointer_stars(typ)
 
+        # Allow literals after compound types (e.g., unsigned long long x = 0xFF)
+        if self.peek()[0] not in (
+            "IDENTIFIER",
+            "INT_LITERAL",
+            "HEX_LITERAL",
+            "BINARY_LITERAL",
+            "OCTAL_LITERAL",
+            "CHAR_LITERAL",
+            "STRING_LITERAL",
+            "FLOAT_LITERAL",
+        ):
+            bad_tok = self.peek()
+            line = bad_tok[2] if len(bad_tok) > 2 else 0
+            col = bad_tok[3] if len(bad_tok) > 3 else 0
+            raise SyntaxError(
+                f"Expected identifier at line {line}, column {col}. Got '{bad_tok[0]}'."
+            )
         name = self.expect("IDENTIFIER")[1]
 
         array_size = None
@@ -549,8 +582,11 @@ class Parser:
 
         # Reject deprecated / removed keywords immediately.
         if t[0] in ("RESTRICT", "BOOLEAN"):
+            line = t[2] if len(t) > 2 else 0
+            col = t[3] if len(t) > 3 else 0
             raise SyntaxError(
-                f"Deprecated keyword used! Please remove or replace the keyword. "
+                f"Deprecated keyword used at line {line}, column {col}! "
+                f"Please remove or replace the keyword. "
                 f"Found '{t[0]}'."
             )
 
@@ -577,7 +613,11 @@ class Parser:
                     "IDENTIFIER",
                     "LBRACKET",
                 ):
-                    raise SyntaxError(f"Unexpected identifier at top-level: '{t[1]}")
+                    line = t[2] if len(t) > 2 else 0
+                    col = t[3] if len(t) > 3 else 0
+                    raise SyntaxError(
+                        f"Unexpected identifier at line {line}, column {col}: '{t[1]}'"
+                    )
             typ = self.advance()[1]
             if typ in self._typedefs:
                 typ = self._typedefs[typ]
@@ -586,7 +626,19 @@ class Parser:
             while self.peek()[0] in ("EXTERN", "STATIC", "AUTO", "REGISTER"):
                 self.advance()
             # Handle compound types: long long, unsigned long, etc.
-            if self.peek()[0] in _BASE_TYPE_TOKENS:
+            # Stop at literals (INT_LITERAL, HEX_LITERAL, etc.) or other non-type tokens
+            while self.peek()[0] in _BASE_TYPE_TOKENS:
+                next_tok = self.peek()
+                if next_tok[0] in (
+                    "INT_LITERAL",
+                    "HEX_LITERAL",
+                    "BINARY_LITERAL",
+                    "OCTAL_LITERAL",
+                    "CHAR_LITERAL",
+                    "STRING_LITERAL",
+                    "FLOAT_LITERAL",
+                ):
+                    break
                 typ2 = self.advance()[1]
                 typ = f"{typ} {typ2}"
 
@@ -598,10 +650,23 @@ class Parser:
             # Handle pointer type: int* ptr or int** ptr2
             typ = self._consume_pointer_stars(typ)
             # Expected Identifier error handling
-            if self.peek()[0] != "IDENTIFIER":
+            # Check if next token is a literal (not a type or identifier) - this can happen after compound types
+            if self.peek()[0] in (
+                "INT_LITERAL",
+                "HEX_LITERAL",
+                "BINARY_LITERAL",
+                "OCTAL_LITERAL",
+                "CHAR_LITERAL",
+                "STRING_LITERAL",
+                "FLOAT_LITERAL",
+            ):
+                pass  # This is a valid declaration, don't raise error
+            elif self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
+                line = bad_tok[2] if len(bad_tok) > 2 else 0
+                col = bad_tok[3] if len(bad_tok) > 3 else 0
                 raise SyntaxError(
-                    f"Expected identifier. "
+                    f"Expected identifier at line {line}, column {col}. "
                     f"Declaration keyword '{typ}' was followed by a non-identifier token. "
                     f"Got '{bad_tok[0]}'."
                 )
@@ -645,14 +710,20 @@ class Parser:
 
                             pname = self.expect("IDENTIFIER")[1]
                             psize = None
-                            if self.accept("LBRACKET"):
+                            psize_list = []
+                            while self.accept("LBRACKET"):
                                 if self.peek()[0] == "INT_LITERAL":
-                                    psize = int(self.advance()[1])
+                                    psize_list.append(int(self.advance()[1]))
                                 elif self.peek()[0] == "IDENTIFIER":
-                                    psize = self.advance()[1]
+                                    psize_list.append(self.advance()[1])
                                 else:
-                                    psize = 0  # empty brackets: char argv[]
+                                    psize_list.append(0)
                                 self.expect("RBRACKET")
+                            if psize_list:
+                                if len(psize_list) == 1:
+                                    psize = psize_list[0]
+                                else:
+                                    psize = psize_list
                             params.append((ptype, pname, psize))
                             if self.accept("COMMA"):
                                 # Handle variadic functions with ...
@@ -722,7 +793,9 @@ class Parser:
             # extend it below instead).
             return _MultiDecl(decls)
 
-        raise SyntaxError(f"Unexpected token at top-level: {t}")
+        line = t[2] if len(t) > 2 else 0
+        col = t[3] if len(t) > 3 else 0
+        raise SyntaxError(f"Unexpected token at line {line}, column {col}: {t}")
 
     def parse_typedef(self) -> Node:
         """Parse a typedef declaration."""
@@ -867,7 +940,12 @@ class Parser:
                             ptype = self.advance()[1]
                             if ptype in self._typedefs:
                                 ptype = self._typedefs[ptype]
-                            if self.peek()[0] in _BASE_TYPE_TOKENS:
+                            elif (
+                                ptype in ("struct", "union", "enum")
+                                and self.peek()[0] == "IDENTIFIER"
+                            ):
+                                ptype = f"{ptype} {self.advance()[1]}"
+                            elif self.peek()[0] in _BASE_TYPE_TOKENS:
                                 ptype2 = self.advance()[1]
                                 ptype = f"{ptype} {ptype2}"
                             ptype = self._consume_pointer_stars(ptype)
@@ -877,14 +955,20 @@ class Parser:
                                 ptype = " ".join(type_qualifiers) + " " + ptype
                             pname = self.expect("IDENTIFIER")[1]
                             psize = None
-                            if self.accept("LBRACKET"):
+                            psize_list = []
+                            while self.accept("LBRACKET"):
                                 if self.peek()[0] == "INT_LITERAL":
-                                    psize = int(self.advance()[1])
+                                    psize_list.append(int(self.advance()[1]))
                                 elif self.peek()[0] == "IDENTIFIER":
-                                    psize = self.advance()[1]
+                                    psize_list.append(self.advance()[1])
                                 else:
-                                    psize = 0
+                                    psize_list.append(0)
                                 self.expect("RBRACKET")
+                            if psize_list:
+                                if len(psize_list) == 1:
+                                    psize = psize_list[0]
+                                else:
+                                    psize = psize_list
                             params.append((ptype, pname, psize))
                             if self.accept("COMMA"):
                                 if self.accept("ELLIPSIS"):
@@ -903,7 +987,12 @@ class Parser:
             self.expect("SEMICOLON")
             return Declaration(var_type, func_name, init)
 
-        raise SyntaxError(f"Unexpected token after struct: {self.peek()}")
+        tok = self.peek()
+        line = tok[2] if len(tok) > 2 else 0
+        col = tok[3] if len(tok) > 3 else 0
+        raise SyntaxError(
+            f"Unexpected token after struct at line {line}, column {col}: {tok}"
+        )
 
     def parse_union_definition(self) -> Node:
         """Parse a union definition or union type usage."""
@@ -919,7 +1008,12 @@ class Parser:
             fields = []
             while self.peek()[0] != "RBRACE":
                 if self.peek()[0] == "EOF":
-                    raise SyntaxError("Unexpected end of file: unclosed union")
+                    tok = self.peek()
+                    line = tok[2] if len(tok) > 2 else 0
+                    col = tok[3] if len(tok) > 3 else 0
+                    raise SyntaxError(
+                        f"Unexpected end of file at line {line}, column {col}: unclosed union"
+                    )
                 field_type = ""
                 while self.peek()[0] in _BASE_TYPE_TOKENS:
                     field_type += self.advance()[1] + " "
@@ -944,7 +1038,12 @@ class Parser:
             self.expect("SEMICOLON")
             return Declaration(var_type, var_name, init)
 
-        raise SyntaxError(f"Unexpected token after union: {self.peek()}")
+        tok = self.peek()
+        line = tok[2] if len(tok) > 2 else 0
+        col = tok[3] if len(tok) > 3 else 0
+        raise SyntaxError(
+            f"Unexpected token after union at line {line}, column {col}: {tok}"
+        )
 
     def parse_enum_definition(self) -> Node:
         """Parse an enum definition or enum type usage."""
@@ -993,7 +1092,12 @@ class Parser:
             self.expect("SEMICOLON")
             return Declaration(var_type, var_name, init)
 
-        raise SyntaxError(f"Unexpected token after enum: {self.peek()}")
+        tok = self.peek()
+        line = tok[2] if len(tok) > 2 else 0
+        col = tok[3] if len(tok) > 3 else 0
+        raise SyntaxError(
+            f"Unexpected token after enum at line {line}, column {col}: {tok}"
+        )
 
     # ============================================================
     # Statements
@@ -1115,9 +1219,34 @@ class Parser:
                     name = idtok[1]
                     init = Declaration(var_type=typ, name=name, initializer=None)
                     if self.accept("ASSIGN"):
-                        init.initializer = self.parse_expression()
+                        init.initializer = self._parse_single_expression()
+                    while self.accept("COMMA"):
+                        if self.peek()[0] == "IDENTIFIER":
+                            next_idtok = self.expect("IDENTIFIER")
+                            next_name = next_idtok[1]
+                            next_decl = Declaration(
+                                var_type=typ, name=next_name, initializer=None
+                            )
+                            if self.accept("ASSIGN"):
+                                next_decl.initializer = self._parse_single_expression()
+                            if isinstance(init, Declaration):
+                                init = Compound([init, next_decl])
+                            else:
+                                init.stmts.append(next_decl)
+                        else:
+                            next_expr = self._parse_single_expression()
+                            if isinstance(init, Compound):
+                                init.stmts.append(next_expr)
+                            else:
+                                init = Compound([init, next_expr])
                 else:
                     init = self.parse_expression()
+                    while self.accept("COMMA"):
+                        next_expr = self.parse_expression()
+                        if isinstance(init, Compound):
+                            init.stmts.append(next_expr)
+                        else:
+                            init = Compound([init, next_expr])
             self.expect("SEMICOLON")
             cond = None
             if self.peek()[0] != "SEMICOLON":
@@ -1125,7 +1254,13 @@ class Parser:
             self.expect("SEMICOLON")
             post = None
             if self.peek()[0] != "RPAREN":
-                post = self.parse_expression()
+                post = self._parse_single_expression()
+                while self.accept("COMMA"):
+                    next_expr = self._parse_single_expression()
+                    if isinstance(post, Compound):
+                        post.stmts.append(next_expr)
+                    else:
+                        post = Compound([post, next_expr])
             self.expect("RPAREN")
             body = self.parse_statement()
             return For(init=init, cond=cond, post=post, body=body)
@@ -1209,8 +1344,11 @@ class Parser:
 
         # Reject deprecated / removed keywords in statement position too.
         if t[0] in ("RESTRICT", "BOOLEAN"):
+            line = t[2] if len(t) > 2 else 0
+            col = t[3] if len(t) > 3 else 0
             raise SyntaxError(
-                f"Deprecated keyword used! Please remove or replace the keyword. "
+                f"Deprecated keyword used at line {line}, column {col}! "
+                f"Please remove or replace the keyword. "
                 f"Found '{t[0]}'."
             )
 
@@ -1301,7 +1439,19 @@ class Parser:
                 base_type = self._consume_pointer_stars(base_type)
 
             # Handle compound types in local declarations
-            if self.peek()[0] in _BASE_TYPE_TOKENS:
+            # Stop at literals to avoid consuming type tokens after value
+            while self.peek()[0] in _BASE_TYPE_TOKENS:
+                next_tok = self.peek()
+                if next_tok[0] in (
+                    "INT_LITERAL",
+                    "HEX_LITERAL",
+                    "BINARY_LITERAL",
+                    "OCTAL_LITERAL",
+                    "CHAR_LITERAL",
+                    "STRING_LITERAL",
+                    "FLOAT_LITERAL",
+                ):
+                    break
                 base_type2 = self.advance()[1]
                 base_type = f"{base_type} {base_type2}"
 
@@ -1313,7 +1463,18 @@ class Parser:
             # Handle pointer type: int* ptr or int** ptr2
             typ = self._consume_pointer_stars(typ)
 
-            if self.peek()[0] != "IDENTIFIER":
+            # Allow literals after compound types (e.g., unsigned long long x = 0xFF)
+            if self.peek()[0] in (
+                "INT_LITERAL",
+                "HEX_LITERAL",
+                "BINARY_LITERAL",
+                "OCTAL_LITERAL",
+                "CHAR_LITERAL",
+                "STRING_LITERAL",
+                "FLOAT_LITERAL",
+            ):
+                pass  # valid - will be handled in initialization
+            elif self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
                 raise SyntaxError(
                     f"Expected identifier. "
@@ -1375,8 +1536,10 @@ class Parser:
             if t[0] == "RBRACE":
                 break
             if t[0] == "EOF":
+                line = t[2] if len(t) > 2 else 0
+                col = t[3] if len(t) > 3 else 0
                 raise SyntaxError(
-                    "Unexpected end of file: unclosed '{' — missing closing '}'"
+                    f"Unexpected end of file at line {line}, column {col}: unclosed '{{' — missing closing '}}'"
                 )
             stmts.append(self.parse_statement())
         self.expect("RBRACE")
@@ -1418,6 +1581,10 @@ class Parser:
             right = self.parse_assignment()
             node = right
         return node
+
+    def _parse_single_expression(self) -> Node:
+        """Parse a single expression without handling top-level commas."""
+        return self.parse_assignment()
 
     def parse_assignment(self) -> Node:
         node = self.parse_conditional()
@@ -1591,7 +1758,12 @@ class Parser:
             if self.peek()[0] == "IDENTIFIER":
                 type_name += " " + self.advance()[1]
             return TypeExpr(type_name)
-        raise SyntaxError(f"Expected type keyword, got {self.peek()}")
+        tok = self.peek()
+        line = tok[2] if len(tok) > 2 else 0
+        col = tok[3] if len(tok) > 3 else 0
+        raise SyntaxError(
+            f"Expected type keyword at line {line}, column {col}, got {tok}"
+        )
 
     def parse_generic(self) -> Node:
         """Parse a C11 _Generic expression: _Generic(expr, type1: val1, type2: val2, ...)."""
@@ -1615,7 +1787,7 @@ class Parser:
             self.i += 1
 
         if self.i <= start:
-            raise SyntaxError("Expected expression in _Generic")
+            raise SyntaxError("Expected expression in _Generic at current position")
         expr_tokens = self.tokens[start : self.i]
         self.i = start
         expr = self._parse_expr_from_tokens(expr_tokens)
@@ -1774,7 +1946,11 @@ class Parser:
             return TypeExpr(self.advance()[1])
         if tok[0] == "UNDERSCORE_GENERIC":
             return self.parse_generic()
-        raise SyntaxError(f"Unexpected token {tok} in primary expression")
+        line = tok[2] if len(tok) > 2 else 0
+        col = tok[3] if len(tok) > 3 else 0
+        raise SyntaxError(
+            f"Unexpected token {tok} in primary expression at line {line}, column {col}"
+        )
 
 
 # ============================================================

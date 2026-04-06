@@ -109,12 +109,10 @@ Tokens = [
 
 
 def get_tokens(string):
-    # Handle line continuations (backslash at end of line)
     result = []
     i = 0
     while i < len(string):
         if string[i] == "\\" and i + 1 < len(string) and string[i + 1] in "\n\r":
-            # Skip backslash and the newline
             i += 2
         else:
             result.append(string[i])
@@ -122,19 +120,75 @@ def get_tokens(string):
     var = "".join(result)
 
     tokens = []
+    line = 1
+    col = 1
+    i = 0
 
-    while var:
-        for token in Tokens:
-            match = token[1].match(var)
-            if match:
-                lexeme = match.group(0)
-                if token[0] not in ("WHITESPACE", "COMMENT_LINE", "COMMENT_MULTI"):
-                    tokens.append((token[0], lexeme))
-                var = var[len(lexeme) :]
-                break
+    while i < len(var):
+        if var[i : i + 2] == "/*":
+            depth = 1
+            start = i
+            start_line = line
+            start_col = col
+            i += 2
+            for c in "/*":
+                if c == "\n":
+                    line += 1
+                    col = 1
+                else:
+                    col += 1
+            while i < len(var) and depth > 0:
+                if var[i : i + 2] == "/*":
+                    depth += 1
+                    i += 2
+                    for c in "/*":
+                        if c == "\n":
+                            line += 1
+                            col = 1
+                        else:
+                            col += 1
+                elif var[i : i + 2] == "*/":
+                    depth -= 1
+                    i += 2
+                    for c in "*/":
+                        if c == "\n":
+                            line += 1
+                            col = 1
+                        else:
+                            col += 1
+                else:
+                    if var[i] == "\n":
+                        line += 1
+                        col = 1
+                    else:
+                        col += 1
+                    i += 1
+            tokens.append(("COMMENT_MULTI", var[start:i], start_line, start_col))
         else:
-            tokens.append(("UNKNOWN", var[0]))
-            var = var[1:]
+            matched = False
+            for token in Tokens:
+                match = token[1].match(var, i)
+                if match and match.start() == i:
+                    lexeme = match.group(0)
+                    if token[0] not in ("WHITESPACE", "COMMENT_LINE", "COMMENT_MULTI"):
+                        tokens.append((token[0], lexeme, line, col))
+                    for c in lexeme:
+                        if c == "\n":
+                            line += 1
+                            col = 1
+                        else:
+                            col += 1
+                    i += len(lexeme)
+                    matched = True
+                    break
+            if not matched:
+                tokens.append(("UNKNOWN", var[i], line, col))
+                if var[i] == "\n":
+                    line += 1
+                    col = 1
+                else:
+                    col += 1
+                i += 1
     return tokens
 
 

@@ -1,0 +1,14 @@
+// Hex literals with suffixes
+#include <stdio.h>
+
+void test_hex(void) {
+    unsigned int hex1 = 0xFFu;
+    unsigned long hex2 = 0xABCDul;
+    unsigned long long hex3 = 0xABCULL;
+    unsigned long long hex4 = 0x123456789ULL;
+}
+
+int main(void) {
+    test_hex();
+    return 0;
+}

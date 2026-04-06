@@ -1,0 +1,20 @@
+// Storage specifiers test
+#include <stdio.h>
+
+// Static variables
+static int counter = 0;
+static float pi = 3.14f;
+
+// Extern declarations
+extern int errno;
+extern void external_func(void);
+
+// Inline function
+inline int max(int a, int b) {
+    return (a > b) ? a : b;
+}
+
+int main(void) {
+    static int local = 0;
+    return 0;
+}

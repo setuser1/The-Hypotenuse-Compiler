@@ -1,0 +1,74 @@
+// Test file for struct and pointer handling in C△
+// Using C11-style structs
+
+// 1. Simple struct definition
+struct Point {
+    int x;
+    int y;
+};
+
+// 2. Struct with multiple fields of different types
+struct Person {
+    int age;
+    float height;
+};
+
+// 3. Pointer declarations
+int test_pointers() {
+    int value = 42;
+    int* ptr = &value;
+    int** ptr_to_ptr = &ptr;
+    return 0;
+}
+
+// 4. Pointer arithmetic
+int test_pointer_arithmetic() {
+    int arr[5] = {1, 2, 3, 4, 5};
+    int* ptr = arr;
+    ptr = ptr + 1;
+    ptr++;
+    ptr--;
+    ptr = ptr - 1;
+    return 0;
+}
+
+// 5. Struct pointers and arrow operator
+int test_struct_pointers() {
+    struct Point p;
+    p.x = 10;
+    p.y = 20;
+    struct Point* p_ptr = &p;
+    int x = p_ptr->x;
+    int y = p_ptr->y;
+    p_ptr->x = 30;
+    return 0;
+}
+
+// 6. Address-of operator
+int test_address_of() {
+    int num = 100;
+    int* num_ptr = &num;
+    struct Point p;
+    struct Point* p_ptr = &p;
+    int* x_ptr = &p.x;
+    return 0;
+}
+
+// 7. Combined test
+int test_combined() {
+    struct Person person;
+    person.age = 25;
+    struct Person* person_ptr = &person;
+    person_ptr->height = 1.75;
+    return 0;
+}
+
+// Main function
+int main() {
+    test_pointers();
+    test_pointer_arithmetic();
+    test_struct_pointers();
+    test_address_of();
+    test_combined();
+    return 0;
+}

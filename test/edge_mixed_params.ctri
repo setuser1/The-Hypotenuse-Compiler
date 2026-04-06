@@ -1,0 +1,13 @@
+void foo(int x) {
+    return;
+}
+
+void bar(void) {
+    return;
+}
+
+int main() {
+    foo(1);
+    bar();
+    return 0;
+}

@@ -1,0 +1,11 @@
+// Line with just comment
+
+/* Multi-line
+   comment block */
+
+int main() {
+    // Empty statement
+    ;
+    ;
+    return 0;
+}

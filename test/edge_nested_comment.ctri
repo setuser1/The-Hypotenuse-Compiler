@@ -1,0 +1,7 @@
+/* outer comment
+    /* nested comment */
+    still in outer
+*/
+int main() {
+    return 0;
+}

@@ -313,7 +313,18 @@ class CodeGen:
             else:
                 param_str = f"{self._map_type(ptype)} {pname}"
                 if psize is not None:
-                    param_str += "[]"
+                    if isinstance(psize, list):
+                        param_str += "[]"
+                        for s in psize[1:]:
+                            if s == 0:
+                                param_str += "[]"
+                            else:
+                                param_str += f"[{s}]"
+                    else:
+                        if psize == 0:
+                            param_str += "[]"
+                        else:
+                            param_str += f"[{psize}]"
                 params.append(param_str)
         param_str = ", ".join(params) if params else "void"
         self._emit(f"{ret_type} {node.name}({param_str}) {{")
@@ -423,21 +434,58 @@ class CodeGen:
         self._emit(f"}} while ({cond});")
 
     def _gen_for(self, node: For):
-        # Init clause
-        if node.init is None:
-            init_str = ""
-        elif isinstance(node.init, Declaration):
-            typ = self._map_type(node.init.var_type)
-            name = node.init.name
-            if node.init.initializer is not None:
-                init_str = f"{typ} {name} = {self._expr(node.init.initializer)}"
+        init_parts = []
+        first_type = None
+        if node.init is not None:
+            if isinstance(node.init, Compound):
+                for stmt in node.init.stmts:
+                    if isinstance(stmt, Declaration):
+                        if first_type is None:
+                            first_type = self._map_type(stmt.var_type)
+                            typ = first_type
+                        else:
+                            typ = ""
+                        name = stmt.name
+                        if stmt.initializer is not None:
+                            if typ:
+                                init_parts.append(
+                                    f"{typ} {name} = {self._expr(stmt.initializer)}"
+                                )
+                            else:
+                                init_parts.append(
+                                    f"{name} = {self._expr(stmt.initializer)}"
+                                )
+                        else:
+                            if typ:
+                                init_parts.append(f"{typ} {name}")
+                            else:
+                                init_parts.append(name)
+                    else:
+                        init_parts.append(self._expr(stmt))
+            elif isinstance(node.init, Declaration):
+                first_type = self._map_type(node.init.var_type)
+                typ = first_type
+                name = node.init.name
+                if node.init.initializer is not None:
+                    init_parts.append(
+                        f"{typ} {name} = {self._expr(node.init.initializer)}"
+                    )
+                else:
+                    init_parts.append(f"{typ} {name}")
             else:
-                init_str = f"{typ} {name}"
-        else:
-            init_str = self._expr(node.init)
+                init_parts.append(self._expr(node.init))
+        init_str = ", ".join(init_parts)
 
         cond_str = self._expr(node.cond) if node.cond else ""
-        post_str = self._expr(node.post) if node.post else ""
+
+        post_parts = []
+        if node.post is not None:
+            if isinstance(node.post, Compound):
+                for stmt in node.post.stmts:
+                    post_parts.append(self._expr(stmt))
+            else:
+                post_parts.append(self._expr(node.post))
+        post_str = ", ".join(post_parts)
 
         self._emit(f"for ({init_str}; {cond_str}; {post_str}) {{")
         self._indent += 1
