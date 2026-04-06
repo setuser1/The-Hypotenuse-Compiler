@@ -810,3 +810,8 @@ CMakeUserPresets.json
 
 # Android studio 3.1+ serialized cache file
 
+
+# PyInstaller build artifacts
+build/
+dist/
+hypotenuse.spec
