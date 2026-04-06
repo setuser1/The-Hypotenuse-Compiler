@@ -1,4 +1,0 @@
-// This should also be rejected
-int main() {
-    return 0;
-}
