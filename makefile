@@ -1,4 +1,4 @@
-.PHONY: run install test lint typecheck all
+.PHONY: run install test lint typecheck all build binary clean full-install
 
 # Path to the parseable regression fixture (quoted where expanded to the shell
 # so paths containing spaces work).
@@ -108,3 +108,38 @@ print('top-level declarations:', len(ast.declarations))"
 # all: full clean build + test (useful for CI)
 # ---------------------------------------------------------------
 all: install lint test
+
+# ---------------------------------------------------------------
+# build: build PyInstaller executable
+# ---------------------------------------------------------------
+build: install
+	pyinstaller --onefile --name hypotenuse --add-data "src:src" src/main.py
+
+# ---------------------------------------------------------------
+# binary: run the compiled binary (must run 'make build' first)
+# ---------------------------------------------------------------
+binary: build
+	./dist/hypotenuse
+
+# ---------------------------------------------------------------
+# clean: remove build artifacts
+# ---------------------------------------------------------------
+clean:
+	rm -rf build dist *.spec __pycache__
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+# ---------------------------------------------------------------
+# full-install: install the binary to system (requires sudo or ~/.local/bin)
+# ---------------------------------------------------------------
+full-install: build
+	@if [ -w /usr/local/bin ]; then \
+		cp dist/hypotenuse /usr/local/bin/hypotenuse; \
+		chmod +x /usr/local/bin/hypotenuse; \
+		echo "Installed to /usr/local/bin/hypotenuse"; \
+	else \
+		mkdir -p ~/.local/bin; \
+		cp dist/hypotenuse ~/.local/bin/hypotenuse; \
+		chmod +x ~/.local/bin/hypotenuse; \
+		echo "Installed to ~/.local/bin/hypotenuse"; \
+		echo "Add ~/.local/bin to your PATH if not already present"; \
+	fi
