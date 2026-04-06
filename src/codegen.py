@@ -93,6 +93,22 @@ class CodeGen:
             return "char*"
         return TYPE_MAP.get(typ, typ)
 
+    def _contains_assignment(self, node) -> bool:
+        """Recursively check if an expression contains an assignment."""
+        if node is None:
+            return False
+        if isinstance(node, Assignment):
+            return True
+        if isinstance(node, Binary):
+            return self._contains_assignment(node.left) or self._contains_assignment(
+                node.right
+            )
+        if isinstance(node, Unary):
+            return self._contains_assignment(node.operand)
+        if isinstance(node, Call):
+            return any(self._contains_assignment(a) for a in node.args)
+        return False
+
     # ------------------------------------------------------------------
     # Expression serialiser
     # ------------------------------------------------------------------
@@ -346,7 +362,14 @@ class CodeGen:
 
     def _gen_while(self, node: While):
         cond = self._expr(node.cond)
-        self._emit(f"while ({cond}) {{")
+        # Wrap condition in extra parens ONLY if it contains an assignment
+        has_assignment = isinstance(node.cond, Assignment) or (
+            isinstance(node.cond, Binary) and self._contains_assignment(node.cond)
+        )
+        if has_assignment:
+            self._emit(f"while (({cond})) {{")
+        else:
+            self._emit(f"while ({cond}) {{")
         self._indent += 1
         body = node.body
         if isinstance(body, Compound):
