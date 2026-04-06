@@ -453,35 +453,45 @@ class Parser:
     def _parse_local_declaration(self) -> Node:
         """Parse a local variable declaration inside a function."""
         typ = self.advance()[1]
-        # Handle typedef alias - resolve to actual type for declarations
         if typ in self._typedefs:
             typ = self._typedefs[typ]
-        # Handle compound types: long long, unsigned long, etc.
         if self.peek()[0] in _BASE_TYPE_TOKENS:
             typ2 = self.advance()[1]
             typ = f"{typ} {typ2}"
-        # Handle pointer type
         typ = self._consume_pointer_stars(typ)
 
         name = self.expect("IDENTIFIER")[1]
 
-        # Handle array declaration
         array_size = None
         if self.accept("LBRACKET"):
             if self.peek()[0] == "INT_LITERAL":
                 array_size = int(self.advance()[1])
             elif self.peek()[0] == "IDENTIFIER":
-                # Handle macro constants in array sizes
                 array_size = self.advance()[1]
             self.expect("RBRACKET")
 
-        # Handle initializer
         init = None
         if self.accept("ASSIGN"):
             init = self.parse_expression()
+        elif self.peek()[0] == "LBRACE":
+            init = self.parse_init_list()
+
+        decls = [Declaration(typ, name, init, array_size)]
+
+        while self.accept("COMMA"):
+            extra_name = self.expect("IDENTIFIER")[1]
+            extra_init = None
+            if self.accept("ASSIGN"):
+                extra_init = self.parse_expression()
+            elif self.peek()[0] == "LBRACE":
+                extra_init = self.parse_init_list()
+            decls.append(Declaration(typ, extra_name, extra_init))
 
         self.expect("SEMICOLON")
-        return Declaration(typ, name, init, array_size)
+
+        if len(decls) == 1:
+            return decls[0]
+        return Compound(decls)
 
     # ============================================================
     # Top-level parsing
@@ -558,11 +568,23 @@ class Parser:
 
         if t[0] in _TYPE_TOKENS or t[0] == "IDENTIFIER":
             if t[0] == "IDENTIFIER" and t[1] not in self._typedefs:
-                raise SyntaxError(f"Unexpected identifier at top-level: '{t[1]}")
+                next_tok = (
+                    self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
+                )
+                if not next_tok or next_tok[0] not in (
+                    "LPAREN",
+                    "MULTIPLY",
+                    "IDENTIFIER",
+                    "LBRACKET",
+                ):
+                    raise SyntaxError(f"Unexpected identifier at top-level: '{t[1]}")
             typ = self.advance()[1]
-            # Handle typedef alias - resolve to actual type for declarations
             if typ in self._typedefs:
                 typ = self._typedefs[typ]
+            # Handle storage class specifiers (extern, static, auto, register)
+            # These are consumed but not added to the type
+            while self.peek()[0] in ("EXTERN", "STATIC", "AUTO", "REGISTER"):
+                self.advance()
             # Handle compound types: long long, unsigned long, etc.
             if self.peek()[0] in _BASE_TYPE_TOKENS:
                 typ2 = self.advance()[1]
@@ -596,20 +618,21 @@ class Parser:
                         params = []
                     else:
                         while True:
-                            # Handle type qualifiers BEFORE base type (const, volatile, etc.)
                             type_qualifiers = []
                             while self.peek()[0] in ("CONST", "VOLATILE"):
                                 type_qualifiers.append(self.advance()[1])
 
                             ptype = self.advance()[1]
-                            # Handle typedef alias - resolve to actual type for declarations
                             if ptype in self._typedefs:
                                 ptype = self._typedefs[ptype]
-                            # Handle compound types in parameters
-                            if self.peek()[0] in _BASE_TYPE_TOKENS:
+                            elif (
+                                ptype == "struct" or ptype == "union" or ptype == "enum"
+                            ):
+                                if self.peek()[0] == "IDENTIFIER":
+                                    ptype = f"{ptype} {self.advance()[1]}"
+                            elif self.peek()[0] in _BASE_TYPE_TOKENS:
                                 ptype2 = self.advance()[1]
                                 ptype = f"{ptype} {ptype2}"
-                            # Handle pointer types in parameters
                             ptype = self._consume_pointer_stars(ptype)
 
                             # Handle type qualifiers AFTER pointer (like const after *)
@@ -621,7 +644,16 @@ class Parser:
                                 ptype = " ".join(type_qualifiers) + " " + ptype
 
                             pname = self.expect("IDENTIFIER")[1]
-                            params.append((ptype, pname))
+                            psize = None
+                            if self.accept("LBRACKET"):
+                                if self.peek()[0] == "INT_LITERAL":
+                                    psize = int(self.advance()[1])
+                                elif self.peek()[0] == "IDENTIFIER":
+                                    psize = self.advance()[1]
+                                else:
+                                    psize = 0  # empty brackets: char argv[]
+                                self.expect("RBRACKET")
+                            params.append((ptype, pname, psize))
                             if self.accept("COMMA"):
                                 # Handle variadic functions with ...
                                 if self.accept("ELLIPSIS"):
@@ -801,6 +833,10 @@ class Parser:
                     field_type += self.advance()[1] + " "
                     if self.peek()[0] in _BASE_TYPE_TOKENS:
                         field_type += self.advance()[1] + " "
+                # Handle typedef/identifier types (e.g., socklen_t, mode_t)
+                # Only if no base types were found
+                if not field_type.strip() and self.peek()[0] == "IDENTIFIER":
+                    field_type = self.advance()[1]
                 field_type = field_type.strip()
                 field_type = self._consume_pointer_stars(field_type)
                 field_name = self.expect("IDENTIFIER")[1]
@@ -814,15 +850,58 @@ class Parser:
             self.advance()
             return StructDef(name=name, fields=[], is_anonymous=False)
         elif self.peek()[0] == "IDENTIFIER" and name is not None:
-            # Type usage: struct Name varName;
-            # This is actually a variable declaration using struct type
-            # We need to handle it as a Declaration
             var_type = f"struct {name}"
             var_type = self._consume_pointer_stars(var_type)
-            var_name = self.expect("IDENTIFIER")[1]
+            func_name = self.advance()[1]
+            if self.accept("LPAREN"):
+                params = []
+                if not self.accept("RPAREN"):
+                    if self.peek()[0] == "VOID":
+                        self.advance()
+                        self.expect("RPAREN")
+                    else:
+                        while True:
+                            type_qualifiers = []
+                            while self.peek()[0] in ("CONST", "VOLATILE"):
+                                type_qualifiers.append(self.advance()[1])
+                            ptype = self.advance()[1]
+                            if ptype in self._typedefs:
+                                ptype = self._typedefs[ptype]
+                            if self.peek()[0] in _BASE_TYPE_TOKENS:
+                                ptype2 = self.advance()[1]
+                                ptype = f"{ptype} {ptype2}"
+                            ptype = self._consume_pointer_stars(ptype)
+                            while self.peek()[0] in ("CONST", "VOLATILE"):
+                                type_qualifiers.append(self.advance()[1])
+                            if type_qualifiers:
+                                ptype = " ".join(type_qualifiers) + " " + ptype
+                            pname = self.expect("IDENTIFIER")[1]
+                            psize = None
+                            if self.accept("LBRACKET"):
+                                if self.peek()[0] == "INT_LITERAL":
+                                    psize = int(self.advance()[1])
+                                elif self.peek()[0] == "IDENTIFIER":
+                                    psize = self.advance()[1]
+                                else:
+                                    psize = 0
+                                self.expect("RBRACKET")
+                            params.append((ptype, pname, psize))
+                            if self.accept("COMMA"):
+                                if self.accept("ELLIPSIS"):
+                                    params.append(("...", "...", None))
+                                    self.expect("RPAREN")
+                                    break
+                                continue
+                            self.expect("RPAREN")
+                            break
+                if self.peek()[0] == "LBRACE":
+                    return Function(var_type, func_name, params, self.parse_compound())
+                else:
+                    self.expect("SEMICOLON")
+                    return Declaration(f"{var_type} (func prototype)", func_name, None)
             init = self.parse_expression() if self.accept("ASSIGN") else None
             self.expect("SEMICOLON")
-            return Declaration(var_type, var_name, init)
+            return Declaration(var_type, func_name, init)
 
         raise SyntaxError(f"Unexpected token after struct: {self.peek()}")
 
@@ -932,6 +1011,55 @@ class Parser:
         # Handle type declarations (including size_t and system types like mode_t, uid_t, etc.)
         if t[0] in _BASE_TYPE_TOKENS:
             return self._parse_local_declaration()
+        # Handle storage class specifiers at statement level (e.g., extern void foo())
+        if t[0] in ("EXTERN", "STATIC", "AUTO", "REGISTER"):
+            self.advance()
+            if self.peek()[0] in _BASE_TYPE_TOKENS:
+                # Skip function prototype: type name(...);
+                saved_i = self.i
+                try:
+                    self.advance()  # consume base type
+                    if self.peek()[0] in _BASE_TYPE_TOKENS:
+                        self.advance()  # consume second part of compound type
+                    self._consume_pointer_stars("")  # consume pointer stars
+                    if self.peek()[0] == "IDENTIFIER":
+                        self.advance()  # consume name
+                        if self.accept("LPAREN"):
+                            # Skip parameter list
+                            while not self.accept("RPAREN"):
+                                self.advance()
+                                if self.peek()[0] == "COMMA":
+                                    self.advance()
+                            self.expect("SEMICOLON")
+                            return Declaration(
+                                "extern (func prototype)", "_skipped", None
+                            )
+                except:
+                    pass
+                self.i = saved_i  # not a function prototype
+        # Handle typedef aliases
+        if t[0] == "IDENTIFIER" and t[1] in self._typedefs:
+            return self._parse_local_declaration()
+        # Handle storage class specifiers at statement level (e.g., extern void foo())
+        if t[0] in ("EXTERN", "STATIC", "AUTO", "REGISTER"):
+            self.advance()
+            if self.peek()[0] in _BASE_TYPE_TOKENS:
+                # Check if this is a function prototype: type name(...)
+                saved_i = self.i
+                self.advance()  # consume base type
+                if self.peek()[0] in _BASE_TYPE_TOKENS:
+                    self.advance()  # consume second part of compound type
+                self._consume_pointer_stars("")  # consume pointer stars
+                if self.peek()[0] == "IDENTIFIER":
+                    self.advance()  # consume name
+                    if self.accept("LPAREN"):
+                        self.expect("RPAREN")  # simple prototype
+                        self.expect("SEMICOLON")
+                        return Declaration(
+                            "extern (func prototype)", "local_decl", None
+                        )
+                self.i = saved_i  # not a simple prototype, treat as variable decl
+                return self._parse_local_declaration()
         # Handle typedef aliases
         if t[0] == "IDENTIFIER" and t[1] in self._typedefs:
             return self._parse_local_declaration()
@@ -1094,8 +1222,8 @@ class Parser:
                 self.advance()  # consume COLON
                 return Label(name)
 
-        # Local declaration
-        if t[0] in (
+        # Local declaration - only enter if next token looks like a variable declaration
+        is_typedef_decl = t[0] in (
             "INT",
             "CHAR",
             "VOID",
@@ -1111,19 +1239,40 @@ class Parser:
             "CONST",
             "VOLATILE",
             "TYPEDEF",
-        ) or (
-            t[0] == "IDENTIFIER" and (t[1] in ("va_list",) or t[1] in self._typedefs)
-        ):
+        ) or (t[0] == "IDENTIFIER" and (t[1] in ("va_list",) or t[1] in self._typedefs))
+        if is_typedef_decl:
+            next_tok = (
+                self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
+            )
+            if next_tok and next_tok[0] not in (
+                "IDENTIFIER",
+                "MULTIPLY",
+                "LBRACKET",
+                "COMMA",
+                "INT",
+                "CHAR",
+                "VOID",
+                "FLOAT",
+                "DOUBLE",
+                "LONG",
+                "SHORT",
+                "SIGNED",
+                "UNSIGNED",
+                "STRUCT",
+                "UNION",
+                "ENUM",
+                "CONST",
+                "VOLATILE",
+            ):
+                is_typedef_decl = False
+
+        if is_typedef_decl:
             qualifiers = []
-            # Collect any leading type qualifiers
             while self.peek()[0] in ("CONST", "VOLATILE"):
                 qualifiers.append(self.advance()[1])
 
-            # Get the base type
             base_type = self.advance()[1]
 
-            # Handle TYPEDEF keyword - it's being used as a type, not as a new typedef definition
-            # Look up the actual type from typedef table
             if base_type == "typedef":
                 if self.peek()[0] == "IDENTIFIER":
                     base_type = self.advance()[1]
@@ -1132,27 +1281,20 @@ class Parser:
                 if base_type in self._typedefs:
                     base_type = self._typedefs[base_type]
 
-            # Handle identifier that's a typedef alias (not the typedef keyword)
             elif t[0] == "IDENTIFIER" and t[1] not in ("va_list",):
                 if t[1] in self._typedefs:
                     base_type = self._typedefs[t[1]]
 
-            # Handle struct TypeName varName (both global and local)
-            # base_type is "struct", next token should be the struct tag
             elif base_type == "struct" and self.peek()[0] == "IDENTIFIER":
-                # This is struct Tag varName or struct varName
                 struct_tag = self.advance()[1]
                 base_type = f"struct {struct_tag}"
-                # Check for pointer
                 base_type = self._consume_pointer_stars(base_type)
 
-            # Handle union TypeName varName (both global and local)
             elif base_type == "union" and self.peek()[0] == "IDENTIFIER":
                 union_tag = self.advance()[1]
                 base_type = f"union {union_tag}"
                 base_type = self._consume_pointer_stars(base_type)
 
-            # Handle enum TypeName varName (both global and local)
             elif base_type == "enum" and self.peek()[0] == "IDENTIFIER":
                 enum_tag = self.advance()[1]
                 base_type = f"enum {enum_tag}"
@@ -1359,19 +1501,17 @@ class Parser:
         return node
 
     def parse_unary(self) -> Node:
-        """Parse unary prefix expressions (e.g. -x, !y, ++x, --x)."""
+        """Parse unary prefix expressions (e.g. !y, ++x, --x, *ptr, &var, -x)."""
         token = self.peek()
-        # Handle signed integer literals directly to preserve integer kind for negatives
         if token[0] == "MINUS":
-            # Peek at next token to check if it's an integer literal
-            next_token = (
-                self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
-            )
-            if next_token and next_token[0] == "INT_LITERAL":
-                self.advance()  # consume MINUS
-                lit_val = self.advance()[1]
-                return Literal(f"-{lit_val}")
-        if token[0] in ("PLUS", "MINUS", "NOT", "BITWISE_NOT"):
+            self.advance()
+            operand = self.parse_unary()
+            return Unary(op="-", operand=operand, prefix=True)
+        if token[0] == "PLUS":
+            self.advance()
+            operand = self.parse_unary()
+            return Unary(op="+", operand=operand, prefix=True)
+        if token[0] == "NOT" or token[0] == "BITWISE_NOT":
             op = self.advance()[1]
             operand = self.parse_unary()
             return Unary(op=op, operand=operand, prefix=True)
@@ -1512,12 +1652,31 @@ class Parser:
         if tok[0] in (
             "INT_LITERAL",
             "FLOAT_LITERAL",
-            "STRING_LITERAL",
             "CHAR_LITERAL",
             "HEX_LITERAL",
             "BINARY_LITERAL",
         ):
             return Literal(self.advance()[1])
+        if tok[0] == "MINUS":
+            next_tok = (
+                self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
+            )
+            if next_tok and next_tok[0] in (
+                "INT_LITERAL",
+                "FLOAT_LITERAL",
+                "HEX_LITERAL",
+                "BINARY_LITERAL",
+            ):
+                self.advance()
+                val = self.advance()[1]
+                return Literal(f"-{val}")
+        if tok[0] == "STRING_LITERAL":
+            parts = [self.advance()[1]]
+            while self.peek()[0] == "STRING_LITERAL":
+                parts.append(self.advance()[1])
+            if len(parts) == 1:
+                return Literal(parts[0])
+            return Literal("".join(parts))
         if tok[0] == "SIZEOF":
             self.advance()
             self.expect("LPAREN")
@@ -1561,10 +1720,8 @@ class Parser:
                 if self.peek()[0] == "LBRACKET":
                     self.advance()  # consume '['
                     if self.peek()[0] == "RBRACKET":
-                        # Flexible array member: type[]
                         type_node.type_name += "[]"
                     else:
-                        # Fixed size: type[N]
                         size = self.expect("INT_LITERAL")[1]
                         type_node.type_name += f"[{size}]"
                     self.expect("RBRACKET")
@@ -1577,6 +1734,39 @@ class Parser:
                 self.expect("RPAREN")
                 operand = self.parse_unary()
                 return Cast(cast_type=type_node.type_name, operand=operand)
+            elif self.peek()[0] in ("STRUCT", "UNION", "ENUM"):
+                type_name = self.advance()[1]
+                if self.peek()[0] == "IDENTIFIER":
+                    type_name += " " + self.advance()[1]
+                while self.peek()[0] == "MULTIPLY":
+                    self.advance()
+                    type_name += "*"
+                # Check for compound literal: (struct Name){ ... }
+                if self.peek()[0] == "LBRACE":
+                    init_list = self.parse_init_list()
+                    return CompoundLiteral(
+                        lit_type=type_name, elements=init_list.elements
+                    )
+                self.expect("RPAREN")
+                operand = self.parse_unary()
+                return Cast(cast_type=type_name, operand=operand)
+            elif self.peek()[0] == "IDENTIFIER":
+                ident = self.peek()[1]
+                if ident in self._typedefs:
+                    type_name = self.advance()[1]
+                    if self.peek()[0] == "IDENTIFIER":
+                        type_name += " " + self.advance()[1]
+                    while self.peek()[0] == "MULTIPLY":
+                        self.advance()
+                        type_name += "*"
+                    if self.peek()[0] == "LBRACE":
+                        init_list = self.parse_init_list()
+                        return CompoundLiteral(
+                            lit_type=type_name, elements=init_list.elements
+                        )
+                    self.expect("RPAREN")
+                    operand = self.parse_unary()
+                    return Cast(cast_type=type_name, operand=operand)
             expr = self.parse_expression()
             self.expect("RPAREN")
             return expr

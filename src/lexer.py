@@ -51,8 +51,8 @@ Tokens = [
     ("STRING_LITERAL", re.compile(r'"(?:\\.|[^"\\])*"')),
     ("CHAR_LITERAL", re.compile(r"'(?:\\.|[^'\\])*'")),
     ("FLOAT_LITERAL", re.compile(r"\b\d+\.\d+[fFlL]?\b")),
-    ("HEX_LITERAL", re.compile(r"\b0[xX][0-9a-fA-F]+\b")),
-    ("BINARY_LITERAL", re.compile(r"\b0[bB][01]+\b")),
+    ("HEX_LITERAL", re.compile(r"\b0[xX][0-9a-fA-F]+[uUlL]*\b")),
+    ("BINARY_LITERAL", re.compile(r"\b0[bB][01]+[uUlL]*\b")),
     ("INT_LITERAL", re.compile(r"\b\d+[uUlL]*\b")),
     # OPERATORS AND DELIMITERS AND SYMBOLS
     # NOTE: multi-character operators must appear before their single-character

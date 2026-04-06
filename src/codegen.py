@@ -304,11 +304,17 @@ class CodeGen:
     def _gen_function(self, node: Function):
         ret_type = self._map_type(node.ret_type)
         params = []
-        for ptype, pname in node.params:
+        for p in node.params:
+            ptype = p[0]
+            pname = p[1]
+            psize = p[2] if len(p) > 2 else None
             if ptype == "...":
                 params.append("...")
             else:
-                params.append(f"{self._map_type(ptype)} {pname}")
+                param_str = f"{self._map_type(ptype)} {pname}"
+                if psize is not None:
+                    param_str += "[]"
+                params.append(param_str)
         param_str = ", ".join(params) if params else "void"
         self._emit(f"{ret_type} {node.name}({param_str}) {{")
         self._indent += 1
