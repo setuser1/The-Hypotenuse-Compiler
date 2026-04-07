@@ -199,7 +199,7 @@ typed struct PoliceDog&Dog&Animal(string name, int badge) { ... }
 
 #### Deprecated keywords (raise SyntaxError immediately)
 
-`restrict`, `_Bool`, `_Complex`, `_Imaginary`
+`restrict`, `_Bool`, `_Complex`, `_Imaginary`, `_Alignof`, `_Alignas`, `_Generic`
 
 ## Memory Model
 

@@ -13,6 +13,8 @@ a structured AST suitable for semantic analysis or code generation.
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple
 
+import error_msgs
+
 # ============================================================
 # AST (Abstract Syntax Tree) Nodes
 # ============================================================
@@ -420,7 +422,14 @@ class Parser:
         line = tok[2] if len(tok) > 2 else 0
         col = tok[3] if len(tok) > 3 else 0
         raise SyntaxError(
-            f"Expected {type_name} at line {line}, column {col}, got {tok[0]} ({tok[1]!r})"
+            error_msgs.get_error_msg(
+                "E001",
+                found=tok[0],
+                expected=type_name,
+                line=line,
+                col=col,
+                fallback=f"Expected {type_name} at line {line}, column {col}, got {tok[0]}",
+            )
         )
 
     def accept(self, type_name: str):
@@ -497,7 +506,13 @@ class Parser:
             line = bad_tok[2] if len(bad_tok) > 2 else 0
             col = bad_tok[3] if len(bad_tok) > 3 else 0
             raise SyntaxError(
-                f"Expected identifier at line {line}, column {col}. Got '{bad_tok[0]}'."
+                error_msgs.get_error_msg(
+                    "E008",
+                    found=bad_tok[0],
+                    line=line,
+                    col=col,
+                    fallback=f"Expected identifier at line {line}, column {col}. Got '{bad_tok[0]}'.",
+                )
             )
         name = self.expect("IDENTIFIER")[1]
 
@@ -587,13 +602,24 @@ class Parser:
             return self.parse_external()
 
         # Reject deprecated / removed keywords immediately.
-        if t[0] in ("RESTRICT", "BOOLEAN"):
+        if t[0] in (
+            "RESTRICT",
+            "BOOLEAN",
+            "UNDERSCORE_ALIGNOF",
+            "UNDERSCORE_ALIGNAS",
+            "UNDERSCORE_COMPLEX",
+            "UNDERSCORE_IMAGINARY",
+        ):
             line = t[2] if len(t) > 2 else 0
             col = t[3] if len(t) > 3 else 0
             raise SyntaxError(
-                f"Deprecated keyword used at line {line}, column {col}! "
-                f"Please remove or replace the keyword. "
-                f"Found '{t[0]}'."
+                error_msgs.get_error_msg(
+                    "E001",
+                    found=t[0],
+                    line=line,
+                    col=col,
+                    fallback=f"Deprecated keyword used at line {line}, column {col}! Found '{t[0]}'.",
+                )
             )
 
         if t[0] == "TYPEDEF":
@@ -622,7 +648,13 @@ class Parser:
                     line = t[2] if len(t) > 2 else 0
                     col = t[3] if len(t) > 3 else 0
                     raise SyntaxError(
-                        f"Unexpected identifier at line {line}, column {col}: '{t[1]}'"
+                        error_msgs.get_error_msg(
+                            "E001",
+                            found=t[1],
+                            line=line,
+                            col=col,
+                            fallback=f"Unexpected identifier at line {line}, column {col}: '{t[1]}'",
+                        )
                     )
             typ = self.advance()[1]
             if typ in self._typedefs:
@@ -672,9 +704,14 @@ class Parser:
                 line = bad_tok[2] if len(bad_tok) > 2 else 0
                 col = bad_tok[3] if len(bad_tok) > 3 else 0
                 raise SyntaxError(
-                    f"Expected identifier at line {line}, column {col}. "
-                    f"Declaration keyword '{typ}' was followed by a non-identifier token. "
-                    f"Got '{bad_tok[0]}'."
+                    error_msgs.get_error_msg(
+                        "E008",
+                        found=bad_tok[0],
+                        keyword=typ,
+                        line=line,
+                        col=col,
+                        fallback=f"Expected identifier at line {line}, column {col}. Got '{bad_tok[0]}'.",
+                    )
                 )
             name = self.advance()[1]
             # Function or prototype
@@ -789,9 +826,7 @@ class Parser:
                     if extra_sizes
                     else None
                 )
-                extra_init = (
-                    self.parse_assignment() if self.accept("ASSIGN") else None
-                )
+                extra_init = self.parse_assignment() if self.accept("ASSIGN") else None
                 decls.append(Declaration(typ, extra_name, extra_init, extra_array_size))
             self.expect("SEMICOLON")
             if len(decls) == 1:
@@ -803,7 +838,15 @@ class Parser:
 
         line = t[2] if len(t) > 2 else 0
         col = t[3] if len(t) > 3 else 0
-        raise SyntaxError(f"Unexpected token at line {line}, column {col}: {t}")
+        raise SyntaxError(
+            error_msgs.get_error_msg(
+                "E001",
+                found=t[0],
+                line=line,
+                col=col,
+                fallback=f"Unexpected token at line {line}, column {col}: {t}",
+            )
+        )
 
     def parse_typedef(self) -> Node:
         """Parse a typedef declaration."""
@@ -908,7 +951,13 @@ class Parser:
             fields = []
             while self.peek()[0] != "RBRACE":
                 if self.peek()[0] == "EOF":
-                    raise SyntaxError("Unexpected end of file: unclosed struct")
+                    raise SyntaxError(
+                        error_msgs.get_error_msg(
+                            "E602",
+                            file="struct",
+                            fallback="Unexpected end of file: unclosed struct",
+                        )
+                    )
                 field_type = ""
                 while self.peek()[0] in _BASE_TYPE_TOKENS:
                     field_type += self.advance()[1] + " "
@@ -999,7 +1048,13 @@ class Parser:
         line = tok[2] if len(tok) > 2 else 0
         col = tok[3] if len(tok) > 3 else 0
         raise SyntaxError(
-            f"Unexpected token after struct at line {line}, column {col}: {tok}"
+            error_msgs.get_error_msg(
+                "E001",
+                found=tok[0],
+                line=line,
+                col=col,
+                fallback=f"Unexpected token after struct at line {line}, column {col}: {tok}",
+            )
         )
 
     def parse_union_definition(self) -> Node:
@@ -1020,7 +1075,13 @@ class Parser:
                     line = tok[2] if len(tok) > 2 else 0
                     col = tok[3] if len(tok) > 3 else 0
                     raise SyntaxError(
-                        f"Unexpected end of file at line {line}, column {col}: unclosed union"
+                        error_msgs.get_error_msg(
+                            "E602",
+                            file="union",
+                            line=line,
+                            col=col,
+                            fallback=f"Unexpected end of file at line {line}, column {col}: unclosed union",
+                        )
                     )
                 field_type = ""
                 while self.peek()[0] in _BASE_TYPE_TOKENS:
@@ -1066,7 +1127,13 @@ class Parser:
             next_value = 0
             while self.peek()[0] != "RBRACE":
                 if self.peek()[0] == "EOF":
-                    raise SyntaxError("Unexpected end of file: unclosed enum")
+                    raise SyntaxError(
+                        error_msgs.get_error_msg(
+                            "E602",
+                            file="enum",
+                            fallback="Unexpected end of file: unclosed enum",
+                        )
+                    )
                 enum_name = self.expect("IDENTIFIER")[1]
                 value = None
                 if self.accept("ASSIGN"):
@@ -1104,7 +1171,13 @@ class Parser:
         line = tok[2] if len(tok) > 2 else 0
         col = tok[3] if len(tok) > 3 else 0
         raise SyntaxError(
-            f"Unexpected token after enum at line {line}, column {col}: {tok}"
+            error_msgs.get_error_msg(
+                "E001",
+                found=tok[0],
+                line=line,
+                col=col,
+                fallback=f"Unexpected token after enum at line {line}, column {col}: {tok}",
+            )
         )
 
     # ============================================================
@@ -1351,13 +1424,24 @@ class Parser:
             return default_label_node
 
         # Reject deprecated / removed keywords in statement position too.
-        if t[0] in ("RESTRICT", "BOOLEAN"):
+        if t[0] in (
+            "RESTRICT",
+            "BOOLEAN",
+            "UNDERSCORE_ALIGNOF",
+            "UNDERSCORE_ALIGNAS",
+            "UNDERSCORE_COMPLEX",
+            "UNDERSCORE_IMAGINARY",
+        ):
             line = t[2] if len(t) > 2 else 0
             col = t[3] if len(t) > 3 else 0
             raise SyntaxError(
-                f"Deprecated keyword used at line {line}, column {col}! "
-                f"Please remove or replace the keyword. "
-                f"Found '{t[0]}'."
+                error_msgs.get_error_msg(
+                    "E001",
+                    found=t[0],
+                    line=line,
+                    col=col,
+                    fallback=f"Deprecated keyword used at line {line}, column {col}! Found '{t[0]}'.",
+                )
             )
 
         # Label: IDENTIFIER:
@@ -1485,9 +1569,12 @@ class Parser:
             elif self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
                 raise SyntaxError(
-                    f"Expected identifier. "
-                    f"Declaration keyword '{typ}' was followed by a non-identifier token. "
-                    f"Got '{bad_tok[0]}'."
+                    error_msgs.get_error_msg(
+                        "E008",
+                        found=bad_tok[0],
+                        keyword=typ,
+                        fallback=f"Expected identifier. Declaration keyword '{typ}' was followed by a non-identifier token. Got '{bad_tok[0]}'.",
+                    )
                 )
             name = self.advance()[1]
 
@@ -1547,7 +1634,13 @@ class Parser:
                 line = t[2] if len(t) > 2 else 0
                 col = t[3] if len(t) > 3 else 0
                 raise SyntaxError(
-                    f"Unexpected end of file at line {line}, column {col}: unclosed '{{' — missing closing '}}'"
+                    error_msgs.get_error_msg(
+                        "E006",
+                        statement="compound",
+                        line=line,
+                        col=col,
+                        fallback=f"Unexpected end of file at line {line}, column {col}: unclosed '{{' — missing closing '}}'",
+                    )
                 )
             stmts.append(self.parse_statement())
         self.expect("RBRACE")
@@ -1653,7 +1746,13 @@ class Parser:
 
     def parse_bitwise(self) -> Node:
         node = self.parse_add()
-        while self.peek()[0] in ("BITWISE_OR", "BITWISE_XOR"):
+        while self.peek()[0] in (
+            "BITWISE_OR",
+            "BITWISE_XOR",
+            "AMPERSAND",
+            "LSHIFT",
+            "RSHIFT",
+        ):
             op = self.advance()[1]
             right = self.parse_add()
             node = Binary(op, node, right)
@@ -1770,7 +1869,13 @@ class Parser:
         line = tok[2] if len(tok) > 2 else 0
         col = tok[3] if len(tok) > 3 else 0
         raise SyntaxError(
-            f"Expected type keyword at line {line}, column {col}, got {tok}"
+            error_msgs.get_error_msg(
+                "E102",
+                found=tok[0],
+                line=line,
+                col=col,
+                fallback=f"Expected type keyword at line {line}, column {col}, got {tok}",
+            )
         )
 
     def parse_generic(self) -> Node:
@@ -1795,7 +1900,13 @@ class Parser:
             self.i += 1
 
         if self.i <= start:
-            raise SyntaxError("Expected expression in _Generic at current position")
+            raise SyntaxError(
+                error_msgs.get_error_msg(
+                    "E605",
+                    found="_Generic",
+                    fallback="Expected expression in _Generic at current position",
+                )
+            )
         expr_tokens = self.tokens[start : self.i]
         self.i = start
         expr = self._parse_expr_from_tokens(expr_tokens)
@@ -1957,7 +2068,13 @@ class Parser:
         line = tok[2] if len(tok) > 2 else 0
         col = tok[3] if len(tok) > 3 else 0
         raise SyntaxError(
-            f"Unexpected token {tok} in primary expression at line {line}, column {col}"
+            error_msgs.get_error_msg(
+                "E001",
+                found=tok[0],
+                line=line,
+                col=col,
+                fallback=f"Unexpected token {tok} in primary expression at line {line}, column {col}",
+            )
         )
 
 

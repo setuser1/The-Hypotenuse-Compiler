@@ -47,6 +47,10 @@ Tokens = [
     ("RESTRICT", re.compile(r"\brestrict\b")),
     ("BOOLEAN", re.compile(r"\b_Bool\b")),
     ("UNDERSCORE_GENERIC", re.compile(r"\b_Generic\b")),
+    ("UNDERSCORE_ALIGNOF", re.compile(r"\b_Alignof\b")),
+    ("UNDERSCORE_ALIGNAS", re.compile(r"\b_Alignas\b")),
+    ("UNDERSCORE_COMPLEX", re.compile(r"\b_Complex\b")),
+    ("UNDERSCORE_IMAGINARY", re.compile(r"\b_Imaginary\b")),
     # DATA TYPES
     ("STRING_LITERAL", re.compile(r'"(?:\\.|[^"\\])*"')),
     ("CHAR_LITERAL", re.compile(r"'(?:\\.|[^'\\])*'")),

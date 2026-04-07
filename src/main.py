@@ -36,6 +36,17 @@ def parse_args():
         "-a", "--asm", action="store_true", help="Show generated assembly (WIP)"
     )
 
+    parser.add_argument(
+        "-c", "--compile", action="store_true", help="Compile with gcc to executable"
+    )
+
+    parser.add_argument(
+        "-C",
+        "--cflags",
+        metavar="FLAGS",
+        help="Pass extra flags to gcc (e.g., '$(sdl2-config --cflags --libs)')",
+    )
+
     return parser.parse_args()
 
 
@@ -121,6 +132,32 @@ def write_output(path, data):
         f.write(data)
 
 
+def compile_with_gcc(c_path, output_path=None, extra_flags=None):
+    """Compile C file to executable with gcc."""
+    import subprocess
+    import shutil
+    import os
+
+    if not shutil.which("gcc"):
+        raise RuntimeError("gcc not found in PATH. Install GCC to use --compile.")
+
+    if output_path is None:
+        output_path = os.path.splitext(c_path)[0]
+    else:
+        output_path = output_path
+
+    cmd = ["gcc", c_path, "-o", output_path]
+    if extra_flags:
+        cmd.extend(extra_flags.split())
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"gcc failed: {result.stderr}")
+
+    return output_path
+
+
 def main():
     args = parse_args()
 
@@ -156,9 +193,19 @@ def main():
             # Default: compiled output
             # -----------------------------
             if args.output:
-                write_output(args.output, output)
+                c_path = args.output
+                if not c_path.endswith(".c"):
+                    c_path = c_path + ".c"
+                write_output(c_path, output)
             else:
                 print(output)
+                c_path = path.replace(".ctri", ".c")
+
+            if args.compile:
+                if not args.output:
+                    write_output(c_path, output)
+                exe_path = compile_with_gcc(c_path, args.output, args.cflags)
+                print(f"Compiled to: {exe_path}")
 
         except FileNotFoundError:
             print(f"Error: file not found {path}")
