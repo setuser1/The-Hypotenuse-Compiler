@@ -8,12 +8,15 @@
 | -------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Install dependencies             | `make install`                            | Installs the minimal Python packages (`pytest`, `pyflakes`).                                                                           |
 | Run baseline                     | `make run`                                | Compiles `test/baseline.ctri` and prints the object graph.                                                                             |
+| Run with gcc compilation       | `python3 src/main.py -c -C "FLAGS" file.ctri` | Compile `.ctri` to executable via gcc (requires gcc installed). Use `-C` for extra cflags (e.g., SDL2 libs).                              |
 | Lint                             | `make lint`                               | Runs **pyflakes** against all source files (`src/*.py`).                                                                               |
 | Type‑check / regression          | `make typecheck`                          | Executes the compiler on every `.ctri` test file (currently only `baseline.ctri`). Fails on non‑zero exit.                             |
 | Full test suite                  | `make test`                               | Installs deps → lint → type‑check → runs regression checks (scope tracking, value parsing, caller info, lexer/parser stability, etc.). |
 | Run a single test file           | `python3 src/main.py -t test/<file>.ctri` | Use the CLI directly; replace `<file>` with any `.ctri` fixture under `test/`.                                                         |
 | Run pytest (future Python tests) | `pytest -q test/`                         | Available if pure‑Python tests are added.                                                                                              |
 | Clean CI build                   | `make all`                                | Alias for `install → lint → test`; used by GitHub CI.                                                                                  |
+| Build binary                     | `make build`                              | Build PyInstaller executable (`dist/hypotenuse`).                                                                                     |
+| Install binary                   | `make full-install`                       | Install binary to `/usr/local/bin` or `~/.local/bin`.                                                                                 |
 
 ---
 
@@ -21,9 +24,10 @@
 
 #### 📦 Project Layout
 
-- **src/** – Python source (`lexer.py`, `parser.py`, `structure.py`, `main.py`).
+- **src/** – Python source (`lexer.py`, `parser.py`, `structure.py`, `codegen.py`, `optimizer.py`, `struct_layout.py`, `error_msgs.py`, `main.py`).
 - **test/** – `.ctri` fixtures and integration checks.
 - **docs/** – Markdown documentation.
+- **scripts/** – Build scripts (e.g., `generate_error_msgs.py`).
 - **Makefile** – Orchestrates build, lint, and test steps.
 
 #### 🧩 Imports
@@ -66,8 +70,10 @@
 
 #### ⚙️ Error Handling
 
-- The CLI catches these, prints a concise message to `stderr`, and exits with a non‑zero status.
+- The CLI catches exceptions, prints a concise message to `stderr`, and exits with a non‑zero status.
 - Prefer specific exception catches; avoid bare `except:`.
+- Error messages are loaded from `src/errors.txt` and embedded in the built binary via `scripts/generate_error_msgs.py`.
+- Use `error_msgs.get_error(code)` to retrieve error messages (see `src/error_msgs.py`).
 
 #### 🧪 Testing Philosophy
 
