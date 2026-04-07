@@ -168,10 +168,8 @@ class CodeGen:
                 return f"({cond}) ? {self._expr(node.right)}"
             left = self._expr(node.left)
             right = self._expr(node.right)
-            # Wrap the whole expression in parens when the operator has lower
-            # precedence than what surrounds it — simple heuristic: always
-            # parenthesise compound binary sub-expressions.
-            return f"{left} {node.op} {right}"
+            # Preserve AST grouping regardless of C operator precedence.
+            return f"({left} {node.op} {right})"
 
         if isinstance(node, Unary):
             if node.op == "sizeof":
@@ -203,7 +201,8 @@ class CodeGen:
 
         if isinstance(node, Cast):
             operand = self._expr(node.operand)
-            return f"({node.cast_type}){operand}"
+            cast_type = self._map_type(node.cast_type)
+            return f"({cast_type})({operand})"
 
         if isinstance(node, FieldAccess):
             obj = self._expr(node.obj)
@@ -357,6 +356,10 @@ class CodeGen:
     def _gen_compound_block(self, node: Compound):
         """Emit a braced block.  Used when a Compound appears as a standalone
         statement rather than as a function body (which is handled inline)."""
+        if getattr(node, "_is_decl_list", False):
+            for stmt in node.stmts:
+                self._gen_node(stmt)
+            return
         self._emit("{")
         self._indent += 1
         for stmt in node.stmts:

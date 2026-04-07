@@ -452,6 +452,12 @@ class Parser:
                 break
         return typ
 
+    def _make_decl_list(self, decls: List[Declaration]) -> Compound:
+        """Create a synthetic declaration list that is not a lexical block."""
+        node = Compound(decls)
+        setattr(node, "_is_decl_list", True)
+        return node
+
     def _parse_local_declaration(self) -> Node:
         """Parse a local variable declaration inside a function."""
         typ = self.advance()[1]
@@ -505,7 +511,7 @@ class Parser:
 
         init = None
         if self.accept("ASSIGN"):
-            init = self.parse_expression()
+            init = self.parse_assignment()
         elif self.peek()[0] == "LBRACE":
             init = self.parse_init_list()
 
@@ -515,7 +521,7 @@ class Parser:
             extra_name = self.expect("IDENTIFIER")[1]
             extra_init = None
             if self.accept("ASSIGN"):
-                extra_init = self.parse_expression()
+                extra_init = self.parse_assignment()
             elif self.peek()[0] == "LBRACE":
                 extra_init = self.parse_init_list()
             decls.append(Declaration(typ, extra_name, extra_init))
@@ -524,7 +530,7 @@ class Parser:
 
         if len(decls) == 1:
             return decls[0]
-        return Compound(decls)
+        return self._make_decl_list(decls)
 
     # ============================================================
     # Top-level parsing
@@ -760,7 +766,7 @@ class Parser:
             if len(sizes) > 0:
                 array_size = sizes[0] if len(sizes) == 1 else sizes
 
-            init = self.parse_expression() if self.accept("ASSIGN") else None
+            init = self.parse_assignment() if self.accept("ASSIGN") else None
             decls = [Declaration(typ, name, init, array_size)]
             while self.accept("COMMA"):
                 extra_name = self.expect("IDENTIFIER")[1]
@@ -783,7 +789,9 @@ class Parser:
                     if extra_sizes
                     else None
                 )
-                extra_init = self.parse_expression() if self.accept("ASSIGN") else None
+                extra_init = (
+                    self.parse_assignment() if self.accept("ASSIGN") else None
+                )
                 decls.append(Declaration(typ, extra_name, extra_init, extra_array_size))
             self.expect("SEMICOLON")
             if len(decls) == 1:
@@ -1494,7 +1502,7 @@ class Parser:
             # Handle initialization
             init = None
             if self.accept("ASSIGN"):
-                init = self.parse_expression()
+                init = self.parse_assignment()
             elif self.peek()[0] == "LBRACE":
                 # Brace-init without '=': int arr[] = {1, 2, 3} style
                 init = self.parse_init_list()
@@ -1507,7 +1515,7 @@ class Parser:
                 extra_name = self.expect("IDENTIFIER")[1]
                 extra_init = None
                 if self.accept("ASSIGN"):
-                    extra_init = self.parse_expression()
+                    extra_init = self.parse_assignment()
                 elif self.peek()[0] == "LBRACE":
                     extra_init = self.parse_init_list()
                 decls.append(Declaration(typ, extra_name, extra_init))
@@ -1516,7 +1524,7 @@ class Parser:
 
             if len(decls) == 1:
                 return decls[0]
-            return Compound(decls)
+            return self._make_decl_list(decls)
 
         # Expression statement
         expr = self.parse_expression() if self.peek()[0] != "SEMICOLON" else None
