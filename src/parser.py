@@ -2252,13 +2252,13 @@ class Parser:
                     node = Var(f"{node.name}@@{symbol}")
                 else:
                     # Single @ - treat as namespace prefix
-                    # Accept IDENTIFIER, PLSTD, LIB, or other keywords as namespace
+                    # Accept IDENTIFIER or LIB as namespace
                     if self.peek()[0] == "IDENTIFIER":
                         symbol = self.expect("IDENTIFIER")[1]
-                    elif self.peek()[0] in ("PLSTD", "LIB"):
-                        symbol = self.expect(self.peek()[0])[1]
+                    elif self.peek()[0] == "LIB":
+                        symbol = self.expect("LIB")[1]
                     else:
-                        self.error("Expected identifier or library name after '@'")
+                        raise SyntaxError("Expected identifier or 'lib' after '@'")
                     node = Var(f"{node.name}@{symbol}")
             else:
                 break
@@ -2375,13 +2375,13 @@ class Parser:
                 # This is function@namespace pattern
                 func_name = self.advance()[1]
                 self.expect("AT")
-                # Namespace can be IDENTIFIER, LIB, or PLSTD
+                # Namespace can be IDENTIFIER or LIB
                 if self.peek()[0] == "IDENTIFIER":
                     namespace = self.advance()[1]
-                elif self.peek()[0] in ("LIB", "PLSTD"):
+                elif self.peek()[0] == "LIB":
                     namespace = self.advance()[1]
                 else:
-                    self.error("Expected identifier or library name after '@'")
+                    raise SyntaxError("Expected identifier or 'lib' after '@'")
                 return Var(f"{func_name}@{namespace}")
 
         if tok[0] == "IDENTIFIER":

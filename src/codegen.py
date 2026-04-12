@@ -549,30 +549,34 @@ class CodeGen:
                     # Single scope like foo - transform to foo_bar
                     callee = lib_name + "_" + func_name
 
-            # Handle namespace prefix like "func@space_name" -> "prefix_func"
-            # @ is for calling space-local functions
+            # Handle namespace prefix like "func@lib" or "func@space" -> "prefix_func"
+            # @ is for calling space-local functions or top-level library functions
             elif "@" in callee:
                 parts = callee.split("@")
                 if len(parts) == 2:
                     func, namespace = parts
-                    # Resolve alias to actual library name
-                    actual_lib = self._alias_to_lib.get(namespace, namespace)
-                    # Check if this is a space-local function (preferred) or top-level function
-                    if actual_lib in self._space_prefix_map:
-                        # Space-local function - prefix with space prefix
-                        actual_prefix = self._space_prefix_map[actual_lib]
+                    # Check if this is a space-local function (preferred)
+                    if namespace in self._space_prefix_map:
+                        actual_prefix = self._space_prefix_map[namespace]
                         callee = f"{actual_prefix}_{func}"
-                    elif (
-                        actual_lib in self._top_level_lib_functions
-                        and func in self._top_level_lib_functions[actual_lib]
-                    ):
-                        # Top-level function - call directly without prefix
-                        callee = func
+                    elif namespace in self._alias_to_lib:
+                        # @lib or other valid alias
+                        actual_lib = self._alias_to_lib[namespace]
+                        if (
+                            actual_lib in self._top_level_lib_functions
+                            and func in self._top_level_lib_functions[actual_lib]
+                        ):
+                            # Top-level function - call directly without prefix
+                            callee = func
+                        else:
+                            raise ValueError(
+                                f"Function '{func}' not found in library '{actual_lib}'. "
+                                f"Use '{func}()' directly if it's a top-level function."
+                            )
                     else:
-                        # No space or top-level function found
+                        # Invalid alias
                         raise ValueError(
-                            f"Function '{func}' not found in library '{actual_lib}'. "
-                            f"Use '{func}()' directly if it's a top-level function."
+                            f"Invalid alias '{namespace}'. Use '@lib' for the standard library."
                         )
             args = ", ".join(self._expr(a) for a in node.args)
             return f"{callee}({args})"
