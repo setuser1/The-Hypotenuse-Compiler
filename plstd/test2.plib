@@ -1,0 +1,7 @@
+space plstd {
+#include <unistd.h>
+#include <string.h>
+#include <stdarg.h>
+
+void print_c(char c) { write(1, &c, 1); }
+}

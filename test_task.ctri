@@ -1,0 +1,7 @@
+#include <stdio.h>
+using printd from <plstd>
+
+int main() {
+    printd("Hello %s!\n", "world");
+    return 0;
+}

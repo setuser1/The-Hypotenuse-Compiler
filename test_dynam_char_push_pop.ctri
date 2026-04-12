@@ -1,0 +1,4 @@
+dynam char arr = [];
+arr.push('a');
+char c = arr.pop();
+printd("%c\n", c);

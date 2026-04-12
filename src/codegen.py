@@ -396,11 +396,20 @@ class CodeGen:
                     # If obj_expr is a simple variable name, use it
                     if isinstance(node.callee.obj, Var):
                         var_name = node.callee.obj.name
-                        # We still need the element type - for now, we'll use a generic approach
-                        # In practice, we'd look up the variable's type in the symbol table
-                        # For this implementation, we'll assume int type for testing
-                        elem_type = "int"  # TODO: Get actual type from symbol table
-                        struct_name = f"dynam_{elem_type}"
+                        # Look up the variable's type in our tracking dict
+                        if var_name in self._dynam_declarations:
+                            dyn_type = self._dynam_declarations[var_name]
+                            if dyn_type.startswith("dynam "):
+                                elem_type = dyn_type[6:]  # Remove "dynam " prefix
+                                struct_name = f"dynam_{elem_type}"
+                            elif dyn_type == "string":
+                                # For string, we need to treat as dynam char for push/pop/len
+                                elem_type = "char"
+                                struct_name = f"dynam_{elem_type}"
+                        else:
+                            # Fallback to int if not found (shouldn't happen in valid code)
+                            elem_type = "int"
+                            struct_name = f"dynam_{elem_type}"
 
                         if method_name == "push":
                             # arr.push(val) -> dynam_int_push(&arr, val)
@@ -1123,6 +1132,9 @@ class CodeGen:
             ptype = p[0]
             pname = p[1]
             psize = p[2] if len(p) > 2 else None
+            # Track parameter types for len() and other operations
+            if ptype != "...":
+                self._dynam_declarations[pname] = ptype
             if ptype == "...":
                 params.append("...")
             else:

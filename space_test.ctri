@@ -1,0 +1,9 @@
+space plstd {
+    int test_func() {
+        return 42;
+    }
+}
+
+int main() {
+    return 0;
+}
