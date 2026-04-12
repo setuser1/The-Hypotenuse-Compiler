@@ -520,6 +520,10 @@ class Parser:
 
     def _parse_local_declaration(self) -> Node:
         """Parse a local variable declaration inside a function."""
+        # Handle qualifiers before base type: volatile string*, const int*
+        qualifiers = []
+        while self.peek()[0] in ("CONST", "VOLATILE"):
+            qualifiers.append(self.advance()[1])
         typ = self.advance()[1]
 
         # Special handling for dynam type: "dynam <element_type>"
@@ -568,6 +572,9 @@ class Parser:
         # Handle string type - allow pointer to string
         if typ == "string":
             typ = self._consume_pointer_stars(typ)
+        # Prepend qualifiers to type
+        if qualifiers:
+            typ = " ".join(qualifiers) + " " + typ
         elif typ.startswith("dynam "):
             # dynam type: check for pointer to dynam or dynam of pointers
             # "dynam int*" = dynam array of int pointers
@@ -783,9 +790,16 @@ class Parser:
                             fallback=f"Unexpected identifier at line {line}, column {col}: '{t[1]}'",
                         )
                     )
+            # Handle qualifiers before base type: volatile string*, const int*
+            qualifiers = []
+            while self.peek()[0] in ("CONST", "VOLATILE"):
+                qualifiers.append(self.advance()[1])
             typ = self.advance()[1]
             if typ in self._typedefs:
                 typ = self._typedefs[typ]
+            # Prepend qualifiers to type
+            if qualifiers:
+                typ = " ".join(qualifiers) + " " + typ
             # Handle storage class specifiers (extern, static, auto, register)
             # These are consumed but not added to the type
             while self.peek()[0] in ("EXTERN", "STATIC", "AUTO", "REGISTER"):
@@ -1331,6 +1345,7 @@ class Parser:
                     else:
                         while True:
                             type_qualifiers = []
+                            # Handle qualifiers before base type
                             while self.peek()[0] in ("CONST", "VOLATILE"):
                                 type_qualifiers.append(self.advance()[1])
                             ptype = self.advance()[1]
