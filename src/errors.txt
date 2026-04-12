@@ -99,6 +99,21 @@ E704|Invalid operand in asm: {found}
 E704|Assembly constraint {found} is not supported
 E705|Empty asm block at {line}:{col}
 
+[ARRAY]
+E751|Cannot infer dimension {dim} for array '{name}'
+E751|Provide explicit size or ensure initializer has values at this level
+E752|Invalid array dimension: {dim} for array '{name}'
+E752|Array dimension must be a positive integer constant
+
+[IMPORT]
+E801|Library {lib} must be imported before exposing. Use: using <{lib}> or using {item} from <{lib}>
+E802|Library {lib} is not exposed. Use 'expose {lib}' before calling functions directly.
+E803|Function {func} not found in library {lib}
+E804|Invalid alias '{alias}'. Use '@lib' for the standard library
+E805|Invalid call syntax for {func}. Use '{func}()' directly or '{func}@{lib}()' for library functions
+E806|Library not found: {lib}
+E807|Cannot import library {lib} - plib file not found in search paths
+
 [GENERAL]
 E901|Internal compiler error at {line}:{col}
 E901|Compiler bug detected while processing {file}

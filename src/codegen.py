@@ -2,6 +2,7 @@
 
 import os
 
+import error_msgs
 from parser import (
     Function,
     Declaration,
@@ -531,8 +532,12 @@ class CodeGen:
                 is_exposed = lib_name in getattr(self, "_exposed_libs", set())
                 if not is_exposed and "@" not in callee:
                     raise ValueError(
-                        f"Function '{base_callee}' requires '{base_callee}@{lib_name}()' syntax (library not exposed). "
-                        f"Use 'expose {lib_name}' before calling."
+                        error_msgs.get_error_msg(
+                            "E802",
+                            lib=lib_name,
+                            func=base_callee,
+                            fallback=f"Function '{base_callee}' requires '{base_callee}@{lib_name}()' syntax (library not exposed). Use 'expose {lib_name}' before calling.",
+                        )
                     )
                 # If func_name is None or equals base_callee, no transformation needed
                 # The function is already named correctly (top-level function)
@@ -570,13 +575,21 @@ class CodeGen:
                             callee = func
                         else:
                             raise ValueError(
-                                f"Function '{func}' not found in library '{actual_lib}'. "
-                                f"Use '{func}()' directly if it's a top-level function."
+                                error_msgs.get_error_msg(
+                                    "E803",
+                                    func=func,
+                                    lib=actual_lib,
+                                    fallback=f"Function '{func}' not found in library '{actual_lib}'. Use '{func}()' directly if it's a top-level function.",
+                                )
                             )
                     else:
                         # Invalid alias
                         raise ValueError(
-                            f"Invalid alias '{namespace}'. Use '@lib' for the standard library."
+                            error_msgs.get_error_msg(
+                                "E804",
+                                alias=namespace,
+                                fallback=f"Invalid alias '{namespace}'. Use '@lib' for the standard library.",
+                            )
                         )
             args = ", ".join(self._expr(a) for a in node.args)
             return f"{callee}({args})"
@@ -798,8 +811,12 @@ class CodeGen:
                 func_imported = any(imp.item == func_name for imp in imports)
                 if not lib_imported and not func_imported:
                     raise ValueError(
-                        f"Cannot expose '{exp.target}' - library must be imported first. "
-                        f"Use: using <{lib_name}> or using {func_name} from <{lib_name}> before exposing it."
+                        error_msgs.get_error_msg(
+                            "E801",
+                            lib=lib_name,
+                            item=func_name,
+                            fallback=f"Cannot expose '{exp.target}' - library must be imported first. Use: using <{lib_name}> or using {func_name} from <{lib_name}> before exposing it.",
+                        )
                     )
                 self._exposed_libs.add(lib_name)
                 self._exposed_libs.add(actual_lib)
@@ -1361,13 +1378,21 @@ class CodeGen:
                         dim_list[i] = inferred
                     else:
                         raise ValueError(
-                            f"Cannot infer dimension {i + 1} for array '{node.name}' - "
-                            f"provide explicit size or ensure initializer has values at this level"
+                            error_msgs.get_error_msg(
+                                "E751",
+                                dim=i + 1,
+                                name=node.name,
+                                fallback=f"Cannot infer dimension {i + 1} for array '{node.name}' - provide explicit size or ensure initializer has values at this level",
+                            )
                         )
                 else:
                     raise ValueError(
-                        f"Cannot infer dimension {i + 1} for array '{node.name}' - "
-                        f"provide explicit size or initializer"
+                        error_msgs.get_error_msg(
+                            "E751",
+                            dim=i + 1,
+                            name=node.name,
+                            fallback=f"Cannot infer dimension {i + 1} for array '{node.name}' - provide explicit size or initializer",
+                        )
                     )
 
         # Build final name with all dimensions
