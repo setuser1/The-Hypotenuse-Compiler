@@ -1306,6 +1306,12 @@ class CodeGen:
                     self._emit(f"char* {var_name} = _tmp;")
                     return
 
+            if node.initializer and isinstance(node.initializer, Cast):
+                # Cast to string: string s = (string)ptr;
+                if node.initializer.cast_type == "string":
+                    init_expr = self._expr(node.initializer)
+                    self._emit(f"char* {name} = {init_expr};")
+                    return
             if node.initializer and hasattr(node.initializer, "value"):
                 # String literal: "hello"
                 init_val = node.initializer.value
