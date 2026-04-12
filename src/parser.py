@@ -539,6 +539,15 @@ class Parser:
                 elem_typ2 = self.advance()[1]
                 elem_typ = f"{elem_typ} {elem_typ2}"
             typ = f"dynam {elem_typ}"
+            # Warn about redundant types
+            if elem_typ == "string":
+                import sys
+
+                print(
+                    "Warning: 'dynam string' is redundant since 'string' is already a pointer. "
+                    "Did you mean 'dynam char' or just 'string'?",
+                    file=sys.stderr,
+                )
         elif typ in self._typedefs:
             typ = self._typedefs[typ]
         # Handle compound types: long long, unsigned long, etc.
