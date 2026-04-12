@@ -2240,7 +2240,7 @@ class Parser:
                 deref = Unary(op="*", operand=node, prefix=True)
                 node = FieldAccess(deref, field_name)
             elif self.peek()[0] == "AT":
-                # Namespace access: namespace@symbol
+                # Namespace access: namespace@symbol or func@lib
                 # Only valid when node is a Var (identifier)
                 if not isinstance(node, Var):
                     break
@@ -2252,7 +2252,13 @@ class Parser:
                     node = Var(f"{node.name}@@{symbol}")
                 else:
                     # Single @ - treat as namespace prefix
-                    symbol = self.expect("IDENTIFIER")[1]
+                    # Accept IDENTIFIER, PLSTD, LIB, or other keywords as namespace
+                    if self.peek()[0] == "IDENTIFIER":
+                        symbol = self.expect("IDENTIFIER")[1]
+                    elif self.peek()[0] in ("PLSTD", "LIB"):
+                        symbol = self.expect(self.peek()[0])[1]
+                    else:
+                        self.error("Expected identifier or library name after '@'")
                     node = Var(f"{node.name}@{symbol}")
             else:
                 break
@@ -2369,13 +2375,13 @@ class Parser:
                 # This is function@namespace pattern
                 func_name = self.advance()[1]
                 self.expect("AT")
-                # Namespace can be IDENTIFIER or LIB (for lib)
+                # Namespace can be IDENTIFIER, LIB, or PLSTD
                 if self.peek()[0] == "IDENTIFIER":
                     namespace = self.advance()[1]
-                elif self.peek()[0] == "LIB":
+                elif self.peek()[0] in ("LIB", "PLSTD"):
                     namespace = self.advance()[1]
                 else:
-                    namespace = self.expect("IDENTIFIER")[1]
+                    self.error("Expected identifier or library name after '@'")
                 return Var(f"{func_name}@{namespace}")
 
         if tok[0] == "IDENTIFIER":
