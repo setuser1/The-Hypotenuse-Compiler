@@ -609,6 +609,13 @@ class CodeGen:
         if isinstance(node, ArrayAccess):
             arr = self._expr(node.array)
             idx = self._expr(node.index)
+            # Check if this is a dynam array subscript
+            if isinstance(node.array, Var):
+                var_name = node.array.name
+                dyn_type = self._get_dynam_type(var_name)
+                if dyn_type and dyn_type.startswith("dynam "):
+                    # Dynam array: arr[idx] -> arr.data[idx]
+                    return f"{arr}.data[{idx}]"
             return f"{arr}[{idx}]"
 
         if isinstance(node, Cast):
