@@ -283,22 +283,39 @@ class CodeGen:
             if node.op == "+":
                 left_type = self._get_expression_type(node.left)
                 right_type = self._get_expression_type(node.right)
+                left_is_string = left_type == "string" or (
+                    isinstance(node.left, Literal)
+                    and isinstance(node.left.value, str)
+                    and node.left.value.startswith('"')
+                )
+                right_is_string = right_type == "string" or (
+                    isinstance(node.right, Literal)
+                    and isinstance(node.right.value, str)
+                    and node.right.value.startswith('"')
+                )
+
+                # string + integer is pointer arithmetic, not concatenation
+                def is_numeric_literal(node):
+                    """Check if a Literal node contains a numeric value."""
+                    if isinstance(node, Literal):
+                        val = node.value
+                        if isinstance(val, int):
+                            return True
+                        if isinstance(val, str):
+                            try:
+                                int(val)
+                                return True
+                            except:
+                                pass
+                    return False
+
+                if left_is_string and is_numeric_literal(node.right):
+                    left_is_string = False
+                if right_is_string and is_numeric_literal(node.left):
+                    right_is_string = False
 
                 # If either operand is a string or string literal, treat as concatenation
-                if (
-                    left_type == "string"
-                    or right_type == "string"
-                    or (
-                        isinstance(node.left, Literal)
-                        and isinstance(node.left.value, str)
-                        and node.left.value.startswith('"')
-                    )
-                    or (
-                        isinstance(node.right, Literal)
-                        and isinstance(node.right.value, str)
-                        and node.right.value.startswith('"')
-                    )
-                ):
+                if left_is_string or right_is_string:
                     left_expr = self._expr(node.left)
                     right_expr = self._expr(node.right)
 
