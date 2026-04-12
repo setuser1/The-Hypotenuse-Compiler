@@ -399,6 +399,8 @@ _TYPE_TOKENS = (
     "UNKNOWN",
     "SIZE_T",
     "NORETURN",
+    "STRING",
+    "DYNAM",
 )
 _BASE_TYPE_TOKENS = (
     "INT",
