@@ -50,6 +50,7 @@ void print_f(double f) {
         f = f - (int)f;
     }
 }
+}
 
 void printd(string fmt, ...) {
     int pos = 0;
@@ -63,24 +64,24 @@ void printd(string fmt, ...) {
             c = fmt[pos];
             if (c == 'l') {
                 char c2 = fmt[pos + 1];
-                if (c2 == 'l' && fmt[pos + 2] == 'd') { print_lld(va_arg(a, long long)); pos = pos + 2; }
-                else if (c2 == 'd') { print_ld(va_arg(a, long)); pos = pos + 1; }
-                else if (c2 == 'u') { print_num(va_arg(a, unsigned long), 10, 0); pos = pos + 1; }
-            } else if (c == 'd' || c == 'i') { print_d(va_arg(a, int)); }
-            else if (c == 'u') { print_num(va_arg(a, unsigned int), 10, 0); }
-            else if (c == 'o') { print_num(va_arg(a, unsigned int), 8, 0); }
-            else if (c == 'x') { print_num(va_arg(a, unsigned int), 16, 0); }
-            else if (c == 'X') { print_num(va_arg(a, unsigned int), 16, 1); }
-            else if (c == 'p') { print_num((unsigned long)va_arg(a, void*), 16, 0); }
-            else if (c == 's') { print_s(va_arg(a, char*)); }
-            else if (c == 'c') { print_c((char)va_arg(a, int)); }
-            else if (c == 'f') { print_f(va_arg(a, double)); }
-            else if (c == '%') { print_c('%'); }
-        } else { print_c(c); }
+                if (c2 == 'l' && fmt[pos + 2] == 'd') { print_lld@printd(va_arg(a, long long)); pos = pos + 2; }
+                else if (c2 == 'd') { print_ld@printd(va_arg(a, long)); pos = pos + 1; }
+                else if (c2 == 'u') { print_num@printd(va_arg(a, unsigned long), 10, 0); pos = pos + 1; }
+            } else if (c == 'd' || c == 'i') { print_d@printd(va_arg(a, int)); }
+            else if (c == 'u') { print_num@printd(va_arg(a, unsigned int), 10, 0); }
+            else if (c == 'o') { print_num@printd(va_arg(a, unsigned int), 8, 0); }
+            else if (c == 'x') { print_num@printd(va_arg(a, unsigned int), 16, 0); }
+            else if (c == 'X') { print_num@printd(va_arg(a, unsigned int), 16, 1); }
+            else if (c == 'p') { print_num@printd((unsigned long)va_arg(a, void*), 16, 0); }
+            else if (c == 's') { print_s@printd(va_arg(a, char*)); }
+            else if (c == 'c') { print_c@printd((char)va_arg(a, int)); }
+            else if (c == 'f') { print_f@printd(va_arg(a, double)); }
+            else if (c == '%') { print_c@printd('%'); }
+        } else { print_c@printd(c); }
         pos = pos + 1;
     }
     va_end(a);
-    print_c('\n');
+    print_c@printd('\n');
 }
 
-}
+

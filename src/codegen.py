@@ -719,16 +719,17 @@ class CodeGen:
             if source.startswith("<") and source.endswith(">"):
                 # Treat <lib> as a plib lookup, not a system header
                 lib_name = source[1:-1]
-                actual_path = f"plstd/{lib_name}"
+                # Use the lib_name directly - the plib search will find it
+                # in the appropriate PLIBS directory
 
                 if lib_name not in seen_libs:
-                    local_imports.append(actual_path)
+                    local_imports.append(lib_name)
                     seen_libs.add(lib_name)
                 if imp.alias:
-                    alias_map[imp.alias] = (actual_path, "local")
+                    alias_map[imp.alias] = (lib_name, "local")
                 if imp.item:
                     # Track specific imports: using sin from <math>
-                    specific_imports[imp.item] = actual_path
+                    specific_imports[imp.item] = lib_name
             elif "&" in source:
                 # Handle intra-file scoped imports: using X&Y or using a&b&c&Y
                 # This imports a symbol Y from scope X (chain of scopes)
