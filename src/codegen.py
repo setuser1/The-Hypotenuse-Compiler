@@ -91,6 +91,7 @@ class CodeGen:
             self._len_int_generated
             or "malloc" in "\n".join(self._lines)
             or "free" in "\n".join(self._lines)
+            or "realloc" in "\n".join(self._lines)
         )
         needs_string = (
             "strlen" in "\n".join(self._lines)
@@ -301,10 +302,11 @@ class CodeGen:
                     left_expr = self._expr(node.left)
                     right_expr = self._expr(node.right)
 
-                    # Generate concatenation: malloc + strcpy + strcat
-                    # We need to return an expression that evaluates to the concatenated string
-                    # Use a statement-like approach that will be handled by the caller
-                    return f"(char*)0 /* STRING_CONCAT_PLACEHOLDER: {left_expr} + {right_expr} */"
+                    # String concatenation not yet implemented for expressions
+                    raise NotImplementedError(
+                        "String concatenation in expressions is not yet implemented. "
+                        "Use separate string variables and strcpy/strcat manually."
+                    )
 
             left = self._expr(node.left)
             right = self._expr(node.right)
@@ -1694,6 +1696,14 @@ class CodeGen:
                             # String literal reassignment: free(s); s = strdup("new");
                             self._emit(f"free({var_name});")
                             self._emit(f"{var_name} = strdup({value.value});")
+                            return
+                        elif isinstance(value, Binary) and value.op == "+":
+                            # String concatenation: s = s + " World"
+                            right = self._expr(value.right)
+                            self._emit(
+                                f"{var_name} = realloc({var_name}, strlen({var_name}) + strlen({right}) + 1);"
+                            )
+                            self._emit(f"strcat({var_name}, {right});")
                             return
 
             self._emit(f"{self._expr(node.expr)};")
