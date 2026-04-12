@@ -73,7 +73,7 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 | ----------- | ----------------------------------------- |
 | `using`     | _NEW_ Import a symbol from a library      |
 | `expose`    | _NEW_ Globalize a library or namespace    |
-| `lib@`      | _NEW_ Explicit plstd access prefix        |
+| `@`         | _NEW_ Explicit namespace access operator  |
 | `overwrite` | overwrite base syntax with library syntax |
 
 ---

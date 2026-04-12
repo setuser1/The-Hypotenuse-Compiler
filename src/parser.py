@@ -1126,11 +1126,15 @@ class Parser:
                 else:
                     namespace = self.expect("IDENTIFIER")[1]
                 target = f"{target}@{namespace}"
-            self.expect("SEMICOLON")
+            # Semicolon is optional for expose statements
+            if self.peek()[0] == "SEMICOLON":
+                self.expect("SEMICOLON")
             return ExposeDecl(target=target)
         elif t[0] == "PLSTD":
             self.advance()
-            self.expect("SEMICOLON")
+            # Semicolon is optional for expose statements
+            if self.peek()[0] == "SEMICOLON":
+                self.expect("SEMICOLON")
             return ExposeDecl(target="plstd")
 
         return None

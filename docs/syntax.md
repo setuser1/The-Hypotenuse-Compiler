@@ -265,10 +265,13 @@ See [assembly.md](assembly.md) for full details.
 ## Namespace Access
 
 ```c
-// Access a namespace member with '@'
+// Access a namespace member with '@' (namespace@function)
 random@mySpace()
 
-// Globalize a namespace
+// Expose plstd library (all symbols global)
+expose plstd
+
+// Expose a specific namespace
 expose mySpace
 random()   // now accessible directly
 ```
