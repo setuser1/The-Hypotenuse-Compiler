@@ -1,7 +1,0 @@
-int main() {
-    dynam int arr = [1, 2, 3];
-    arr.push(4);
-    int x = arr.pop();
-    int len = arr.len();
-    return 0;
-}

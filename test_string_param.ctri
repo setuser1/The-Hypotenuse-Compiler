@@ -1,5 +1,0 @@
-void foo(string s) {
-    int n = len(s);
-}
-
-int main() { return 0; }

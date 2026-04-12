@@ -1,5 +1,0 @@
-space test {
-void foo() { }
-}
-
-int main() { return 0; }
