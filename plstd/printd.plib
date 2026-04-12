@@ -2,8 +2,6 @@
 #include <string.h>
 #include <stdarg.h>
 
-space plstd {
-
 void print_c(char c) { write(1, &c, 1); }
 
 void print_s(string s) {
