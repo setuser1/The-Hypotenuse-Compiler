@@ -168,13 +168,23 @@ class CodeGen:
         """Map C△ type to C type."""
         if not typ:
             return typ
+
+        # Handle pointer types: strip trailing * and map base, then add * back
+        pointer_suffix = ""
+        while typ.endswith("*"):
+            typ = typ[:-1].strip()
+            pointer_suffix += "*"
+
         if typ.startswith("dynam "):
             typ = typ[6:]  # Strip "dynam " (6 chars)
         if typ.startswith("tuple "):
             typ = typ[6:]
         if typ == "string":
-            return "char*"
-        return TYPE_MAP.get(typ, typ)
+            mapped = "char*"
+        else:
+            mapped = TYPE_MAP.get(typ, typ)
+
+        return mapped + pointer_suffix
 
     def _get_dynam_type(self, var_name: str) -> str:
         """Get the type of a variable if it's dynam or string."""
@@ -404,15 +414,15 @@ class CodeGen:
                             dyn_type = self._dynam_declarations[var_name]
                             if dyn_type.startswith("dynam "):
                                 elem_type = dyn_type[6:]  # Remove "dynam " prefix
-                                struct_name = f"dynam_{elem_type}"
+                                struct_name = self._get_dynam_struct_name(elem_type)
                             elif dyn_type == "string":
                                 # For string, we need to treat as dynam char for push/pop/len
                                 elem_type = "char"
-                                struct_name = f"dynam_{elem_type}"
+                                struct_name = self._get_dynam_struct_name(elem_type)
                         else:
                             # Fallback to int if not found (shouldn't happen in valid code)
                             elem_type = "int"
-                            struct_name = f"dynam_{elem_type}"
+                            struct_name = self._get_dynam_struct_name(elem_type)
 
                         if method_name == "push":
                             # arr.push(val) -> dynam_int_push(&arr, val)
@@ -492,7 +502,7 @@ class CodeGen:
                                 dyn_type = self._dynam_declarations[var_name]
                                 if dyn_type.startswith("dynam "):
                                     elem_type = dyn_type[6:]
-                                    struct_name = f"dynam_{elem_type}"
+                                    struct_name = self._get_dynam_struct_name(elem_type)
                                     return f"{struct_name}_len(&{var_name})"
                                 elif dyn_type == "string":
                                     return f"strlen({var_name})"
@@ -1208,7 +1218,7 @@ class CodeGen:
             self._dynam_declarations[name] = original_type
 
             # Generate struct name for this dynam type
-            struct_name = f"dynam_{elem_type}"
+            struct_name = self._get_dynam_struct_name(elem_type)
 
             # Generate struct definition and helper functions (stored in _helper_lines)
             if struct_name not in self._generated_dynam_structs:
@@ -1420,6 +1430,14 @@ class CodeGen:
             self._emit(f"{typ} {name} = {val};")
         else:
             self._emit(f"{typ} {name};")
+
+    def _get_dynam_struct_name(self, elem_type: str) -> str:
+        """Generate a valid C struct name from an element type.
+
+        Replaces invalid characters in struct names (like '*') with valid alternatives.
+        """
+        sanitized = elem_type.replace("*", "_ptr").replace(" ", "_")
+        return f"dynam_{sanitized}"
 
     def _gen_dynam_helper_functions(
         self, struct_name: str, elem_type: str, original_elem_type: str
@@ -1648,10 +1666,9 @@ class CodeGen:
                         # This is a reassignment to a dynam array
                         if isinstance(value, InitList):
                             init_vals = [self._expr(e) for e in value.elements]
-                            struct_name = (
-                                f"dynam_{dynam_type[6:]}"  # "dynam int" -> "dynam_int"
-                            )
-                            mapped_elem = self._map_type(dynam_type[6:])
+                            elem_type = dynam_type[6:]
+                            struct_name = self._get_dynam_struct_name(elem_type)
+                            mapped_elem = self._map_type(elem_type)
 
                             # Free old data, reallocate and copy
                             self._emit(f"free({var_name}.data);")
