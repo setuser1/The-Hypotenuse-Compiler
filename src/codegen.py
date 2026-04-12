@@ -1252,6 +1252,14 @@ class CodeGen:
                 # Copy initial elements using helper function
                 for i, init_val in enumerate(init_vals):
                     self._emit(f"{struct_name}_push(&{name}, {init_val});")
+            elif node.initializer and isinstance(node.initializer, Call):
+                # Single element from function call: dynam int* x = func();
+                init_expr = self._expr(node.initializer)
+                default_cap = 4
+                self._emit(
+                    f"{struct_name} {name} = {{malloc({default_cap} * sizeof({mapped_elem})), 0, {default_cap}}};"
+                )
+                self._emit(f"{struct_name}_push(&{name}, {init_expr});")
             else:
                 # Empty dynam array with default capacity 4
                 default_cap = 4
