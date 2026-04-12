@@ -176,6 +176,14 @@ class CodeGen:
             typ = typ[:-1].strip()
             pointer_suffix += "*"
 
+        # Handle qualifiers: volatile string*, const int*, etc.
+        qualifier = ""
+        for q in ("volatile ", "const "):
+            if typ.startswith(q):
+                qualifier = q.strip() + " "
+                typ = typ[len(q) :]
+                break
+
         if typ.startswith("dynam "):
             typ = typ[6:]  # Strip "dynam " (6 chars)
         if typ.startswith("tuple "):
@@ -185,7 +193,7 @@ class CodeGen:
         else:
             mapped = TYPE_MAP.get(typ, typ)
 
-        return mapped + pointer_suffix
+        return qualifier + mapped + pointer_suffix
 
     def _get_dynam_type(self, var_name: str) -> str:
         """Get the type of a variable if it's dynam or string."""

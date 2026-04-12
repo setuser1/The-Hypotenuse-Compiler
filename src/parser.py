@@ -569,20 +569,16 @@ class Parser:
                 typ2 = self.advance()[1]
                 typ = f"{typ} {typ2}"
 
-        # Handle string type - allow pointer to string
-        if typ == "string":
-            typ = self._consume_pointer_stars(typ)
         # Prepend qualifiers to type
         if qualifiers:
             typ = " ".join(qualifiers) + " " + typ
+        # Handle string type - allow pointer to string
+        if typ == "string":
+            typ = self._consume_pointer_stars(typ)
         elif typ.startswith("dynam "):
             # dynam type: check for pointer to dynam or dynam of pointers
             # "dynam int*" = dynam array of int pointers
             # "dynam int**" = dynam array of pointers to pointers
-            # "*dynam int" would be pointer to dynam - parse element type with pointers
-            # Actually, let's just consume pointer stars after the dynam type
-            # "dynam int*" means dynam array of (int pointers)
-            # For pointer TO dynam, user should use: dynam int x; dynam int* p = &x;
             typ = self._consume_pointer_stars(typ)
         else:
             typ = self._consume_pointer_stars(typ)
@@ -899,6 +895,7 @@ class Parser:
 
             # Global variable
             array_size = None
+            full_dims = None
             sizes = []
             while self.accept("LBRACKET"):
                 if self.peek()[0] == "RBRACKET":
@@ -1549,6 +1546,9 @@ class Parser:
 
         # Handle type declarations (including size_t and system types like mode_t, uid_t, etc.)
         if t[0] in _BASE_TYPE_TOKENS:
+            return self._parse_local_declaration()
+        # Handle qualifiers (const, volatile) before type: volatile int* x;
+        if t[0] in ("CONST", "VOLATILE"):
             return self._parse_local_declaration()
         # Handle storage class specifiers at statement level (e.g., extern void foo())
         if t[0] in ("EXTERN", "STATIC", "AUTO", "REGISTER"):
