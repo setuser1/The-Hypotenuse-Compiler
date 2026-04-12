@@ -77,6 +77,8 @@ class CodeGen:
         self._helper_lines = []  # Store dynam helper functions
         self._dynam_declarations = {}  # Track dynam/string declarations by name -> type
         self._len_int_generated = False  # Track if len_int helper has been generated
+        self._current_space = None  # Current space name when generating inside a space
+        self._space_local_functions = set()  # Functions defined in current space
 
     def generate(self) -> str:
         """Main entry point. Returns generated C code as string."""
@@ -511,6 +513,11 @@ class CodeGen:
                     else self._expr(node.callee)
                 )
 
+                # Handle space-local function calls: if we're inside a space and calling
+                # a function defined in that space, prefix with the space name
+                if self._current_space and callee in self._space_local_functions:
+                    callee = f"{self._current_space}_{callee}"
+
             # FIRST: Check if library is exposed
             # If exposed: printd@lib prefix is allowed but optional (strip it)
             # If NOT exposed: printd@lib prefix IS required for plstd functions
@@ -654,12 +661,24 @@ class CodeGen:
             if isinstance(decl, SpaceDecl):
                 # Handle SpaceDecl in main file - generate nested declarations with prefix
                 prefix = decl.name
+                # Track current space for function call prefixing
+                old_space = self._current_space
+                old_local_funcs = self._space_local_functions.copy()
+                self._current_space = decl.name
+                self._space_local_functions = set()
                 for nested in decl.declarations:
                     if isinstance(nested, Function):
                         nested.name = f"{prefix}_{nested.name}"
+                        # Track original name for call prefixing
+                        self._space_local_functions.add(
+                            nested.name.replace(f"{prefix}_", "")
+                        )
                     elif isinstance(nested, Declaration):
                         nested.name = f"{prefix}_{nested.name}"
                     self._gen_node(nested)
+                # Restore previous space context
+                self._current_space = old_space
+                self._space_local_functions = old_local_funcs
             elif not isinstance(decl, (UsingDecl, ExposeDecl)):
                 # Skip Include/Define - they were collected in _gen_imports via _collect_include
                 if isinstance(decl, (Include, Define)):
@@ -941,10 +960,19 @@ class CodeGen:
                 else:
                     actual_prefix = f"{prefix}_{decl.name}"  # e.g., lib_utils_func
 
+                # Track current space for function call prefixing
+                old_space = self._current_space
+                old_local_funcs = self._space_local_functions.copy()
+                self._current_space = decl.name
+                self._space_local_functions = set()
+
                 # Update specific imports mapping with actual generated prefix
                 for nested_decl in decl.declarations:
                     if isinstance(nested_decl, p.Function):
+                        original_name = nested_decl.name
                         generated_name = f"{actual_prefix}_{nested_decl.name}"
+                        # Track ORIGINAL name for space-local function call prefixing
+                        self._space_local_functions.add(original_name)
                         # Update mapping: printd -> (plstd, plstd_printd)
                         if nested_decl.name in self._specific_imports:
                             self._specific_imports[nested_decl.name] = (
@@ -956,6 +984,10 @@ class CodeGen:
                     elif isinstance(nested_decl, p.Declaration):
                         nested_decl.name = f"{actual_prefix}_{nested_decl.name}"
                     self._gen_node(nested_decl)
+
+                # Restore previous space context
+                self._current_space = old_space
+                self._space_local_functions = old_local_funcs
             elif isinstance(
                 decl, (p.Function, p.Declaration, p.StructDef, p.Typedef, p.EnumDef)
             ):
@@ -1113,8 +1145,17 @@ class CodeGen:
         elif isinstance(node, LibAccess):
             pass  # Handled in expression context
         elif isinstance(node, SpaceDecl):
+            old_space = self._current_space
+            old_local_funcs = self._space_local_functions.copy()
+            self._current_space = node.name
+            self._space_local_functions = set()
+            for decl in node.declarations:
+                if isinstance(decl, Function):
+                    self._space_local_functions.add(decl.name)
             for decl in node.declarations:
                 self._gen_statement(decl)
+            self._current_space = old_space
+            self._space_local_functions = old_local_funcs
         elif node is None:
             pass  # Skip None declarations (e.g., skipped extern "C" blocks)
         else:

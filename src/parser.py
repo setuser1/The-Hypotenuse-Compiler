@@ -1157,7 +1157,11 @@ class Parser:
                 if self.peek()[0] == "RBRACE":
                     self.advance()
                     break
-                declarations.append(self.parse_external())
+                if self.peek()[0] == "EOF" or self.i >= len(self.tokens):
+                    raise SyntaxError(f"Unexpected end of input inside space '{name}'")
+                node = self.parse_external()
+                if node is not None:
+                    declarations.append(node)
             return SpaceDecl(name=name, declarations=declarations)
         else:
             line = t[2] if len(t) > 2 else 0
@@ -2483,7 +2487,16 @@ _orig_parse_program = Parser.parse_program
 def _parse_program_unwrap(self) -> Program:
     decls_raw = []
     while self.peek()[0] != "EOF":
+        prev_i = self.i
+        if prev_i >= len(self.tokens):
+            break
         node = self.parse_external()
+        if node is None:
+            if self.i == prev_i and self.i < len(self.tokens):
+                self.advance()
+            continue
+        if self.i == prev_i:
+            raise SyntaxError(f"Parser stuck at token: {self.peek()}")
         if isinstance(node, _MultiDecl):
             decls_raw.extend(node.decls)
         else:

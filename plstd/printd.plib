@@ -2,10 +2,12 @@
 #include <string.h>
 #include <stdarg.h>
 
+space printd {
+
 void print_c(char c) { write(1, &c, 1); }
 
 void print_s(string s) {
-    if (s) { write(1, s, strlen(s)); }
+    if (s) { write(1, s, len(s)); }
 }
 
 void print_num(unsigned long n, int base, int upper) {
@@ -79,4 +81,6 @@ void printd(string fmt, ...) {
     }
     va_end(a);
     print_c('\n');
+}
+
 }
