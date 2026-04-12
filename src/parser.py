@@ -740,25 +740,8 @@ class Parser:
         if t[0] == "SPACE":
             return self.parse_space()
 
-        # Handle extern "C" { } - skip entirely (C doesn't need linkage specifiers)
         if t[0] == "EXTERN":
-            next_tok = (
-                self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
-            )
-            if next_tok and next_tok[0] == "STRING_LITERAL" and next_tok[1] == '"C"':
-                self.advance()  # skip extern
-                self.advance()  # skip "C"
-                if self.peek()[0] == "LBRACE":
-                    self.advance()  # skip {
-                    depth = 1
-                    while self.i < len(self.tokens) and depth > 0:
-                        if self.peek()[0] == "LBRACE":
-                            depth += 1
-                        elif self.peek()[0] == "RBRACE":
-                            depth -= 1
-                        self.advance()
-                return None
-            # Not extern "C" - fall through
+            return self.parse_extern_c_block()
 
         if t[0] == "TYPEDEF":
             return self.parse_typedef()
@@ -1140,14 +1123,23 @@ class Parser:
         return None
 
     def parse_extern_c_block(self):
-        """Skip contents of extern \"C\" { } block (no-op in C)."""
+        """Skip contents of extern "C" { } block (no-op in C)."""
+        self.advance()  # skip extern
+        self.advance()  # skip "C"
+        if self.peek()[0] != "LBRACE":
+            return None
+        self.advance()  # skip {
+        depth = 1
         while self.peek()[0] != "EOF":
-            if self.peek()[0] == "RBRACE":
-                self.expect("RBRACE")
-                break
-            # Skip each token until we hit the closing brace
+            if self.peek()[0] == "LBRACE":
+                depth += 1
+            elif self.peek()[0] == "RBRACE":
+                depth -= 1
+                if depth == 0:
+                    self.advance()  # skip closing }
+                    return None
             self.advance()
-        return None  # Return None - extern "C" block is ignored in C
+        raise SyntaxError("Unclosed extern \"C\" block - missing '}'")
 
     def parse_space(self) -> SpaceDecl:
         """Parse a namespace block declaration."""
