@@ -257,7 +257,7 @@ ERROR_MESSAGES = {
         "Library {lib} does not export function {func}",
     ],
     "E804": [
-        "Invalid alias '{alias}'. Use '@lib' for the standard library.",
+        "Invalid alias '{alias}'. Library not imported or does not exist.",
     ],
     "E805": [
         "Invalid call syntax for {func}. Use '{func}()' directly or '{func}@lib()' for library functions.",

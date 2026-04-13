@@ -80,6 +80,8 @@ class CodeGen:
         self._space_prefix_map = {}  # Maps space name -> actual prefix (e.g., "math" -> "lib_math")
         self._alias_to_lib = {}  # Maps alias (e.g., "lib") -> actual lib name (e.g., "mylib")
         self._top_level_lib_functions = {}  # Maps lib_name -> set of top-level function names
+        self._used_functions = set()  # Track used function names for tree-shaking
+        self._pending_plibs = []  # Store pending plib ASTs for tree-shaking
         self._global_dynam_inits = []  # Track global dynam initialization code for main()
         self._plib_global_inits = []  # Track global dynam inits for plib init function
         self._plib_init_funcs = []  # Track plib init function names to auto-call
@@ -98,7 +100,24 @@ class CodeGen:
     def generate(self) -> str:
         """Main entry point. Returns generated C code as string."""
         self._lines = []
-        self._gen_program(self.ast)
+
+        # First, collect plib info and process imports (which populates _top_level_lib_functions)
+        self._gen_imports()
+
+        # Emit collected includes at the very beginning
+        includes_to_emit = []
+        for inc in sorted(self._collected_includes):
+            includes_to_emit.append(inc)
+        # We'll prepend includes later after all code is generated
+
+        # Generate main program code
+        self._gen_program_code(self.ast)
+
+        # Emit pending plibs with tree-shaking (after main program, but prepend includes)
+        self._emit_pending_plibs()
+
+        # Prepend includes before any existing code
+        self._lines = includes_to_emit + self._lines
 
         # Always ensure required includes are present
         needs_stdlib = (
@@ -659,15 +678,30 @@ class CodeGen:
                                     fallback=f"Function '{func}' not found in library '{actual_lib}'. Use '{func}()' directly if it's a top-level function.",
                                 )
                             )
+                    elif namespace in self._top_level_lib_functions:
+                        # Direct lib name like @streamer
+                        if func in self._top_level_lib_functions[namespace]:
+                            callee = func
+                        else:
+                            raise ValueError(
+                                error_msgs.get_error_msg(
+                                    "E803",
+                                    func=func,
+                                    lib=namespace,
+                                    fallback=f"Function '{func}' not found in library '{namespace}'.",
+                                )
+                            )
                     else:
                         # Invalid alias
                         raise ValueError(
                             error_msgs.get_error_msg(
                                 "E804",
                                 alias=namespace,
-                                fallback=f"Invalid alias '{namespace}'. Use '@lib' for the standard library.",
+                                fallback=f"Invalid alias '{namespace}'. Library not imported or does not exist.",
                             )
                         )
+            # Track this function call for tree-shaking plibs
+            self._used_functions.add(base_callee)
             args = ", ".join(self._expr(a) for a in node.args)
             return f"{callee}({args})"
 
@@ -734,6 +768,12 @@ class CodeGen:
     def _gen_program(self, node):
         # First collect all includes from user file and all plib dependencies
         self._gen_imports()
+        # Now generate main program code
+        self._gen_program_code(node)
+        # Emit pending plibs with tree-shaking
+        self._emit_pending_plibs()
+
+    def _gen_program_code(self, node):
         # Now emit collected includes at the very beginning (prepend)
         includes_to_emit = []
         for inc in sorted(self._collected_includes):
@@ -886,10 +926,10 @@ class CodeGen:
             # Only collect includes from plib (don't generate code yet)
             self._collect_plib_includes(lib_name)
 
-        # Now generate plib code after all includes are collected
+        # Collect plib info for tree-shaking (generate later after main program)
         for lib_name in local_imports:
             alias = self._current_alias.get(lib_name)
-            self._gen_plib_code(lib_name, alias)
+            self._collect_plib_for_tree_shake(lib_name, alias)
 
         for exp in exposes:
             # Check if the library was imported first
@@ -968,7 +1008,9 @@ class CodeGen:
             self._exposed_libs.add(exp_target)
             self._exposed_libs.add(exp_base)
 
-    def _gen_plib_code(self, lib_name: str, alias: str = None):
+    def _gen_plib_code(
+        self, lib_name: str, alias: str = None, plib_ast: "p.Program" = None
+    ):
         """Generate code from a local plib file."""
         import os
         import lexer
@@ -981,20 +1023,24 @@ class CodeGen:
         self._imported_plib_inits = []  # Reset for this plib's imports
         seen_libs = {lib_name}  # Track which plibs we've processed in this chain
 
-        plib_path = None
-        search_name = lib_name.split("/")[-1]
+        # If AST wasn't provided, parse the file
+        if plib_ast is None:
+            plib_path = None
+            search_name = lib_name.split("/")[-1]
 
-        # Handle absolute paths directly
-        if os.path.isabs(lib_name):
-            if os.path.exists(lib_name):
-                plib_path = lib_name
-            elif os.path.exists(f"{lib_name}.plib"):
-                plib_path = f"{lib_name}.plib"
-        else:
-            # Always check current directory and parent directories
-            current_dir = os.path.dirname(self.source_path) if self.source_path else "."
-            search_paths = [current_dir]
-            parent = os.path.dirname(current_dir)
+            # Handle absolute paths directly
+            if os.path.isabs(lib_name):
+                if os.path.exists(lib_name):
+                    plib_path = lib_name
+                elif os.path.exists(f"{lib_name}.plib"):
+                    plib_path = f"{lib_name}.plib"
+            else:
+                # Always check current directory and parent directories
+                current_dir = (
+                    os.path.dirname(self.source_path) if self.source_path else "."
+                )
+                search_paths = [current_dir]
+                parent = os.path.dirname(current_dir)
             while parent and parent != current_dir:
                 search_paths.append(parent)
                 current_dir = parent
@@ -1034,15 +1080,19 @@ class CodeGen:
                         if plib_path:
                             break
 
-        if not plib_path:
-            return
+        # If AST wasn't provided and we found a path, parse it
+        if plib_ast is None:
+            if not plib_path:
+                return
 
-        with open(plib_path, "r") as f:
-            plib_content = f.read()
+            with open(plib_path, "r") as f:
+                plib_content = f.read()
 
-        tokens = lexer.Lexer(plib_content).lex()
-        tokens.append(("EOF", "EOF", 0, 0))
-        plib_ast = p.Parser(tokens).parse_program()
+            tokens = lexer.Lexer(plib_content).lex()
+            tokens.append(("EOF", "EOF", 0, 0))
+            plib_ast = p.Parser(tokens).parse_program()
+
+        # Now plib_ast is available (either passed in or just parsed)
 
         # Collect all includes from the plib (not emit - collected for later)
         for decl in plib_ast.declarations:
@@ -1145,6 +1195,13 @@ class CodeGen:
                         decl.name,
                     )
 
+                # Tree-shaking: skip unused top-level functions (unless lib is exposed)
+                lib_key = lib_name.split("/")[-1]
+                is_exposed = lib_key in self._exposed_libs
+                if isinstance(decl, p.Function) and not is_exposed:
+                    if decl.name not in self._used_functions:
+                        continue  # Skip unused function
+
                 self._gen_node(decl)
 
         # Generate plib init function for global dynam arrays if any
@@ -1178,6 +1235,102 @@ class CodeGen:
         self._imported_plib_inits = old_imported_inits + [
             i for i in self._imported_plib_inits if i not in old_imported_inits
         ]
+
+    def _collect_plib_for_tree_shake(self, lib_name: str, alias: str = None):
+        """Collect plib AST for tree-shaking - don't generate yet."""
+        import os
+        import lexer
+        import parser as p
+
+        plib_path = None
+        search_name = lib_name.split("/")[-1]
+
+        if os.path.isabs(lib_name):
+            if os.path.exists(lib_name):
+                plib_path = lib_name
+            elif os.path.exists(f"{lib_name}.plib"):
+                plib_path = f"{lib_name}.plib"
+        else:
+            current_dir = os.path.dirname(self.source_path) if self.source_path else "."
+            search_paths = [current_dir]
+            parent = os.path.dirname(current_dir)
+            while parent and parent != current_dir:
+                search_paths.append(parent)
+                current_dir = parent
+                parent = os.path.dirname(parent)
+            search_paths.extend(self._get_plibs_search_dirs())
+
+            for base in search_paths:
+                candidate = os.path.join(base, f"{search_name}.plib")
+                if os.path.exists(candidate):
+                    plib_path = candidate
+                    break
+
+            if not plib_path:
+                for base in search_paths:
+                    folder_path = os.path.join(base, search_name)
+                    if os.path.isdir(folder_path):
+                        for f in sorted(os.listdir(folder_path)):
+                            if f.endswith(".plib"):
+                                plib_path = os.path.join(folder_path, f)
+                                break
+                        if plib_path:
+                            break
+
+        if not plib_path:
+            return
+
+        with open(plib_path, "r") as f:
+            plib_content = f.read()
+
+        tokens = lexer.Lexer(plib_content).lex()
+        tokens.append(("EOF", "EOF", 0, 0))
+        plib_ast = p.Parser(tokens).parse_program()
+
+        # Collect includes from the plib
+        for decl in plib_ast.declarations:
+            if isinstance(decl, p.Include):
+                self._collect_include(decl)
+            elif isinstance(decl, p.Define):
+                self._collected_includes.add(decl.directive)
+
+        # Pre-populate _top_level_lib_functions so @ syntax works
+        lib_key = lib_name.split("/")[-1]
+        for decl in plib_ast.declarations:
+            if isinstance(decl, p.Function):
+                if lib_key not in self._top_level_lib_functions:
+                    self._top_level_lib_functions[lib_key] = set()
+                self._top_level_lib_functions[lib_key].add(decl.name)
+
+        self._pending_plibs.append(
+            {
+                "lib_name": lib_name,
+                "alias": alias,
+                "ast": plib_ast,
+            }
+        )
+
+    def _emit_pending_plibs(self):
+        """Emit pending plib code with tree-shaking."""
+        plib_lines = []
+        for plib_info in self._pending_plibs:
+            # Temporarily redirect emit to capture plib code
+            old_lines = self._lines
+            old_indent = self._indent
+            self._lines = []
+            self._indent = 0
+
+            self._gen_plib_code(
+                plib_info["lib_name"], plib_info["alias"], plib_info["ast"]
+            )
+
+            plib_lines.extend(self._lines)
+            self._lines = old_lines
+            self._indent = old_indent
+
+        # Prepend plib code before main program
+        if plib_lines:
+            self._lines = plib_lines + self._lines
 
     def _get_plibs_search_dirs(self):
         """Return list of directories to search for plib files."""
