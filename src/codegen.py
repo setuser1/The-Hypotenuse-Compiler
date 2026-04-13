@@ -574,6 +574,7 @@ class CodeGen:
             # AND intra-file scoped imports: using X&Y -> map Y to X_Y
             # This must run BEFORE namespace transformation so "func@lib" can match "func"
             base_callee = callee.split("@")[0] if "@" in callee else callee
+            func_from_unexposed_lib = False
             if (
                 hasattr(self, "_specific_imports")
                 and base_callee in self._specific_imports
@@ -604,6 +605,31 @@ class CodeGen:
                 else:
                     # Single scope like foo - transform to foo_bar
                     callee = lib_name + "_" + func_name
+
+            # Check if calling a function from an imported but unexposed plib
+            # without using @ syntax (skip when generating plib code itself)
+            elif (
+                not getattr(self, "_generating_plib", False)
+                and base_callee not in getattr(self, "_specific_imports", {})
+                and base_callee not in getattr(self, "_space_local_functions", set())
+                and "@" not in callee
+            ):
+                # Check if function exists in any imported plib's top-level functions
+                for lib_name, funcs in getattr(
+                    self, "_top_level_lib_functions", {}
+                ).items():
+                    if base_callee in funcs:
+                        is_exposed = lib_name in getattr(self, "_exposed_libs", set())
+                        if not is_exposed:
+                            raise ValueError(
+                                error_msgs.get_error_msg(
+                                    "E802",
+                                    lib=lib_name,
+                                    func=base_callee,
+                                    fallback=f"Function '{base_callee}' requires '{base_callee}@{lib_name}()' syntax (library '{lib_name}' not exposed). Use 'expose {lib_name}' before calling.",
+                                )
+                            )
+                        break
 
             # Handle namespace prefix like "func@lib" or "func@space" -> "prefix_func"
             # @ is for calling space-local functions or top-level library functions
