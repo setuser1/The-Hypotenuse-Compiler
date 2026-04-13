@@ -80,6 +80,20 @@ class CodeGen:
         self._space_prefix_map = {}  # Maps space name -> actual prefix (e.g., "math" -> "lib_math")
         self._alias_to_lib = {}  # Maps alias (e.g., "lib") -> actual lib name (e.g., "mylib")
         self._top_level_lib_functions = {}  # Maps lib_name -> set of top-level function names
+        self._global_dynam_inits = []  # Track global dynam initialization code for main()
+        self._plib_global_inits = []  # Track global dynam inits for plib init function
+        self._plib_init_funcs = []  # Track plib init function names to auto-call
+        self._imported_plib_inits = []  # Track init funcs from imported plibs
+        self._plib_inits_called = (
+            False  # Track if plib inits have been called in main()
+        )
+        self._in_global_scope = True  # Track if we're at global scope
+        self._dynam_inits_inserted = (
+            False  # Track if global dynam inits have been inserted
+        )
+        self._is_plib_source = source_path and source_path.endswith(
+            ".plib"
+        )  # Direct plib compilation
 
     def generate(self) -> str:
         """Main entry point. Returns generated C code as string."""
@@ -731,6 +745,25 @@ class CodeGen:
                     continue
                 self._gen_node(decl)
 
+        # Generate plib init function for global dynam arrays (direct plib compilation)
+        if self._is_plib_source and self._plib_global_inits:
+            # Extract base name from source path (e.g., /tmp/test.plib -> test)
+            import os
+
+            base_name = os.path.basename(self.source_path)
+            if base_name.endswith(".plib"):
+                safe_name = base_name[:-5]  # Remove .plib extension
+            else:
+                safe_name = base_name
+            safe_name = safe_name.replace("/", "_").replace("-", "_")
+            self._emit("")
+            self._emit(f"void {safe_name}_init(void) {{")
+            for init_line, push_lines in self._plib_global_inits:
+                self._emit(f"    {init_line}")
+                for p_line in push_lines:
+                    self._emit(f"    {p_line}")
+            self._emit(f"}}")
+
     def _emit_collected_includes(self):
         for inc in sorted(self._collected_includes):
             self._emit(inc)
@@ -869,12 +902,29 @@ class CodeGen:
             if exp_target.startswith("<") and exp_target.endswith(">"):
                 exp_target = exp.target[1:-1]
 
+            # Normalize: strip .plib extension for comparison
+            exp_base = (
+                exp_target.rsplit(".plib", 1)[0]
+                if ".plib" in exp_target
+                else exp_target
+            )
+
             # Check if the library was imported
             lib_imported = any(
                 (imp.source == exp_target)
                 or (imp.source == f"<{exp_target}>")
                 or (imp.source == f'"{exp_target}"')
                 or (imp.item == exp_target)
+                # Also check without .plib extension
+                or (imp.source == exp_base)
+                or (imp.source == f"<{exp_base}>")
+                or (imp.source == f'"{exp_base}"')
+                or (
+                    imp.source.rsplit(".plib", 1)[0]
+                    if ".plib" in imp.source
+                    else imp.source
+                )
+                == exp_base
                 for imp in imports
             )
             if not lib_imported:
@@ -882,11 +932,15 @@ class CodeGen:
                     imp.source.startswith(f"<{exp_target}/")
                     or imp.source == f"<{exp_target}>"
                     or imp.source == exp_target
+                    or imp.source.startswith(f"<{exp_base}/")
+                    or imp.source == f"<{exp_base}>"
+                    or imp.source == exp_base
                     for imp in imports
                 ):
                     lib_imported = True
             # Track that this library is now exposed
             self._exposed_libs.add(exp_target)
+            self._exposed_libs.add(exp_base)
 
     def _gen_plib_code(self, lib_name: str, alias: str = None):
         """Generate code from a local plib file."""
@@ -896,7 +950,10 @@ class CodeGen:
 
         # Bypass checks when generating plib code itself
         old_generating = self._generating_plib
+        old_imported_inits = list(self._imported_plib_inits)  # Save imported plib inits
         self._generating_plib = True
+        self._imported_plib_inits = []  # Reset for this plib's imports
+        seen_libs = {lib_name}  # Track which plibs we've processed in this chain
 
         plib_path = None
         search_name = lib_name.split("/")[-1]
@@ -955,6 +1012,20 @@ class CodeGen:
             elif isinstance(decl, p.Define):
                 # Collect defines into a set too for later deduplication
                 self._collected_includes.add(decl.directive)
+
+        # Recursively generate code for imported plibs first
+        for decl in plib_ast.declarations:
+            if isinstance(decl, p.UsingDecl):
+                source = decl.source
+                # Skip system libraries like <plstd>
+                if source.startswith("<") and source.endswith(">"):
+                    continue
+                # Skip if already imported
+                if source in seen_libs:
+                    continue
+                seen_libs.add(source)
+                # Recursively generate the imported plib's code
+                self._gen_plib_code(source, None)
 
         # Determine the prefix to use - alias if provided, else lib_name
         if alias:
@@ -1037,8 +1108,37 @@ class CodeGen:
 
                 self._gen_node(decl)
 
+        # Generate plib init function for global dynam arrays if any
+        # Also call init functions for any imported plibs that have globals
+        if self._plib_global_inits or self._imported_plib_inits:
+            safe_name = lib_name.replace("/", "_").replace("-", "_")
+            init_func_name = f"{safe_name}_init"
+            self._emit("")
+            self._emit(f"void {init_func_name}(void) {{")
+            # First call init functions for imported plibs (nested deps)
+            for imported_init in self._imported_plib_inits:
+                self._emit(f"    {imported_init}();")
+            # Then initialize this plib's globals
+            for init_line, push_lines in self._plib_global_inits:
+                self._emit(f"    {init_line}")
+                for p_line in push_lines:
+                    self._emit(f"    {p_line}")
+            self._emit(f"}}")
+            # Only add to _plib_init_funcs if this is a top-level plib (not nested)
+            # Nested plibs' inits are chained via _imported_plib_inits
+            if not old_generating:
+                self._plib_init_funcs.append(init_func_name)
+            # Add this plib's init to parent's imported list
+            self._imported_plib_inits.append(init_func_name)
+            self._plib_global_inits = []  # Clear for next plib
+
         # Restore the flag after generating plib code
         self._generating_plib = old_generating
+        # Restore imported plib inits for parent's context
+        # Accumulate: parent's inits + this plib's inits
+        self._imported_plib_inits = old_imported_inits + [
+            i for i in self._imported_plib_inits if i not in old_imported_inits
+        ]
 
     def _get_plibs_search_dirs(self):
         """Return list of directories to search for plib files."""
@@ -1228,6 +1328,32 @@ class CodeGen:
         param_str = ", ".join(params) if params else "void"
         self._emit(f"{ret_type} {node.name}({param_str}) {{")
         self._indent += 1
+
+        # Insert global dynam initializations at the start of main()
+        if (
+            node.name == "main"
+            and self._global_dynam_inits
+            and not self._dynam_inits_inserted
+        ):
+            for init_line in self._global_dynam_inits:
+                self._emit(init_line)
+            self._emit("")
+            self._dynam_inits_inserted = True
+
+        # Auto-call plib init functions for global dynam arrays
+        if (
+            node.name == "main"
+            and self._plib_init_funcs
+            and not self._plib_inits_called
+        ):
+            for init_func in self._plib_init_funcs:
+                self._emit(f"{init_func}();")
+            self._emit("")
+            self._plib_inits_called = True
+
+        old_in_global = self._in_global_scope
+        self._in_global_scope = False
+
         if isinstance(node.body, Compound):
             for stmt in node.body.stmts:
                 self._gen_node(stmt)
@@ -1236,6 +1362,8 @@ class CodeGen:
         self._indent -= 1
         self._emit("}")
         self._emit("")  # blank line after function
+
+        self._in_global_scope = old_in_global
 
     def _gen_declaration(self, node: Declaration):
         original_type = node.var_type  # Keep original for special types
@@ -1257,40 +1385,65 @@ class CodeGen:
             # Generate struct definition and helper functions (stored in _helper_lines)
             if struct_name not in self._generated_dynam_structs:
                 self._generated_dynam_structs.add(struct_name)
-                # Generate helper functions for this dynam type (adds to _helper_lines)
-                self._gen_dynam_helper_functions(struct_name, mapped_elem, elem_type)
+            self._gen_dynam_helper_functions(struct_name, mapped_elem, elem_type)
 
             # Generate initialization code
+            # At global scope in .ctri: emit declaration at file scope, track initialization for main()
+            # At global scope in .plib: emit declaration at file scope, track for init function
+            # At local scope: emit directly
+            is_plib = self._generating_plib or self._is_plib_source
             if node.initializer and hasattr(node.initializer, "elements"):
                 # Array initializer: [1, 2, 3]
                 init_vals = [self._expr(e) for e in node.initializer.elements]
                 init_count = len(init_vals)
-
-                # Initial capacity: at least 4 or enough for initial elements
                 init_capacity = max(4, init_count)
 
-                # Generate the dynam struct initialization with allocated data
-                self._emit(
-                    f"{struct_name} {name} = {{malloc({init_capacity} * sizeof({mapped_elem})), 0, {init_capacity}}};"
-                )
-
-                # Copy initial elements using helper function
-                for i, init_val in enumerate(init_vals):
-                    self._emit(f"{struct_name}_push(&{name}, {init_val});")
+                if self._in_global_scope:
+                    self._emit(f"{struct_name} {name};")
+                    init_line = f"{name}.data = malloc({init_capacity} * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = {init_capacity};"
+                    push_lines = [
+                        f"{struct_name}_push(&{name}, {v});" for v in init_vals
+                    ]
+                    if is_plib:
+                        self._plib_global_inits.append((init_line, push_lines))
+                    else:
+                        self._global_dynam_inits.append(init_line)
+                        self._global_dynam_inits.extend(push_lines)
+                else:
+                    self._emit(
+                        f"{struct_name} {name} = {{malloc({init_capacity} * sizeof({mapped_elem})), 0, {init_capacity}}};"
+                    )
+                    for v in init_vals:
+                        self._emit(f"{struct_name}_push(&{name}, {v});")
             elif node.initializer and isinstance(node.initializer, Call):
-                # Single element from function call: dynam int* x = func();
                 init_expr = self._expr(node.initializer)
-                default_cap = 4
-                self._emit(
-                    f"{struct_name} {name} = {{malloc({default_cap} * sizeof({mapped_elem})), 0, {default_cap}}};"
-                )
-                self._emit(f"{struct_name}_push(&{name}, {init_expr});")
+
+                if self._in_global_scope:
+                    self._emit(f"{struct_name} {name};")
+                    init_line = f"{name}.data = malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
+                    push_line = f"{struct_name}_push(&{name}, {init_expr});"
+                    if is_plib:
+                        self._plib_global_inits.append((init_line, [push_line]))
+                    else:
+                        self._global_dynam_inits.append(init_line)
+                        self._global_dynam_inits.append(push_line)
+                else:
+                    self._emit(
+                        f"{struct_name} {name} = {{malloc(4 * sizeof({mapped_elem})), 0, 4}};"
+                    )
+                    self._emit(f"{struct_name}_push(&{name}, {init_expr});")
             else:
-                # Empty dynam array with default capacity 4
-                default_cap = 4
-                self._emit(
-                    f"{struct_name} {name} = {{malloc({default_cap} * sizeof({mapped_elem})), 0, {default_cap}}};"
-                )
+                if self._in_global_scope:
+                    self._emit(f"{struct_name} {name};")
+                    init_line = f"{name}.data = malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
+                    if is_plib:
+                        self._plib_global_inits.append((init_line, []))
+                    else:
+                        self._global_dynam_inits.append(init_line)
+                else:
+                    self._emit(
+                        f"{struct_name} {name} = {{malloc(4 * sizeof({mapped_elem})), 0, 4}};"
+                    )
             return
 
         # Handle string type: dynamic character array (like dynam char)
@@ -1491,6 +1644,10 @@ class CodeGen:
         self, struct_name: str, elem_type: str, original_elem_type: str
     ):
         """Generate push, pop, and len helper functions for a dynam type."""
+        # Skip if already generated
+        if f"{struct_name}_push" in self._generated_dynam_funcs:
+            return
+
         # Generate struct definition
         self._helper_lines.append(f"typedef struct {{")
         self._helper_lines.append(f"    {elem_type}* data;")

@@ -1,99 +1,44 @@
 {
   "name": "ctriangle",
   "displayName": "C△ (C Triangle)",
-  "description": "Language support for C△ (C Triangle) programming language",
+  "description": "Language support for C△ (C Triangle) - a C superset with namespaces, dynamic arrays, and first-class strings",
   "version": "1.0.0",
   "publisher": "ctriangle",
   "engines": {
     "vscode": "^1.70.0"
   },
-  "categories": [
-    "Programming Languages",
-    "Formatters",
-    "Debuggers"
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:ctriangle"
   ],
   "scripts": {
     "compile": "tsc -p ./tsconfig.json",
     "package": "vsce package"
   },
-  "devDependencies": {
-    "@types/node": "^18.0.0",
-    "@types/vscode": "^1.70.0",
-    "typescript": "^4.9.0",
-    "vscode": "^1.1.37"
-  },
+  "categories": [
+    "Programming Languages"
+  ],
   "contributes": {
     "languages": [
       {
-        "id": "c△",
-        "aliases": ["C△", "C Triangle", "ctriangle"],
+        "id": "ctriangle",
+        "aliases": ["C△", "C Triangle"],
         "extensions": [".ctri", ".plib"],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "c△",
+        "language": "ctriangle",
         "scopeName": "source.ctriangle",
         "path": "./syntaxes/ctriangle.tmLanguage.json"
       }
     ],
-    "debuggers": [
+    "iconThemes": [
       {
-        "type": "gdb",
-        "label": "GDB Debugger",
-        "languages": ["c△"],
-        "configurationAttributes": {
-          "launch": {
-            "required": ["program"],
-            "properties": {
-              "program": {
-                "type": "string",
-                "description": "Path to the executable to debug"
-              },
-              "args": {
-                "type": "array",
-                "description": "Command line arguments",
-                "default": []
-              },
-              "cwd": {
-                "type": "string",
-                "description": "Working directory"
-              }
-            }
-          }
-        }
-      }
-    ],
-    "configuration": {
-      "title": "C△ Configuration",
-      "properties": {
-        "ctriangle.compilerPath": {
-          "type": "string",
-          "default": "hypotenuse",
-          "description": "Path to the C△ compiler (or 'hypotenuse' if installed system-wide)"
-        },
-        "ctriangle.compilerArgs": {
-          "type": "array",
-          "default": ["-c"],
-          "description": "Arguments to pass to the compiler (e.g., -c, -t)"
-        }
-      }
-    },
-    "taskDefinitions": [
-      {
-        "type": "ctriangle",
-        "required": ["file"],
-        "properties": {
-          "file": {
-            "type": "string",
-            "description": "The file to compile"
-          },
-          "args": {
-            "type": "array",
-            "description": "Additional compiler arguments"
-          }
-        }
+        "id": "ctriangle-icons",
+        "label": "C△ Icons",
+        "path": "./icons/ctriangle-icon-theme.json"
       }
     ],
     "tasks": {
@@ -106,27 +51,19 @@
           "args": ["-c", "${file}"],
           "problemMatcher": [],
           "group": "build",
-          "detail": "Compile the current C△ file"
+          "detail": "Compile the current C△ file to executable"
         },
         {
           "type": "shell",
           "label": "Run C△ File",
           "command": "${fileDirname}/${fileBasenameNoExtension}",
-          "args": [],
           "problemMatcher": [],
           "group": "test",
           "dependsOn": ["Compile C△ File"],
           "detail": "Run the compiled executable"
         }
       ]
-    },
-    "colors": [
-      {
-        "id": "ctriangle.lineHighlight",
-        "description": "Background color for line highlighting",
-        "default": "#264F78"
-      }
-    ]
+    }
   },
   "icon": "assets/logo.png"
 }
