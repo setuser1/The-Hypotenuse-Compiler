@@ -958,40 +958,53 @@ class CodeGen:
         plib_path = None
         search_name = lib_name.split("/")[-1]
 
-        # Always check current directory first
-        current_dir = os.path.dirname(self.source_path) if self.source_path else "."
-        search_paths = [current_dir] + self._get_plibs_search_dirs()
-
-        # Handle path with folder: lib/func -> import first .plib in folder
-        if "/" in lib_name:
-            folder = lib_name.split("/")[0]
-            for base in search_paths:
-                folder_path = os.path.join(base, folder)
-                if os.path.isdir(folder_path):
-                    for f in sorted(os.listdir(folder_path)):
-                        if f.endswith(".plib"):
-                            plib_path = os.path.join(folder_path, f)
-                            break
-                    if plib_path:
-                        break
+        # Handle absolute paths directly
+        if os.path.isabs(lib_name):
+            if os.path.exists(lib_name):
+                plib_path = lib_name
+            elif os.path.exists(f"{lib_name}.plib"):
+                plib_path = f"{lib_name}.plib"
         else:
-            # First try direct .plib file
-            for base in search_paths:
-                candidate = os.path.join(base, f"{search_name}.plib")
-                if os.path.exists(candidate):
-                    plib_path = candidate
-                    break
+            # Always check current directory and parent directories
+            current_dir = os.path.dirname(self.source_path) if self.source_path else "."
+            search_paths = [current_dir]
+            parent = os.path.dirname(current_dir)
+            while parent and parent != current_dir:
+                search_paths.append(parent)
+                current_dir = parent
+                parent = os.path.dirname(parent)
+            search_paths.extend(self._get_plibs_search_dirs())
 
-            # If no .plib file found, try as folder (import all .plib files in folder)
-            if not plib_path:
+            # Handle path with folder: lib/func -> import first .plib in folder
+            if "/" in lib_name:
+                folder = lib_name.split("/")[0]
                 for base in search_paths:
-                    folder_path = os.path.join(base, search_name)
+                    folder_path = os.path.join(base, folder)
                     if os.path.isdir(folder_path):
-                        # Import first .plib in folder
                         for f in sorted(os.listdir(folder_path)):
                             if f.endswith(".plib"):
                                 plib_path = os.path.join(folder_path, f)
                                 break
+                        if plib_path:
+                            break
+            else:
+                # First try direct .plib file
+                for base in search_paths:
+                    candidate = os.path.join(base, f"{search_name}.plib")
+                    if os.path.exists(candidate):
+                        plib_path = candidate
+                        break
+
+                # If no .plib file found, try as folder (import all .plib files in folder)
+                if not plib_path:
+                    for base in search_paths:
+                        folder_path = os.path.join(base, search_name)
+                        if os.path.isdir(folder_path):
+                            # Import first .plib in folder
+                            for f in sorted(os.listdir(folder_path)):
+                                if f.endswith(".plib"):
+                                    plib_path = os.path.join(folder_path, f)
+                                    break
                         if plib_path:
                             break
 
@@ -1153,51 +1166,65 @@ class CodeGen:
         import lexer
         import parser as p
 
-        search_dirs = []
-        if self.source_path:
-            search_dirs.append(os.path.dirname(self.source_path))
-
-        if "/" in lib_name:
-            folder, filename = lib_name.split("/", 1)
-            search_dirs.extend(
-                [
-                    os.path.expanduser(f"~/.local/lib/PLIBS/{folder}"),
-                    f"/usr/lib/PLIBS/{folder}",
-                ]
-            )
-        else:
-            search_dirs.extend(
-                [
-                    ".",
-                    os.path.expanduser("~/.local/lib/PLIBS"),
-                    "/usr/lib/PLIBS",
-                ]
-            )
-
         plib_path = None
-        search_name = lib_name.split("/")[-1]
 
-        # For paths like "folder/name", look in folder subdirectory
-        if "/" in lib_name:
-            folder = lib_name.split("/")[0]
-            for base in ["."] + self._get_plibs_search_dirs():
-                folder_path = os.path.join(base, folder)
-                if os.path.isdir(folder_path):
-                    # Find any .plib file in the folder
-                    for f in os.listdir(folder_path):
-                        if f.endswith(".plib"):
-                            plib_path = os.path.join(folder_path, f)
+        # Handle absolute paths directly
+        if os.path.isabs(lib_name):
+            if os.path.exists(lib_name):
+                plib_path = lib_name
+            elif os.path.exists(f"{lib_name}.plib"):
+                plib_path = f"{lib_name}.plib"
+        else:
+            search_dirs = []
+            if self.source_path:
+                src_dir = os.path.dirname(self.source_path)
+                search_dirs.append(src_dir)
+                parent = os.path.dirname(src_dir)
+                while parent and parent != src_dir:
+                    search_dirs.append(parent)
+                    src_dir = parent
+                    parent = os.path.dirname(parent)
+
+            if "/" in lib_name:
+                folder, filename = lib_name.split("/", 1)
+                search_dirs.extend(
+                    [
+                        os.path.expanduser(f"~/.local/lib/PLIBS/{folder}"),
+                        f"/usr/lib/PLIBS/{folder}",
+                    ]
+                )
+            else:
+                search_dirs.extend(
+                    [
+                        ".",
+                        os.path.expanduser("~/.local/lib/PLIBS"),
+                        "/usr/lib/PLIBS",
+                    ]
+                )
+
+            search_name = lib_name.split("/")[-1]
+
+            # For paths like "folder/name", look in folder subdirectory
+            if "/" in lib_name:
+                folder = lib_name.split("/")[0]
+                for base in ["."] + self._get_plibs_search_dirs():
+                    folder_path = os.path.join(base, folder)
+                    if os.path.isdir(folder_path):
+                        # Find any .plib file in the folder
+                        for f in os.listdir(folder_path):
+                            if f.endswith(".plib"):
+                                plib_path = os.path.join(folder_path, f)
+                                break
+                        if plib_path:
                             break
-                    if plib_path:
-                        break
 
-        if not plib_path:
-            # Standard search
-            for d in self._get_plibs_search_dirs():
-                candidate = os.path.join(d, f"{search_name}.plib")
-                if os.path.exists(candidate):
-                    plib_path = candidate
-                    break
+            if not plib_path:
+                # Standard search
+                for d in self._get_plibs_search_dirs():
+                    candidate = os.path.join(d, f"{search_name}.plib")
+                    if os.path.exists(candidate):
+                        plib_path = candidate
+                        break
 
         if not plib_path:
             return
