@@ -1498,6 +1498,11 @@ class CodeGen:
                     init_expr = self._expr(node.initializer)
                     self._emit(f"char* {name} = {init_expr};")
                     return
+            if node.initializer and isinstance(node.initializer, Call):
+                # Function call returning string: string s = func(...);
+                init_expr = self._expr(node.initializer)
+                self._emit(f"char* {name} = {init_expr};")
+                return
             if node.initializer and hasattr(node.initializer, "value"):
                 # String literal: "hello"
                 init_val = node.initializer.value
@@ -1850,7 +1855,13 @@ class CodeGen:
 
     def _gen_return(self, node: Return):
         if node.expr is not None:
-            self._emit(f"return {self._expr(node.expr)};")
+            expr_str = self._expr(node.expr)
+            if isinstance(node.expr, Var):
+                var_name = node.expr.name
+                dynam_type = self._get_dynam_type(var_name)
+                if dynam_type and dynam_type.startswith("dynam "):
+                    expr_str = f"{var_name}.data"
+            self._emit(f"return {expr_str};")
         else:
             self._emit("return;")
 
