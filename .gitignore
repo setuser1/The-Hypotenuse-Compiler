@@ -8,6 +8,8 @@
 .ai-stuff/
 .ruff_cache/
 
+.DS_Store
+
 *.ctri
 
 # Do not ignore C source and header files
