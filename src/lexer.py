@@ -114,7 +114,6 @@ Tokens = [
     ("LBRACE", re.compile(r"\{")),
     ("RBRACE", re.compile(r"}")),
     ("LIB", re.compile(r"\blib\b")),
-    ("PLSTD", re.compile(r"\bplstd\b")),
     # IDENTIFIERS
     ("IDENTIFIER", re.compile(r"[A-Za-z_][A-Za-z0-9_]*")),
     # OTHERS
