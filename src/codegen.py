@@ -82,6 +82,7 @@ class CodeGen:
         self._alias_to_lib = {}  # Maps alias (e.g., "lib") -> actual lib name (e.g., "mylib")
         self._top_level_lib_functions = {}  # Maps lib_name -> set of top-level function names
         self._exposed_funcs = {}  # Maps bare_name -> lib_name for exposed functions
+        self._folder_libs = {}  # Maps folder alias -> list of plib names (e.g., "lib" -> ["plstd/streamer", "plstd/other"])
         self._used_functions = set()  # Track used function names for tree-shaking
         self._pending_plibs = []  # Store pending plib ASTs for tree-shaking
         self._global_dynam_inits = []  # Track global dynam initialization code for main()
@@ -635,12 +636,12 @@ class CodeGen:
                 and base_callee not in getattr(self, "_space_local_functions", set())
                 and "@" not in callee
             ):
-                # First check if function is exposed - if so, resolve to lib_func
+                # First check if function is exposed - if so, resolve to prefixed name
                 exposed_funcs = getattr(self, "_exposed_funcs", {})
                 if base_callee in exposed_funcs:
-                    # Exposed function - resolve to prefixed name
-                    lib_name = exposed_funcs[base_callee]
-                    callee = f"{lib_name}_{base_callee}"
+                    # Exposed function - resolve to prefixed name (already includes func name)
+                    prefixed_lib = exposed_funcs[base_callee]
+                    callee = f"{prefixed_lib}_{base_callee}"
                 else:
                     # Check if function exists in any imported plib's top-level functions
                     for lib_name, funcs in getattr(
@@ -677,13 +678,26 @@ class CodeGen:
                     elif namespace in self._alias_to_lib:
                         # @lib or other valid alias
                         actual_lib = self._alias_to_lib[namespace]
+                        found = False
+                        # Check direct match first
                         if (
                             actual_lib in self._top_level_lib_functions
                             and func in self._top_level_lib_functions[actual_lib]
                         ):
-                            # Top-level function - call with lib prefix
                             callee = f"{actual_lib}_{func}"
+                            found = True
                         else:
+                            # Search through folder plibs (e.g., plstd_streamer)
+                            for lib_key, funcs in self._top_level_lib_functions.items():
+                                if (
+                                    lib_key.startswith(f"{actual_lib}_")
+                                    and lib_key != actual_lib
+                                    and func in funcs
+                                ):
+                                    callee = f"{lib_key}_{func}"
+                                    found = True
+                                    break
+                        if not found:
                             raise ValueError(
                                 error_msgs.get_error_msg(
                                     "E803",
@@ -941,6 +955,8 @@ class CodeGen:
             # "lib" is an alias for the standard library (plstd)
             if lib_name == "plstd" and "lib" not in self._alias_to_lib:
                 self._alias_to_lib["lib"] = "plstd"
+                # When using <plstd>, also scan folder for all plibs
+                self._scan_plib_folder("plstd")
             # Only collect includes from plib (don't generate code yet)
             self._collect_plib_includes(lib_name)
 
@@ -981,8 +997,18 @@ class CodeGen:
                     )
                 self._exposed_libs.add(lib_name)
                 self._exposed_libs.add(actual_lib)
-                # Track exposed function: bare_name -> lib_name
-                self._exposed_funcs[func_name] = actual_lib
+                # Track exposed function: bare_name -> (lib_name, full_prefixed_name)
+                # Find the actual lib key in _top_level_lib_functions
+                prefixed_lib = actual_lib  # Default
+                for lib_key in self._top_level_lib_functions:
+                    # Check if this is a folder plib (e.g., plstd_printd from plstd/printd)
+                    if lib_key.replace("_", "/").endswith(
+                        f"/{func_name}"
+                    ) or lib_key.endswith(f"_{func_name}"):
+                        if func_name in self._top_level_lib_functions[lib_key]:
+                            prefixed_lib = lib_key
+                            break
+                self._exposed_funcs[func_name] = prefixed_lib
                 continue
 
             if exp_target.startswith("<") and exp_target.endswith(">"):
@@ -1041,9 +1067,8 @@ class CodeGen:
         old_imported_inits = list(self._imported_plib_inits)  # Save imported plib inits
         old_lib_name = self._current_lib_name
         self._generating_plib = True
-        self._current_lib_name = lib_name.split("/")[
-            -1
-        ]  # Set library name for function prefixing
+        # Use full lib_name with slashes replaced for prefixing (e.g., plstd/streamer -> plstd_streamer)
+        self._current_lib_name = lib_name.replace("/", "_")
         self._imported_plib_inits = []  # Reset for this plib's imports
         seen_libs = {lib_name}  # Track which plibs we've processed in this chain
 
@@ -1296,18 +1321,30 @@ class CodeGen:
                     break
 
             if not plib_path:
+                # Check if this is a folder containing plibs
                 for base in search_paths:
                     folder_path = os.path.join(base, search_name)
                     if os.path.isdir(folder_path):
+                        # Collect ALL plibs in the folder
                         for f in sorted(os.listdir(folder_path)):
                             if f.endswith(".plib"):
-                                plib_path = os.path.join(folder_path, f)
-                                break
-                        if plib_path:
-                            break
+                                full_plib_path = os.path.join(folder_path, f)
+                                plib_name = f[:-5]  # Remove .plib extension
+                                full_lib_name = f"{search_name}/{plib_name}"
+                                self._collect_single_plib(
+                                    full_plib_path, full_lib_name, alias
+                                )
+                        return  # All plibs collected, return
 
         if not plib_path:
             return
+
+        self._collect_single_plib(plib_path, lib_name, alias)
+
+    def _collect_single_plib(self, plib_path: str, lib_name: str, alias: str = None):
+        """Collect a single plib file for tree-shaking."""
+        import lexer
+        import parser as p
 
         with open(plib_path, "r") as f:
             plib_content = f.read()
@@ -1324,7 +1361,8 @@ class CodeGen:
                 self._collected_includes.add(decl.directive)
 
         # Pre-populate _top_level_lib_functions so @ syntax works
-        lib_key = lib_name.split("/")[-1]
+        # Use full path for folder plibs (e.g., plstd/streamer)
+        lib_key = lib_name
         for decl in plib_ast.declarations:
             if isinstance(decl, p.Function):
                 if lib_key not in self._top_level_lib_functions:
@@ -1367,6 +1405,59 @@ class CodeGen:
             os.path.expanduser("~/.local/lib/PLIBS"),
             "/usr/lib/PLIBS",
         ]
+
+    def _scan_plib_folder(self, folder_name: str):
+        """Scan a folder for plib files and collect their top-level functions."""
+        import os
+        import lexer
+        import parser as p
+
+        search_dirs = []
+        if self.source_path:
+            src_dir = os.path.dirname(self.source_path)
+            search_dirs.append(src_dir)
+            parent = os.path.dirname(src_dir)
+            while parent and parent != src_dir:
+                search_dirs.append(parent)
+                src_dir = parent
+                parent = os.path.dirname(parent)
+        search_dirs.extend(self._get_plibs_search_dirs())
+
+        # Search for the folder in search dirs
+        folder_path = None
+        for base in search_dirs:
+            candidate = os.path.join(base, folder_name)
+            if os.path.isdir(candidate):
+                folder_path = candidate
+                break
+
+        if not folder_path:
+            return
+
+        # Scan for all .plib files in the folder
+        for filename in sorted(os.listdir(folder_path)):
+            if filename.endswith(".plib"):
+                plib_name = filename[:-5]  # Remove .plib extension
+                plib_path = os.path.join(folder_path, filename)
+                # Use underscores for consistent prefixing (e.g., plstd_streamer)
+                full_lib_name = f"{folder_name}_{plib_name}"
+
+                try:
+                    with open(plib_path, "r") as f:
+                        plib_content = f.read()
+
+                    tokens = lexer.Lexer(plib_content).lex()
+                    tokens.append(("EOF", "EOF", 0, 0))
+                    plib_ast = p.Parser(tokens).parse_program()
+
+                    # Collect top-level functions
+                    if full_lib_name not in self._top_level_lib_functions:
+                        self._top_level_lib_functions[full_lib_name] = set()
+                    for decl in plib_ast.declarations:
+                        if isinstance(decl, p.Function):
+                            self._top_level_lib_functions[full_lib_name].add(decl.name)
+                except Exception:
+                    pass  # Skip files that can't be parsed
 
     def _collect_plib_includes(self, lib_name: str, alias: str = None):
         """Collect includes from a plib file into self._collected_includes."""
