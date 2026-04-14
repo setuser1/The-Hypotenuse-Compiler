@@ -67,6 +67,7 @@ class CodeGen:
         self._specific_imports = {}  # item -> (lib_name, namespace)
         self._current_alias = {}  # lib_name -> alias
         self._generating_plib = False  # Flag to bypass checks when generating plib code
+        self._current_lib_name = None  # Current library name for function prefixing
         self._exposed_libs = set()  # Set of exposed library names
         self._collected_includes = set()
         # Track generated dynam helper functions and structs to avoid duplicates
@@ -80,6 +81,7 @@ class CodeGen:
         self._space_prefix_map = {}  # Maps space name -> actual prefix (e.g., "math" -> "lib_math")
         self._alias_to_lib = {}  # Maps alias (e.g., "lib") -> actual lib name (e.g., "mylib")
         self._top_level_lib_functions = {}  # Maps lib_name -> set of top-level function names
+        self._exposed_funcs = {}  # Maps bare_name -> lib_name for exposed functions
         self._used_functions = set()  # Track used function names for tree-shaking
         self._pending_plibs = []  # Store pending plib ASTs for tree-shaking
         self._global_dynam_inits = []  # Track global dynam initialization code for main()
@@ -633,22 +635,34 @@ class CodeGen:
                 and base_callee not in getattr(self, "_space_local_functions", set())
                 and "@" not in callee
             ):
-                # Check if function exists in any imported plib's top-level functions
-                for lib_name, funcs in getattr(
-                    self, "_top_level_lib_functions", {}
-                ).items():
-                    if base_callee in funcs:
-                        is_exposed = lib_name in getattr(self, "_exposed_libs", set())
-                        if not is_exposed:
+                # First check if function is exposed - if so, resolve to lib_func
+                exposed_funcs = getattr(self, "_exposed_funcs", {})
+                if base_callee in exposed_funcs:
+                    # Exposed function - resolve to prefixed name
+                    lib_name = exposed_funcs[base_callee]
+                    callee = f"{lib_name}_{base_callee}"
+                else:
+                    # Check if function exists in any imported plib's top-level functions
+                    for lib_name, funcs in getattr(
+                        self, "_top_level_lib_functions", {}
+                    ).items():
+                        if base_callee in funcs:
                             raise ValueError(
                                 error_msgs.get_error_msg(
                                     "E802",
                                     lib=lib_name,
                                     func=base_callee,
-                                    fallback=f"Function '{base_callee}' requires '{base_callee}@{lib_name}()' syntax (library '{lib_name}' not exposed). Use 'expose {lib_name}' before calling.",
+                                    fallback=f"Function '{base_callee}' requires '{base_callee}@{lib_name}()' syntax (library '{lib_name}' not exposed). Use 'expose {base_callee}@{lib_name}' before calling.",
                                 )
                             )
-                        break
+
+            # When generating plib code, prefix internal calls to other plib functions
+            elif getattr(self, "_generating_plib", False) and "@" not in callee:
+                top_level_funcs = getattr(self, "_top_level_lib_functions", {})
+                current_lib = getattr(self, "_current_lib_name", None)
+                if current_lib and current_lib in top_level_funcs:
+                    if base_callee in top_level_funcs[current_lib]:
+                        callee = f"{current_lib}_{base_callee}"
 
             # Handle namespace prefix like "func@lib" or "func@space" -> "prefix_func"
             # @ is for calling space-local functions or top-level library functions
@@ -667,8 +681,8 @@ class CodeGen:
                             actual_lib in self._top_level_lib_functions
                             and func in self._top_level_lib_functions[actual_lib]
                         ):
-                            # Top-level function - call directly without prefix
-                            callee = func
+                            # Top-level function - call with lib prefix
+                            callee = f"{actual_lib}_{func}"
                         else:
                             raise ValueError(
                                 error_msgs.get_error_msg(
@@ -681,7 +695,8 @@ class CodeGen:
                     elif namespace in self._top_level_lib_functions:
                         # Direct lib name like @streamer
                         if func in self._top_level_lib_functions[namespace]:
-                            callee = func
+                            # Use prefixed name to avoid conflicts with system headers
+                            callee = f"{namespace}_{func}"
                         else:
                             raise ValueError(
                                 error_msgs.get_error_msg(
@@ -702,6 +717,9 @@ class CodeGen:
                         )
             # Track this function call for tree-shaking plibs
             self._used_functions.add(base_callee)
+            # Also track prefixed name for @libname calls (function generated as lib_func)
+            if "@" in callee and callee != base_callee:
+                self._used_functions.add(callee)
             args = ", ".join(self._expr(a) for a in node.args)
             return f"{callee}({args})"
 
@@ -963,6 +981,8 @@ class CodeGen:
                     )
                 self._exposed_libs.add(lib_name)
                 self._exposed_libs.add(actual_lib)
+                # Track exposed function: bare_name -> lib_name
+                self._exposed_funcs[func_name] = actual_lib
                 continue
 
             if exp_target.startswith("<") and exp_target.endswith(">"):
@@ -1019,7 +1039,11 @@ class CodeGen:
         # Bypass checks when generating plib code itself
         old_generating = self._generating_plib
         old_imported_inits = list(self._imported_plib_inits)  # Save imported plib inits
+        old_lib_name = self._current_lib_name
         self._generating_plib = True
+        self._current_lib_name = lib_name.split("/")[
+            -1
+        ]  # Set library name for function prefixing
         self._imported_plib_inits = []  # Reset for this plib's imports
         seen_libs = {lib_name}  # Track which plibs we've processed in this chain
 
@@ -1199,7 +1223,11 @@ class CodeGen:
                 lib_key = lib_name.split("/")[-1]
                 is_exposed = lib_key in self._exposed_libs
                 if isinstance(decl, p.Function) and not is_exposed:
-                    if decl.name not in self._used_functions:
+                    prefixed_name = f"{lib_key}_{decl.name}"
+                    if (
+                        decl.name not in self._used_functions
+                        and prefixed_name not in self._used_functions
+                    ):
                         continue  # Skip unused function
 
                 self._gen_node(decl)
@@ -1230,6 +1258,7 @@ class CodeGen:
 
         # Restore the flag after generating plib code
         self._generating_plib = old_generating
+        self._current_lib_name = old_lib_name  # Restore library name
         # Restore imported plib inits for parent's context
         # Accumulate: parent's inits + this plib's inits
         self._imported_plib_inits = old_imported_inits + [
@@ -1532,7 +1561,15 @@ class CodeGen:
                             param_str += f"[{psize}]"
                 params.append(param_str)
         param_str = ", ".join(params) if params else "void"
-        self._emit(f"{ret_type} {node.name}({param_str}) {{")
+        func_name = node.name
+        # Add lib prefix only to top-level plib functions (not space-local ones)
+        if (
+            self._current_lib_name
+            and not self._is_plib_source
+            and not self._current_space
+        ):
+            func_name = f"{self._current_lib_name}_{func_name}"
+        self._emit(f"{ret_type} {func_name}({param_str}) {{")
         self._indent += 1
 
         # Insert global dynam initializations at the start of main()
