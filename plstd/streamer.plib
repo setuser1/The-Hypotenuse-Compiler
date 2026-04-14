@@ -1,0 +1,82 @@
+#include <unistd.h>
+#include <stddef.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+space streams {
+    string read_file(int fd) {
+        dynam char buffer = [];
+        char tmp[256];
+        int n;
+        while ((n = read(fd, tmp, 256)) > 0) {
+            int i = 0;
+            while (i < n) { buffer.push(tmp[i]); i = i + 1; }
+        }
+        if (n < 0) { return NULL; }
+        buffer.push('\0');
+        return buffer;
+    }
+
+    int open_file(string path) {
+        return open(path, O_RDONLY);
+    }
+
+    string write_file(string s, int fd) {
+        if (s) { write(fd, s, len(s)); }
+        return s;
+    }
+
+    void close_file(int fd) {
+        close(fd);
+    }
+
+    int exists(string path) {
+        struct stat st;
+        return stat(path, &st) == 0;
+    }
+
+    string remove_file(string path) {
+        if (exists(path)) {
+            unlink(path);
+            return path;
+        }
+        return NULL;
+    }
+}
+
+string outstream(string buffer, string path) {
+    int fd = open_file@streams(path);
+    if (fd < 0 || !exists@streams(path)) { return NULL; }
+    string result = write_file@streams(buffer, fd);
+    close_file@streams(fd);
+    return result;
+}
+
+string instream(string path) {
+    int fd = open_file@streams(path);
+    if (fd < 0 || !exists@streams(path)) { 
+        return "stderr: failed to read file";
+        exit(1);
+    }
+    string result = read_file@streams(fd);
+    close_file@streams(fd);
+    return result;
+}
+
+int sizeget(string path) {
+    string stream = instream(path);
+    if (!stream) { return -1; }
+    return len(stream);
+}
+
+string steal(string path, string out_path) {
+    string stream = instream(path);
+    if (!stream) { return NULL; }
+    if (!outstream(stream, out_path)) { return NULL; }
+    return stream;
+}
+
+void remove(string path) {
+    remove_file@streams(path);
+}
