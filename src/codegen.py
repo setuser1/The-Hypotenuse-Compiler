@@ -667,24 +667,35 @@ class CodeGen:
                 top_level_funcs = getattr(self, "_top_level_lib_functions", {})
                 current_lib = getattr(self, "_current_lib_name", None)
                 if current_lib:
-                    # Check if current_lib matches a key or is a prefix of a key
+                    # Check if current_lib matches a key with generated names containing the bare func
                     matching_key = None
-                    if (
-                        current_lib in top_level_funcs
-                        and base_callee in top_level_funcs[current_lib]
-                    ):
-                        matching_key = current_lib
-                    else:
-                        # Check if current_lib is a prefix of any key
-                        for key in top_level_funcs:
-                            if (
-                                key.startswith(f"{current_lib}/")
-                                and base_callee in top_level_funcs[key]
-                            ):
-                                matching_key = key
+                    # First, try exact match (prefer current_lib key)
+                    if current_lib in top_level_funcs:
+                        for func in top_level_funcs[current_lib]:
+                            # Must end with _base_callee and start with key_
+                            if func == f"{current_lib}_{base_callee}":
+                                matching_key = current_lib
                                 break
+                    # If no exact match, try prefix matches (prefer longer matches)
+                    if not matching_key:
+                        best_match = None
+                        best_len = 0
+                        for key, funcs in top_level_funcs.items():
+                            if key == current_lib:
+                                continue  # Already checked
+                            is_match = key.startswith(
+                                f"{current_lib}_"
+                            ) or key.startswith(f"{current_lib}/")
+                            if is_match and len(key) > best_len:
+                                for func in funcs:
+                                    # Must be key_prefix + _ + base_callee
+                                    if func == f"{key}_{base_callee}":
+                                        best_match = key
+                                        best_len = len(key)
+                                        break
+                        matching_key = best_match
                     if matching_key:
-                        callee = f"{current_lib}_{base_callee}"
+                        callee = f"{matching_key}_{base_callee}"
 
             # Handle namespace prefix like "func@lib" or "func@space" -> "prefix_func"
             # @ is for calling space-local functions or top-level library functions
@@ -1397,22 +1408,23 @@ class CodeGen:
                 self._collected_includes.add(decl.directive)
 
         # Pre-populate _top_level_lib_functions so @ syntax works
-        # Use full path for folder plibs (e.g., plstd/streamer)
-        lib_key = lib_name
+        # Use computed prefix (same as in _gen_plib_code)
+        # For "plstd/streamer", prefix is "plstd"; for "streamer", prefix is "streamer"
+        prefix = lib_name.split("/")[0] if "/" in lib_name else lib_name
         for decl in plib_ast.declarations:
             if isinstance(decl, p.Function):
-                # Top-level functions get lib_ prefix
-                if lib_key not in self._top_level_lib_functions:
-                    self._top_level_lib_functions[lib_key] = set()
-                self._top_level_lib_functions[lib_key].add(f"{lib_key}_{decl.name}")
+                # Top-level functions get prefix_ prefix
+                if prefix not in self._top_level_lib_functions:
+                    self._top_level_lib_functions[prefix] = set()
+                self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
             elif isinstance(decl, p.SpaceDecl):
-                # Functions inside a space get lib_space_ prefix
-                if lib_key not in self._top_level_lib_functions:
-                    self._top_level_lib_functions[lib_key] = set()
-                space_prefix = f"{lib_key}_{decl.name}"
+                # Functions inside a space get prefix_space_ prefix
+                if prefix not in self._top_level_lib_functions:
+                    self._top_level_lib_functions[prefix] = set()
+                space_prefix = f"{prefix}_{decl.name}"
                 for nested_decl in decl.declarations:
                     if isinstance(nested_decl, p.Function):
-                        self._top_level_lib_functions[lib_key].add(
+                        self._top_level_lib_functions[prefix].add(
                             f"{space_prefix}_{nested_decl.name}"
                         )
 
