@@ -681,6 +681,7 @@ class Structor:
         self._exposes: list = []  # All ExposeDecl nodes
         self._import_table: dict = {}  # namespace -> {symbol -> resolved}
         self._used_symbols: set = set()  # Track what's actually used
+        self._in_plib_func: bool = False  # Track if currently inside a plib function
 
     def _next_id(self):
         self._counter += 1
@@ -796,17 +797,28 @@ class Structor:
                 self._walk_node(decl, scope)
 
     def _walk_function(self, node: Function, parent_scope: Scope):
-        self._user_funcs.add(node.name)
+        # Check if this function is from a plib
+        is_plib = getattr(node, "_from_plib", False)
+
+        # Only add user functions to _user_funcs
+        if not is_plib:
+            self._user_funcs.add(node.name)
+
         callee = Callee(node.name, parent_scope, None)
         # Functions are not variables
         callee.is_variable = False
         self._register(callee, parent_scope)
         func_scope = Scope(node.name, parent_scope)
         self._func_callee_stack.append(callee)
+
+        # Track plib context
+        old_in_plib = self._in_plib_func
+        self._in_plib_func = is_plib
         try:
             self._walk_node(node.body, func_scope)
         finally:
             self._func_callee_stack.pop()
+            self._in_plib_func = old_in_plib
 
     def _walk_declaration(self, node: Declaration, scope: Scope):
         """Register a variable declaration as a Callee with its initial value."""

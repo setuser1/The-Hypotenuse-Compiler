@@ -1,6 +1,7 @@
 """C11 code generator for C△ compiler."""
 
 import os
+import copy
 
 import error_msgs
 from parser import (
@@ -639,9 +640,8 @@ class CodeGen:
                 # First check if function is exposed - if so, resolve to prefixed name
                 exposed_funcs = getattr(self, "_exposed_funcs", {})
                 if base_callee in exposed_funcs:
-                    # Exposed function - resolve to prefixed name (already includes func name)
-                    prefixed_lib = exposed_funcs[base_callee]
-                    callee = f"{prefixed_lib}_{base_callee}"
+                    # Exposed function - resolve to the stored prefixed name
+                    callee = exposed_funcs[base_callee]
                 else:
                     # Check if function exists in any imported plib's top-level functions
                     for lib_name, funcs in getattr(
@@ -658,11 +658,32 @@ class CodeGen:
                             )
 
             # When generating plib code, prefix internal calls to other plib functions
-            elif getattr(self, "_generating_plib", False) and "@" not in callee:
+            # Don't add prefix if callee already contains underscore (already prefixed)
+            elif (
+                getattr(self, "_generating_plib", False)
+                and "@" not in callee
+                and "_" not in base_callee
+            ):
                 top_level_funcs = getattr(self, "_top_level_lib_functions", {})
                 current_lib = getattr(self, "_current_lib_name", None)
-                if current_lib and current_lib in top_level_funcs:
-                    if base_callee in top_level_funcs[current_lib]:
+                if current_lib:
+                    # Check if current_lib matches a key or is a prefix of a key
+                    matching_key = None
+                    if (
+                        current_lib in top_level_funcs
+                        and base_callee in top_level_funcs[current_lib]
+                    ):
+                        matching_key = current_lib
+                    else:
+                        # Check if current_lib is a prefix of any key
+                        for key in top_level_funcs:
+                            if (
+                                key.startswith(f"{current_lib}/")
+                                and base_callee in top_level_funcs[key]
+                            ):
+                                matching_key = key
+                                break
+                    if matching_key:
                         callee = f"{current_lib}_{base_callee}"
 
             # Handle namespace prefix like "func@lib" or "func@space" -> "prefix_func"
@@ -674,29 +695,32 @@ class CodeGen:
                     # Check if this is a space-local function (preferred)
                     if namespace in self._space_prefix_map:
                         actual_prefix = self._space_prefix_map[namespace]
-                        callee = f"{actual_prefix}_{func}"
+                        # If we're already inside this space, don't add prefix again
+                        if self._current_space == actual_prefix:
+                            callee = func  # Function is already prefixed
+                        else:
+                            callee = f"{actual_prefix}_{func}"
                     elif namespace in self._alias_to_lib:
                         # @lib or other valid alias
                         actual_lib = self._alias_to_lib[namespace]
                         found = False
-                        # Check direct match first
-                        if (
-                            actual_lib in self._top_level_lib_functions
-                            and func in self._top_level_lib_functions[actual_lib]
-                        ):
-                            callee = f"{actual_lib}_{func}"
-                            found = True
-                        else:
-                            # Search through folder plibs (e.g., plstd_streamer)
-                            for lib_key, funcs in self._top_level_lib_functions.items():
-                                if (
-                                    lib_key.startswith(f"{actual_lib}_")
-                                    and lib_key != actual_lib
-                                    and func in funcs
-                                ):
-                                    callee = f"{lib_key}_{func}"
+                        # Use library name as prefix
+                        # Search through all matching lib_keys (handles folder plibs and space-prefixed funcs)
+                        for lib_key, funcs in self._top_level_lib_functions.items():
+                            if not (
+                                lib_key == actual_lib
+                                or lib_key.startswith(f"{actual_lib}_")
+                            ):
+                                continue
+                            for generated_name in funcs:
+                                # Check if this generated name ends with _func (original function name)
+                                suffix = f"_{func}"
+                                if generated_name.endswith(suffix):
+                                    callee = generated_name
                                     found = True
                                     break
+                            if found:
+                                break
                         if not found:
                             raise ValueError(
                                 error_msgs.get_error_msg(
@@ -708,10 +732,14 @@ class CodeGen:
                             )
                     elif namespace in self._top_level_lib_functions:
                         # Direct lib name like @streamer
-                        if func in self._top_level_lib_functions[namespace]:
-                            # Use prefixed name to avoid conflicts with system headers
-                            callee = f"{namespace}_{func}"
-                        else:
+                        found = False
+                        for generated_name in self._top_level_lib_functions[namespace]:
+                            suffix = f"_{func}"
+                            if generated_name.endswith(suffix):
+                                callee = generated_name
+                                found = True
+                                break
+                        if not found:
                             raise ValueError(
                                 error_msgs.get_error_msg(
                                     "E803",
@@ -730,10 +758,12 @@ class CodeGen:
                             )
                         )
             # Track this function call for tree-shaking plibs
-            self._used_functions.add(base_callee)
-            # Also track prefixed name for @libname calls (function generated as lib_func)
-            if "@" in callee and callee != base_callee:
-                self._used_functions.add(callee)
+            # Only track external calls, not internal plib calls
+            if not getattr(self, "_generating_plib", False):
+                self._used_functions.add(base_callee)
+                # Also track prefixed name when @ alias was used (function generated as lib_func)
+                if callee != base_callee:
+                    self._used_functions.add(callee)
             args = ", ".join(self._expr(a) for a in node.args)
             return f"{callee}({args})"
 
@@ -1067,8 +1097,11 @@ class CodeGen:
         old_imported_inits = list(self._imported_plib_inits)  # Save imported plib inits
         old_lib_name = self._current_lib_name
         self._generating_plib = True
-        # Use full lib_name with slashes replaced for prefixing (e.g., plstd/streamer -> plstd_streamer)
-        self._current_lib_name = lib_name.replace("/", "_")
+        # Compute prefix same way as function generation (use folder name for folder imports)
+        if "/" in lib_name:
+            self._current_lib_name = lib_name.split("/")[0]
+        else:
+            self._current_lib_name = lib_name
         self._imported_plib_inits = []  # Reset for this plib's imports
         seen_libs = {lib_name}  # Track which plibs we've processed in this chain
 
@@ -1165,10 +1198,8 @@ class CodeGen:
                 # Recursively generate the imported plib's code
                 self._gen_plib_code(source, None)
 
-        # Determine the prefix to use - alias if provided, else lib_name
-        if alias:
-            prefix = alias
-        elif "/" in lib_name:
+        # Determine the prefix to use - always use lib_name (alias is just for call resolution)
+        if "/" in lib_name:
             # Folder import - extract folder name as prefix
             prefix = lib_name.split("/")[0]
             self._exposed_libs.add(prefix)
@@ -1180,12 +1211,11 @@ class CodeGen:
             if isinstance(decl, (p.Include, p.Define)):
                 continue
 
-            # Apply prefix to top-level declarations only if alias is provided
-            if alias:
-                if isinstance(decl, p.Function):
-                    decl.name = f"{prefix}_{decl.name}"
-                elif isinstance(decl, p.Declaration):
-                    decl.name = f"{prefix}_{decl.name}"
+            # Apply prefix to top-level declarations
+            if isinstance(decl, p.Function):
+                decl.name = f"{prefix}_{decl.name}"
+            elif isinstance(decl, p.Declaration):
+                decl.name = f"{prefix}_{decl.name}"
 
             # Handle SpaceDecl - generate with prefix + namespace prefix
             if isinstance(decl, p.SpaceDecl):
@@ -1245,13 +1275,19 @@ class CodeGen:
                     )
 
                 # Tree-shaking: skip unused top-level functions (unless lib is exposed)
-                lib_key = lib_name.split("/")[-1]
+                lib_key = prefix  # Use the computed prefix
                 is_exposed = lib_key in self._exposed_libs
                 if isinstance(decl, p.Function) and not is_exposed:
-                    prefixed_name = f"{lib_key}_{decl.name}"
+                    # Get the bare function name (original before prefixing)
+                    # The function name is already prefixed as "prefix_funcname"
+                    if decl.name.startswith(f"{lib_key}_"):
+                        bare_name = decl.name[len(lib_key) + 1 :]
+                    else:
+                        bare_name = decl.name
+                    # Check if function is used: any form of the name
                     if (
-                        decl.name not in self._used_functions
-                        and prefixed_name not in self._used_functions
+                        bare_name not in self._used_functions
+                        and decl.name not in self._used_functions
                     ):
                         continue  # Skip unused function
 
@@ -1365,9 +1401,23 @@ class CodeGen:
         lib_key = lib_name
         for decl in plib_ast.declarations:
             if isinstance(decl, p.Function):
+                # Top-level functions get lib_ prefix
                 if lib_key not in self._top_level_lib_functions:
                     self._top_level_lib_functions[lib_key] = set()
-                self._top_level_lib_functions[lib_key].add(decl.name)
+                self._top_level_lib_functions[lib_key].add(f"{lib_key}_{decl.name}")
+            elif isinstance(decl, p.SpaceDecl):
+                # Functions inside a space get lib_space_ prefix
+                if lib_key not in self._top_level_lib_functions:
+                    self._top_level_lib_functions[lib_key] = set()
+                space_prefix = f"{lib_key}_{decl.name}"
+                for nested_decl in decl.declarations:
+                    if isinstance(nested_decl, p.Function):
+                        self._top_level_lib_functions[lib_key].add(
+                            f"{space_prefix}_{nested_decl.name}"
+                        )
+
+        # Mark this AST as coming from a plib
+        self._mark_plib_ast(plib_ast)
 
         self._pending_plibs.append(
             {
@@ -1377,8 +1427,34 @@ class CodeGen:
             }
         )
 
+    def _mark_plib_ast(self, plib_ast):
+        """Mark all declarations in a plib AST as coming from a plib."""
+        for decl in plib_ast.declarations:
+            decl._from_plib = True
+            if hasattr(decl, "body") and hasattr(decl.body, "statements"):
+                self._mark_plib_body(decl.body)
+            if hasattr(decl, "declarations"):
+                for nested in decl.declarations:
+                    nested._from_plib = True
+                    if hasattr(nested, "body") and hasattr(nested.body, "statements"):
+                        self._mark_plib_body(nested.body)
+
+    def _mark_plib_body(self, body):
+        """Recursively mark all statements in a body as from plib."""
+        if not hasattr(body, "statements"):
+            return
+        for stmt in body.statements:
+            stmt._from_plib = True
+            if hasattr(stmt, "body") and hasattr(stmt.body, "statements"):
+                self._mark_plib_body(stmt.body)
+            if hasattr(stmt, "else_branch") and stmt.else_branch:
+                if hasattr(stmt.else_branch, "statements"):
+                    self._mark_plib_body(stmt.else_branch)
+
     def _emit_pending_plibs(self):
         """Emit pending plib code with tree-shaking."""
+        import copy
+
         plib_lines = []
         for plib_info in self._pending_plibs:
             # Temporarily redirect emit to capture plib code
@@ -1387,8 +1463,11 @@ class CodeGen:
             self._lines = []
             self._indent = 0
 
+            # Make a deep copy of the AST to avoid mutating the original
+            plib_ast_copy = copy.deepcopy(plib_info["ast"])
+
             self._gen_plib_code(
-                plib_info["lib_name"], plib_info["alias"], plib_info["ast"]
+                plib_info["lib_name"], plib_info["alias"], plib_ast_copy
             )
 
             plib_lines.extend(self._lines)
@@ -1653,11 +1732,13 @@ class CodeGen:
                 params.append(param_str)
         param_str = ", ".join(params) if params else "void"
         func_name = node.name
-        # Add lib prefix only to top-level plib functions (not space-local ones)
+        # Add lib prefix only for non-plib top-level functions
+        # (plib functions are already prefixed in _gen_plib_code)
         if (
             self._current_lib_name
             and not self._is_plib_source
             and not self._current_space
+            and not self._generating_plib
         ):
             func_name = f"{self._current_lib_name}_{func_name}"
         self._emit(f"{ret_type} {func_name}({param_str}) {{")
