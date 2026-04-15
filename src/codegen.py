@@ -596,10 +596,6 @@ class CodeGen:
                 if self._current_space and callee in self._space_local_functions:
                     callee = f"{self._current_space}_{callee}"
 
-            # On macOS, asm functions need _ prefix for C linkage
-            if platform.system() == "Darwin" and callee in self._asm_function_names:
-                callee = f"_{callee}"
-
             # Handle specific imports: using sin from <math> -> math_sin()
             # AND intra-file scoped imports: using X&Y -> map Y to X_Y
             # This must run BEFORE namespace transformation so "func@lib" can match "func"
@@ -782,6 +778,12 @@ class CodeGen:
                 # Also track prefixed name when @ alias was used (function generated as lib_func)
                 if callee != base_callee:
                     self._used_functions.add(callee)
+
+            # On macOS, asm functions need _ prefix for C linkage
+            # This must happen AFTER @ resolution
+            if platform.system() == "Darwin" and callee in self._asm_function_names:
+                callee = f"_{callee}"
+
             args = ", ".join(self._expr(a) for a in node.args)
             return f"{callee}({args})"
 
@@ -1000,6 +1002,9 @@ class CodeGen:
             if alias:
                 self._current_alias[lib_name] = alias
                 self._alias_to_lib[alias] = lib_name
+            else:
+                # No explicit alias - use lib name itself for @libname syntax
+                self._alias_to_lib[lib_name] = lib_name
             # "lib" is an alias for the standard library (plstd)
             if lib_name == "plstd" and "lib" not in self._alias_to_lib:
                 self._alias_to_lib["lib"] = "plstd"
@@ -1275,6 +1280,18 @@ class CodeGen:
                 # Restore previous space context
                 self._current_space = old_space
                 self._space_local_functions = old_local_funcs
+            elif isinstance(decl, p.AsmBlock):
+                # Prefix asm function names
+                if decl.is_function and decl.name:
+                    decl.name = f"{prefix}_{decl.name}"
+                    # Track for internal calls within plib
+                    lib_key = lib_name.split("/")[-1]
+                    if lib_key not in self._top_level_lib_functions:
+                        self._top_level_lib_functions[lib_key] = set()
+                    self._top_level_lib_functions[lib_key].add(decl.name)
+                    # Track for macOS _ prefix resolution
+                    self._asm_function_names.add(decl.name)
+                self._gen_asm_block(decl)
             elif isinstance(
                 decl, (p.Function, p.Declaration, p.StructDef, p.Typedef, p.EnumDef)
             ):
@@ -1424,15 +1441,28 @@ class CodeGen:
                 if prefix not in self._top_level_lib_functions:
                     self._top_level_lib_functions[prefix] = set()
                 self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
+            elif isinstance(decl, p.AsmBlock) and decl.is_function and decl.name:
+                # Asm functions get prefix_ prefix
+                if prefix not in self._top_level_lib_functions:
+                    self._top_level_lib_functions[prefix] = set()
+                self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
+                # Track for macOS _ prefix resolution
+                self._asm_function_names.add(f"{prefix}_{decl.name}")
             elif isinstance(decl, p.SpaceDecl):
                 # Functions inside a space get prefix_space_ prefix
                 if prefix not in self._top_level_lib_functions:
                     self._top_level_lib_functions[prefix] = set()
                 space_prefix = f"{prefix}_{decl.name}"
-                # Track space name so @space syntax works (e.g., @printd)
-                self._space_prefix_map[decl.name] = space_prefix
                 for nested_decl in decl.declarations:
                     if isinstance(nested_decl, p.Function):
+                        self._top_level_lib_functions[prefix].add(
+                            f"{space_prefix}_{nested_decl.name}"
+                        )
+                    elif (
+                        isinstance(nested_decl, p.AsmBlock)
+                        and nested_decl.is_function
+                        and nested_decl.name
+                    ):
                         self._top_level_lib_functions[prefix].add(
                             f"{space_prefix}_{nested_decl.name}"
                         )
