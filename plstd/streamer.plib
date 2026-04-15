@@ -9,11 +9,17 @@ space streams {
         dynam char buffer = [];
         char tmp[256];
         int n;
+
         while ((n = read(fd, tmp, 256)) > 0) {
             int i = 0;
-            while (i < n) { buffer.push(tmp[i]); i = i + 1; }
+            while (i < n) {
+                buffer.push(tmp[i]);
+                i = i + 1;
+            }
         }
+
         if (n < 0) { return NULL; }
+
         buffer.push('\0');
         return buffer;
     }
@@ -23,7 +29,17 @@ space streams {
     }
 
     string write_file(string s, int fd) {
-        if (s) { write(fd, s, len(s)); }
+        if (!s) { return NULL; }
+
+        int total = 0;
+        int length = len(s);
+
+        while (total < length) {
+            int n = write(fd, s + total, length - total);
+            if (n <= 0) { return NULL; }
+            total += n;
+        }
+
         return s;
     }
 
@@ -46,19 +62,26 @@ space streams {
 }
 
 string outstream(string buffer, string path) {
-    int fd = open_file@streams(path);
-    if (fd < 0 || !exists@streams(path)) { return NULL; }
+    int fd = open(path, O_WRONLY);  // no O_CREAT
+    if (fd < 0) { return NULL; }
+
     string result = write_file@streams(buffer, fd);
     close_file@streams(fd);
     return result;
 }
 
+int cstream(string path) {
+    int fd = open(path, O_CREAT | O_WRONLY | O_APPEND, 0644);
+    if (fd < 0) { return -1; }
+    return fd;
+}
+
 string instream(string path) {
     int fd = open_file@streams(path);
-    if (fd < 0 || !exists@streams(path)) { 
-        return "stderr: failed to read file";
-        exit(1);
+    if (fd < 0) {
+        return NULL;
     }
+
     string result = read_file@streams(fd);
     close_file@streams(fd);
     return result;
