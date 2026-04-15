@@ -29,6 +29,7 @@ from parser import (
     ExposeDecl,
     LibAccess,
     SpaceDecl,
+    AsmBlock,
 )
 
 
@@ -795,6 +796,8 @@ class Structor:
         elif isinstance(node, SpaceDecl):
             for decl in node.declarations:
                 self._walk_node(decl, scope)
+        elif isinstance(node, AsmBlock):
+            self._walk_asm_block(node, scope)
 
     def _walk_function(self, node: Function, parent_scope: Scope):
         # Check if this function is from a plib
@@ -1055,6 +1058,43 @@ class Structor:
     def _walk_lib_access(self, node: LibAccess, scope: Scope):
         """Process a lib~ symbol access."""
         self._used_symbols.add(f"lib~{node.symbol}")
+
+    def _walk_asm_block(self, node: AsmBlock, scope: Scope):
+        """Process an inline asm block.
+
+        For asm functions (is_function=True): creates a Callee and its own scope.
+        For bare asm blocks (is_function=False): variables go into parent scope.
+        """
+        if node.is_function:
+            callee = Callee(node.name, scope, None, var_type=node.ret_type)
+            callee.is_variable = False
+            self._register(callee, scope)
+            func_scope = Scope(node.name, scope)
+            for var_info in node.variables:
+                var_callee = Callee(
+                    var_info["name"],
+                    func_scope,
+                    var_info.get("initializer"),
+                    var_type=var_info["type"],
+                )
+                var_callee.is_variable = True
+                self._register(var_callee, func_scope)
+            self._func_callee_stack.append(callee)
+            try:
+                if node.return_expr:
+                    self._walk_expr(node.return_expr, func_scope)
+            finally:
+                self._func_callee_stack.pop()
+        else:
+            for var_info in node.variables:
+                var_callee = Callee(
+                    var_info["name"],
+                    scope,
+                    var_info.get("initializer"),
+                    var_type=var_info["type"],
+                )
+                var_callee.is_variable = True
+                self._register(var_callee, scope)
 
     def _get_namespace(self, source: str) -> str:
         """Derive namespace from import source."""

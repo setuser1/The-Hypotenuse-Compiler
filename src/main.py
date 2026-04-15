@@ -37,6 +37,24 @@ def parse_args():
     )
 
     parser.add_argument(
+        "-T",
+        "--target",
+        metavar="ARCH",
+        choices=["x86_64", "arm64"],
+        help="Target architecture for asm blocks: x86_64 or arm64 (default: auto-detect)",
+    )
+
+    parser.add_argument(
+        "-F",
+        "--format",
+        metavar="FORMAT",
+        choices=["macho", "elf"],
+        help="Object file format: macho (ARM64 macOS), elf (Linux). "
+        "Overrides auto-detection. Note: NASM does not support ARM64 Mach-O; "
+        "use auto-detection on Apple Silicon.",
+    )
+
+    parser.add_argument(
         "-c", "--compile", action="store_true", help="Compile with gcc to executable"
     )
 
@@ -141,8 +159,9 @@ def compile_file(path):
     # 🔥 ACTUAL COMPILATION
     codegen_obj = codegen.CodeGen(ast, structor, source_path=path)
     output = codegen_obj.generate()
+    asm_blocks = codegen_obj._asm_blocks
 
-    return tokens, output, objects
+    return tokens, output, objects, asm_blocks
 
 
 def write_output(path, data):
@@ -150,7 +169,7 @@ def write_output(path, data):
         f.write(data)
 
 
-def compile_with_gcc(c_path, output_path=None, extra_flags=None):
+def compile_with_gcc(c_path, output_path=None, extra_flags=None, asm_objects=None):
     """Compile C file to executable with gcc."""
     import subprocess
     import shutil
@@ -164,6 +183,9 @@ def compile_with_gcc(c_path, output_path=None, extra_flags=None):
     # else: output_path is already set correctly, no need for reassignment
 
     cmd = ["gcc", c_path, "-o", output_path]
+    # Add asm object files
+    if asm_objects:
+        cmd.extend(asm_objects)
     # Basic validation for extra_flags to prevent obvious injection attempts
     if extra_flags:
         # Split and filter out any empty strings or potentially dangerous flags
@@ -198,9 +220,6 @@ def compile_with_gcc(c_path, output_path=None, extra_flags=None):
                 or flag == "-g"
             ):
                 safe_flags.append(flag)
-            # Allow non-flag arguments (for flexibility)
-            elif not flag.startswith("-"):
-                safe_flags.append(flag)
             # Ignore other flags for safety
 
         cmd.extend(safe_flags)
@@ -211,6 +230,329 @@ def compile_with_gcc(c_path, output_path=None, extra_flags=None):
         raise RuntimeError(f"gcc failed: {result.stderr}")
 
     return output_path
+
+
+def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format=None):
+    """Generate .asm files from asm blocks and assemble with NASM.
+
+    Args:
+        asm_blocks: List of AsmBlock nodes
+        source_path: Path to source file
+        target_arch: Override target architecture ('x86_64' or 'arm64').
+                    Defaults to auto-detect from platform.
+        output_format: Override object file format ('macho', 'elf', 'win64').
+                      Defaults to auto-detect from platform.
+    """
+    import subprocess
+    import shutil
+    import os
+    import platform
+
+    if not asm_blocks:
+        return []
+
+    base_dir = os.path.dirname(source_path) or "."
+    object_files = []
+
+    # Determine if we're on macOS (for symbol naming)
+    is_macos = platform.system() == "Darwin"
+    current_arch = platform.machine()
+
+    def get_asm_config(asm_block):
+        """Determine architecture and format for an asm block.
+
+        Priority:
+        1. asm block's explicit syntax (syntax x86_64_elf or syntax arm64_macho)
+        2. command-line --target flag
+        3. command-line --format flag
+        4. auto-detect from platform
+        """
+        # Check for explicit syntax in asm block
+        if asm_block.syntax:
+            syntax = asm_block.syntax.lower()
+            if "x86_64" in syntax and "elf" in syntax:
+                return False, "elf64"
+            elif "arm64" in syntax and "macho" in syntax:
+                return True, "macho64"
+            elif "x86_64" in syntax and "macho" in syntax:
+                return False, "macho64"
+            elif "arm64" in syntax:
+                return True, "macho64"
+            elif "elf" in syntax:
+                return False, "elf64"
+
+        # Check command-line flags
+        if target_arch == "x86_64":
+            return False, "macho64" if is_macos else "elf64"
+        elif target_arch == "arm64":
+            return True, "macho64"
+        elif output_format == "macho":
+            return True, "macho64"
+        elif output_format == "elf":
+            return False, "elf64"
+
+        # Auto-detect from platform
+        if is_macos and current_arch == "arm64":
+            return True, "macho64"
+        elif is_macos and current_arch == "x86_64":
+            return False, "macho64"
+        else:
+            return False, "elf64"
+
+    for asm_block in asm_blocks:
+        # Skip bare asm blocks - they don't have a function to assemble
+        if not asm_block.is_function:
+            continue
+
+        # Determine config for this asm block
+        is_arm64, asm_format = get_asm_config(asm_block)
+
+        asm_path = os.path.join(base_dir, f"{asm_block.name}.s")
+        obj_path = os.path.join(base_dir, f"{asm_block.name}.o")
+
+        import re
+
+        if is_arm64:
+            # ARM64: Use Apple as
+            # AAPCS64: integer params in x0-x7, float params in v0-v7
+            arm64_int_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"]
+            arm64_float_regs = ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"]
+
+            # Collect directives and instructions
+            directives = []
+            instructions = []
+            for line in asm_block.lines:
+                stripped = line.strip()
+                # Skip syntax declaration and empty lines
+                if not stripped or stripped.startswith("syntax"):
+                    continue
+                if (
+                    stripped.startswith("section")
+                    or stripped.startswith(".")
+                    or stripped.startswith("global")
+                ):
+                    directives.append(stripped)
+                else:
+                    instructions.append(stripped)
+
+            # Generate parameter mapping based on type
+            param_map = {}
+            int_reg_idx = 0
+            float_reg_idx = 0
+            offset = 0
+            for param_type, param_name in asm_block.params:
+                # Determine register based on type
+                if param_type in ("float", "double"):
+                    if float_reg_idx < len(arm64_float_regs):
+                        # Float params go in float registers
+                        param_map[param_name] = arm64_float_regs[float_reg_idx]
+                        float_reg_idx += 1
+                    else:
+                        # 溢出 to stack
+                        param_map[param_name] = f"[sp, #{offset}]"
+                        offset += 8
+                else:
+                    # Integer params go in integer registers
+                    if int_reg_idx < len(arm64_int_regs):
+                        param_map[param_name] = arm64_int_regs[int_reg_idx]
+                        int_reg_idx += 1
+                    else:
+                        # 溢出 to stack
+                        param_map[param_name] = f"[sp, #{offset}]"
+                        offset += 8
+
+            # Update instructions to use register names or stack offsets
+            updated_instructions = []
+            for instr in instructions:
+                updated_instr = instr
+                for param_name, addr in param_map.items():
+                    pattern = r"\b" + re.escape(param_name) + r"\b"
+                    updated_instr = re.sub(pattern, addr, updated_instr)
+                updated_instructions.append(updated_instr)
+
+            # Generate .s file for Apple as
+            with open(asm_path, "w") as f:
+                f.write("// Generated by Hypotenuse Compiler\n")
+                # Write data section variables first if any
+                if asm_block.data_lines:
+                    f.write(".section __DATA,__data\n")
+                    for data_line in asm_block.data_lines:
+                        f.write(f"{data_line}\n")
+                # Section directives (text section)
+                has_text_section = any(
+                    "__TEXT" in d or ".text" in d for d in directives
+                )
+                if not has_text_section:
+                    f.write(".section __TEXT,__text\n")
+                for directive in directives:
+                    if not directive.startswith("syntax"):
+                        f.write(f"{directive}\n")
+                # On macOS, C compiler adds underscore to all symbols
+                # So _add becomes __add in the final binary
+                global_name = f"__{asm_block.name}"
+                f.write(f".global {global_name}\n")
+                f.write(f"{global_name}:\n")
+                # Save frame pointer and link register
+                f.write("    stp x29, x30, [sp, #-16]!\n")
+                f.write("    mov x29, sp\n")
+                # Write instructions (skip user's ret, we add our own)
+                for instr in updated_instructions:
+                    instr_lower = instr.strip().lower()
+                    if instr_lower == "ret":
+                        continue  # Skip user's ret, we add our own
+                    f.write(f"    {instr}\n")
+                # Handle return expression
+                if asm_block.return_expr:
+                    # Use appropriate register based on return type
+                    if asm_block.ret_type in ("float", "double"):
+                        f.write(f"    fmov v0, {asm_block.return_expr}\n")
+                    else:
+                        f.write(f"    mov x0, {asm_block.return_expr}\n")
+                # Epilogue (always needed to restore x29/x30)
+                f.write("    ldp x29, x30, [sp], #16\n")
+                f.write("    ret\n")
+
+            # Assemble with Apple as
+            result = subprocess.run(
+                ["as", "-arch", "arm64", asm_path, "-o", obj_path],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"as failed: {result.stderr}")
+        else:
+            # x86_64: Use NASM
+            if not shutil.which("nasm"):
+                raise RuntimeError(
+                    "nasm not found in PATH. Install NASM to use inline assembly."
+                )
+
+            # x86_64 System V ABI: integer and float parameter registers
+            x86_int_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+            x86_float_regs = [
+                "xmm0",
+                "xmm1",
+                "xmm2",
+                "xmm3",
+                "xmm4",
+                "xmm5",
+                "xmm6",
+                "xmm7",
+            ]
+
+            # Collect directives and instructions
+            directives = []
+            instructions = []
+            for line in asm_block.lines:
+                stripped = line.strip()
+                # Skip syntax declaration and empty lines
+                if not stripped or stripped.startswith("syntax"):
+                    continue
+                if stripped.startswith("section ") or stripped.startswith("."):
+                    directives.append(stripped)
+                else:
+                    instructions.append(stripped)
+
+            # Generate parameter mapping based on type
+            param_map = {}
+            int_reg_idx = 0
+            float_reg_idx = 0
+            offset = 8
+            for param_type, param_name in asm_block.params:
+                # Determine register based on type
+                if param_type in ("float", "double"):
+                    if float_reg_idx < len(x86_float_regs):
+                        # Float params go in xmm registers
+                        param_map[param_name] = x86_float_regs[float_reg_idx]
+                        float_reg_idx += 1
+                    else:
+                        # 溢出 to stack
+                        param_map[param_name] = f"[rbp-{offset}]"
+                        offset += 8
+                else:
+                    # Integer params go in integer registers
+                    if int_reg_idx < len(x86_int_regs):
+                        param_map[param_name] = x86_int_regs[int_reg_idx]
+                        int_reg_idx += 1
+                    else:
+                        # 溢出 to stack
+                        param_map[param_name] = f"[rbp-{offset}]"
+                        offset += 8
+
+            # Update instructions to use register names
+            updated_instructions = []
+            for instr in instructions:
+                updated_instr = instr
+                for param_name, addr in param_map.items():
+                    pattern = r"\b" + re.escape(param_name) + r"\b"
+                    updated_instr = re.sub(pattern, addr, updated_instr)
+                updated_instructions.append(updated_instr)
+
+            # Generate .asm file
+            with open(asm_path, "w") as f:
+                f.write("; Generated by Hypotenuse Compiler\n")
+                # Write data section variables first if any
+                if asm_block.data_lines:
+                    # Check if there's already a .data section in directives
+                    has_data_section = any(".data" in d for d in directives)
+                    if not has_data_section:
+                        f.write("section .data\n")
+                    for data_line in asm_block.data_lines:
+                        f.write(f"{data_line}\n")
+                # Write section directives (skip data, we already handled it)
+                for directive in directives:
+                    if ".data" not in directive:
+                        f.write(f"{directive}\n")
+                # Ensure we have a text section
+                has_text_section = any(
+                    ".text" in d or ".section" in d for d in directives
+                )
+                if not has_text_section:
+                    f.write("section .text\n")
+                # Global declaration and function label
+                # On macOS, C compiler adds underscore to all symbols
+                global_name = f"__{asm_block.name}" if is_macos else asm_block.name
+                f.write(f"global {global_name}\n")
+                f.write(f"{global_name}:\n")
+                # Add prologue
+                f.write("    push rbp\n")
+                f.write("    mov rbp, rsp\n")
+                # Save float registers that will be used (if any float params)
+                for param_type, param_name in asm_block.params:
+                    if param_type in ("float", "double"):
+                        # Get the register for this param
+                        reg = param_map.get(param_name, "")
+                        if reg.startswith("xmm"):
+                            f.write("    sub rsp, 8\n")
+                            f.write(f"    movsd [rsp], {reg}\n")
+                # Write instructions (skip user's ret, we add our own)
+                for instr in updated_instructions:
+                    instr_lower = instr.strip().lower()
+                    if instr_lower == "ret":
+                        continue  # Skip user's ret, we add our own
+                    f.write(f"    {instr}\n")
+                # Handle return expression if provided
+                if asm_block.return_expr:
+                    if asm_block.ret_type in ("float", "double"):
+                        f.write(f"    movq xmm0, {asm_block.return_expr}\n")
+                    else:
+                        f.write(f"    mov rax, {asm_block.return_expr}\n")
+                # Epilogue (always needed)
+                f.write("    pop rbp\n")
+                f.write("    ret\n")
+
+            # Assemble with NASM
+            result = subprocess.run(
+                ["nasm", "-f", asm_format, asm_path, "-o", obj_path],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"nasm failed: {result.stderr}")
+
+        object_files.append(obj_path)
+
+    return object_files
 
 
 def install_to_plibs(source_path):
@@ -300,27 +642,103 @@ def main():
             print(f"Error: Only .ctri/.plib files are supported, got '{path}'")
             continue
         try:
-            tokens, output, objects = compile_file(path)
+            tokens, output, objects, asm_blocks = compile_file(path)
 
             # -----------------------------
-            # Token mode
-            # -----------------------------
-            if args.tokens:
-                print_tokens(tokens)
-                continue
-
-            # -----------------------------
-            # Structure graph mode
+            # Print mode
             # -----------------------------
             if args.print:
                 print_objects(objects)
                 continue
 
             # -----------------------------
-            # ASM mode (WIP)
+            # ASM mode
             # -----------------------------
             if args.asm:
-                print("Error: assembly output is not implemented yet (WIP)")
+                for asm_block in asm_blocks:
+                    if asm_block.is_function:
+                        # Asm function - generate as callable function
+                        directives = [
+                            line
+                            for line in asm_block.lines
+                            if line.startswith("section ")
+                            or line.startswith(".")
+                            or line.startswith("syntax")
+                        ]
+                        instructions = [
+                            line
+                            for line in asm_block.lines
+                            if not (
+                                line.startswith("section ")
+                                or line.startswith(".")
+                                or line.startswith("syntax")
+                            )
+                        ]
+                        # Print data section with variables
+                        if asm_block.data_lines:
+                            # For ARM64: .section __DATA,__data
+                            # For x86_64: section .data
+                            for directive in directives:
+                                if (
+                                    "data" in directive.lower()
+                                    and not directive.startswith("syntax")
+                                ):
+                                    print(directive)
+                            for data_line in asm_block.data_lines:
+                                print(data_line)
+                        # Print text section directives
+                        for directive in directives:
+                            if "text" in directive.lower() and not directive.startswith(
+                                "syntax"
+                            ):
+                                print(directive)
+                            elif not (
+                                "data" in directive.lower()
+                                or "text" in directive.lower()
+                            ) and not directive.startswith("syntax"):
+                                print(directive)
+                        # Print global and label
+                        print(f"global {asm_block.name}")
+                        print(f"{asm_block.name}:")
+                        # Filter out user's ret, we add our own
+                        for instr in instructions:
+                            if instr.strip().lower() == "ret":
+                                continue
+                            print(f"    {instr}")
+                        print("    ret")
+                    else:
+                        # Bare asm block - section directives, data variables, then code
+                        directives = [
+                            line
+                            for line in asm_block.lines
+                            if line.startswith("section ")
+                            or line.startswith(".")
+                            or line.startswith("syntax")
+                        ]
+                        code_lines = [
+                            line
+                            for line in asm_block.lines
+                            if not (line.startswith("section ") or line.startswith("."))
+                        ]
+                        # Print data section with variables
+                        if asm_block.data_lines:
+                            for directive in directives:
+                                if (
+                                    "data" in directive.lower()
+                                    and not directive.startswith("syntax")
+                                ):
+                                    print(directive)
+                            for data_line in asm_block.data_lines:
+                                print(data_line)
+                        # Print other directives
+                        for directive in directives:
+                            if not (
+                                "data" in directive.lower()
+                            ) and not directive.startswith("syntax"):
+                                print(directive)
+                        # Print code
+                        for line in code_lines:
+                            print(line)
                 continue
 
             # -----------------------------
@@ -344,7 +762,16 @@ def main():
 
             if args.compile:
                 write_output(c_path, output)
-                exe_path = compile_with_gcc(c_path, args.output, args.cflags)
+                # Generate and assemble asm blocks
+                asm_object_files = assemble_asm_blocks(
+                    asm_blocks,
+                    path,
+                    getattr(args, "target", None),
+                    getattr(args, "format", None),
+                )
+                exe_path = compile_with_gcc(
+                    c_path, args.output, args.cflags, asm_object_files
+                )
                 print(f"Compiled to: {exe_path}")
 
         except FileNotFoundError:

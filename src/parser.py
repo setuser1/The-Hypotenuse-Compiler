@@ -11,7 +11,7 @@ a structured AST suitable for semantic analysis or code generation.
 """
 
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import error_msgs
 
@@ -78,6 +78,27 @@ class Function(Node):
     name: str  # Function identifier
     params: List[Tuple[str, str]]  # (type, name) parameter list
     body: Node  # Function body (Compound)
+
+
+@dataclass
+class AsmBlock(Node):
+    """Inline assembly block."""
+
+    ret_type: Optional[str]  # None for bare asm { }
+    name: Optional[str]  # Function name or None for bare asm
+    params: List[Tuple[str, str]]  # (type, name) parameter list
+    lines: List[str]  # Raw assembly lines (excluding data)
+    return_expr: Optional[str] = None  # Optional C△ return expression
+    syntax: Optional[str] = None  # e.g., "x86_64_linux"
+    is_function: bool = True  # True for asm int func(), False for bare asm { }
+    variables: List[Dict] = None  # [{name, type, size, initializer}]
+    data_lines: List[str] = None  # Compiled data section lines
+
+    def __post_init__(self):
+        if self.variables is None:
+            self.variables = []
+        if self.data_lines is None:
+            self.data_lines = []
 
 
 @dataclass
@@ -706,6 +727,10 @@ class Parser:
         if t[0] == "SPACE":
             return self.parse_space()
 
+        # Handle asm blocks
+        if t[0] == "ASM":
+            return self.parse_asm_block()
+
         # Handle preprocessor directives
         if t[0] == "PREPROCESSOR":
             directive = self.advance()[1]
@@ -1138,6 +1163,363 @@ class Parser:
             return ExposeDecl(target="plstd")
 
         return None
+
+    def parse_asm_block(self) -> "AsmBlock":
+        """Parse an inline assembly block."""
+        self.expect("ASM")
+
+        # Check if this is a bare asm block (asm { }) or function asm block (asm int func() { })
+        ret_type = None
+        name = None
+        params = []
+        is_function = True
+
+        if self.peek()[0] == "LBRACE":
+            # Bare asm block - no return type, name, or params
+            is_function = False
+        else:
+            # Asm function - parse return type
+            ret_type = self.advance()[1]
+            # Parse function name
+            name = self.expect("IDENTIFIER")[1]
+            # Parse parameters
+            self.expect("LPAREN")
+            if self.peek()[0] != "RPAREN":
+                while True:
+                    param_type = self.advance()[1]
+                    param_name = self.expect("IDENTIFIER")[1]
+                    params.append((param_type, param_name))
+                    if self.peek()[0] == "COMMA":
+                        self.advance()
+                    else:
+                        break
+            self.expect("RPAREN")
+
+        # Parse body
+        self.expect("LBRACE")
+        lines = []
+        variables = []
+        data_lines = []
+        return_expr = None
+        syntax = None
+        in_data_section = False
+
+        while self.peek()[0] != "RBRACE":
+            if self.peek()[0] == "EOF":
+                raise SyntaxError("Unclosed asm block - missing '}'")
+
+            # Skip standalone semicolons (C△ statement terminators or comments)
+            if self.peek()[0] == "SEMICOLON":
+                semicolon_line = self.peek()[2] if len(self.peek()) > 2 else 0
+                self.advance()
+                # Skip everything else on this line
+                while self.peek()[0] not in ("EOF", "RBRACE"):
+                    tok = self.peek()
+                    tok_line = tok[2] if len(tok) > 2 else 0
+                    if tok_line > semicolon_line:
+                        break  # New line started
+                    self.advance()
+                continue
+
+            # Check for syntax declaration: syntax x86_64_elf or syntax arm64_macho
+            if self.peek()[0] == "IDENTIFIER" and self.peek()[1] == "syntax":
+                self.advance()  # consume 'syntax'
+                if self.peek()[0] == "IDENTIFIER":
+                    syntax = self.advance()[1]
+                continue
+
+            # Check for C△ variable declarations in .data section
+            if in_data_section and self.peek()[0] in (
+                "STRING",
+                "INT",
+                "CHAR",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+            ):
+                var_info = self._read_ctri_declaration()
+                if var_info:
+                    variables.append(var_info)
+                    data_lines.append(var_info["asm_line"])
+                continue
+
+            # Check for return statement
+            if self.peek()[0] == "RETURN":
+                self.advance()
+                # Check if there's an expression after return (optional)
+                if self.peek()[0] != "RBRACE" and self.peek()[0] != "EOF":
+                    # Parse the return expression until end of line or brace
+                    expr_parts = []
+                    paren_depth = 0
+                    first_expr_line = None
+                    while self.peek()[0] != "RBRACE" and self.peek()[0] != "EOF":
+                        tok = self.peek()
+                        tok_line = tok[2] if len(tok) > 2 else 0
+                        if first_expr_line is None:
+                            first_expr_line = tok_line
+                        elif tok_line > first_expr_line:
+                            break
+                        if tok[0] == "LPAREN":
+                            paren_depth += 1
+                        elif tok[0] == "RPAREN":
+                            paren_depth -= 1
+                        elif tok[0] == "LBRACKET":
+                            paren_depth += 1
+                        elif tok[0] == "RBRACKET":
+                            paren_depth -= 1
+                        expr_parts.append(tok[1])
+                        self.advance()
+                    return_expr = " ".join(expr_parts).strip()
+                continue  # don't add return to lines
+
+            # Check for C△ function call (call func(args))
+            if self.peek()[0] == "IDENTIFIER" and self.peek()[1] == "call":
+                call_lines = self._read_ctri_call()
+                lines.extend(call_lines)
+                continue
+
+            # Collect the line as-is
+            line = self._read_asm_line()
+            if line:
+                # After reading the line, check if it was a section directive
+                if line.startswith("section") or line.startswith(".section"):
+                    if "data" in line:
+                        in_data_section = True
+                    elif "text" in line:
+                        in_data_section = False
+                lines.append(line)
+
+        self.expect("RBRACE")
+
+        return AsmBlock(
+            ret_type=ret_type,
+            name=name,
+            params=params,
+            lines=lines,
+            return_expr=return_expr,
+            syntax=syntax,
+            is_function=is_function,
+            variables=variables,
+            data_lines=data_lines,
+        )
+
+    def _read_asm_line(self) -> str:
+        """Read a single line of assembly (until newline or closing brace)."""
+        parts = []
+        depth = 0
+        last_tok_type = None
+        first_line = None
+        while True:
+            tok = self.peek()
+            if tok[0] == "EOF":
+                raise SyntaxError("Unclosed asm block - missing '}'")
+            if tok[0] == "RBRACE" and depth == 0:
+                break
+            if tok[0] == "SEMICOLON" and depth == 0:
+                # Skip comment text after semicolon (rest of this line)
+                semicolon_line = tok[2] if len(tok) > 2 else 0
+                self.advance()
+                while self.peek()[0] not in ("EOF", "RBRACE"):
+                    next_tok = self.peek()
+                    next_line = next_tok[2] if len(next_tok) > 2 else 0
+                    if next_line > semicolon_line:
+                        break
+                    self.advance()
+                break
+            tok_line = tok[2] if len(tok) > 2 else 0
+            if first_line is not None and tok_line > first_line:
+                break
+            if first_line is None:
+                first_line = tok_line
+            if tok[0] == "LPAREN":
+                depth += 1
+            elif tok[0] == "RPAREN":
+                depth -= 1
+
+            tok_type = tok[0]
+            tok_text = tok[1]
+
+            if tok_type == "DOT":
+                next_tok = (
+                    self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
+                )
+                if next_tok and next_tok[0] == "IDENTIFIER":
+                    combined = "." + next_tok[1]
+                    if parts and parts[-1] != ".":
+                        parts.append(" ")
+                    parts.append(combined)
+                    self.advance()
+                    self.advance()
+                    last_tok_type = "DIRECTIVE"
+                    continue
+
+            needs_space_before = (
+                tok_type
+                in ("IDENTIFIER", "INT_LITERAL", "HEX_LITERAL", "BINARY_LITERAL")
+                and parts
+                and last_tok_type
+                not in (
+                    "INT_LITERAL",
+                    "HEX_LITERAL",
+                    "BINARY_LITERAL",
+                    "LPAREN",
+                    "LBRACKET",
+                    "DOT",
+                )
+            )
+            if needs_space_before:
+                parts.append(" ")
+
+            parts.append(tok_text)
+            last_tok_type = tok_type
+            self.advance()
+        return "".join(parts).strip()
+
+    def _read_ctri_declaration(self) -> Optional[Dict]:
+        """Parse a C△ variable declaration and return info dict."""
+        tok = self.peek()
+        var_type = tok[1]
+        self.advance()
+
+        # Get variable name
+        var_name = self.expect("IDENTIFIER")[1]
+
+        # Check for array declaration: IDENTIFIER[INT_LITERAL]
+        array_size = None
+        if self.peek()[0] == "LBRACKET":
+            self.advance()  # [
+            size_tok = self.expect("INT_LITERAL")
+            self.expect("RBRACKET")  # ]
+            array_size = int(size_tok[1])
+
+        # Expect assignment
+        self.expect("ASSIGN")
+
+        # Parse value based on type
+        tok = self.peek()
+        initializer = None
+        nasm_directive = None
+
+        type_to_nasm = {
+            "char": "db",
+            "short": "dw",
+            "int": "dd",
+            "long": "dd",
+            "float": "dd",
+            "double": "dq",
+        }
+
+        if var_type == "string":
+            if tok[0] == "STRING_LITERAL":
+                value = tok[1][1:-1]  # Remove quotes
+                escape_map = {"\\n": "\n", "\\t": "\t", "\\\\": "\\", '\\"': '"'}
+                for esc, replacement in escape_map.items():
+                    value = value.replace(esc, replacement)
+                bytes_list = [str(ord(c)) for c in value]
+                bytes_str = ", ".join(bytes_list) + ", 0"
+                nasm_directive = f"db {bytes_str}"
+                initializer = value
+                self.advance()
+        elif var_type == "char":
+            if array_size:
+                # char array
+                if tok[0] == "STRING_LITERAL":
+                    value = tok[1][1:-1]
+                    bytes_list = [str(ord(c)) for c in value]
+                    nasm_directive = f"db {', '.join(bytes_list)}"
+                    initializer = value
+                    self.advance()
+                elif tok[0] == "INT_LITERAL":
+                    initializer = tok[1]
+                    nasm_directive = f"times {array_size} dup({initializer})"
+                    self.advance()
+            else:
+                # char scalar
+                if tok[0] == "CHAR_LITERAL":
+                    initializer = str(ord(tok[1][1:-1]))
+                    nasm_directive = f"db {initializer}"
+                    self.advance()
+                elif tok[0] == "INT_LITERAL":
+                    initializer = tok[1]
+                    nasm_directive = "db " + initializer
+                    self.advance()
+        elif var_type in ("int", "short", "long", "float", "double"):
+            nasm_type = type_to_nasm.get(var_type, "dd")
+            if tok[0] == "INT_LITERAL":
+                initializer = tok[1]
+                if array_size:
+                    nasm_directive = f"times {array_size} dup({initializer})"
+                else:
+                    nasm_directive = f"{nasm_type} {initializer}"
+                self.advance()
+            elif tok[0] == "FLOAT_LITERAL":
+                initializer = tok[1]
+                if array_size:
+                    nasm_directive = f"times {array_size} dup({initializer})"
+                else:
+                    nasm_directive = f"{nasm_type} {initializer}"
+                self.advance()
+
+        if nasm_directive:
+            return {
+                "name": var_name,
+                "type": var_type,
+                "size": array_size,
+                "initializer": initializer,
+                "nasm_directive": nasm_directive,
+                "asm_line": f"{var_name}: {nasm_directive}",
+            }
+        return None
+
+    def _read_ctri_call(self) -> List[str]:
+        """Parse a C△ function call and return list of assembly lines."""
+        self.expect("IDENTIFIER")  # consume 'call'
+        func_name = self.advance()[1]
+        self.expect("LPAREN")
+
+        # Parse arguments
+        args = []
+        if self.peek()[0] != "RPAREN":
+            while True:
+                tok = self.peek()
+                if tok[0] == "INT_LITERAL":
+                    args.append(("imm", tok[1]))
+                    self.advance()
+                elif tok[0] == "IDENTIFIER":
+                    args.append(("reg", tok[1]))
+                    self.advance()
+                elif tok[0] == "CHAR_LITERAL":
+                    args.append(("imm", str(ord(tok[1][1:-1]))))
+                    self.advance()
+                else:
+                    # Just consume the token as-is
+                    args.append(("expr", tok[1]))
+                    self.advance()
+
+                if self.peek()[0] == "COMMA":
+                    self.advance()
+                else:
+                    break
+
+        self.expect("RPAREN")
+        # Don't expect semicolon - asm lines don't need them
+
+        # Generate assembly for function call
+        lines = []
+        # Register argument order for x86_64 System V ABI
+        arg_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+        for i, (arg_type, arg_val) in enumerate(args):
+            if i < len(arg_regs):
+                if arg_type == "imm":
+                    lines.append(f"    mov {arg_regs[i]}, {arg_val}")
+                elif arg_type == "reg":
+                    lines.append(f"    mov {arg_regs[i]}, {arg_val}")
+                else:
+                    lines.append(f"    mov {arg_regs[i]}, {arg_val}")
+
+        lines.append(f"    call {func_name}")
+        return lines
 
     def parse_extern_c_block(self):
         """Skip contents of extern "C" { } block (no-op in C)."""
@@ -1613,6 +1995,14 @@ class Parser:
 
         if t[0] == "LBRACE":
             return self.parse_compound()
+
+        # Handle asm blocks inside function bodies
+        if t[0] == "ASM":
+            return self.parse_asm_block()
+
+        # Handle using declarations inside function bodies
+        if t[0] == "USING":
+            return self.parse_using()
 
         if t[0] == "IF":
             self.advance()

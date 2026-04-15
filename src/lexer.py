@@ -59,6 +59,8 @@ Tokens = [
     ("EXPOSE", re.compile(r"\bexpose\b")),
     ("SPACE", re.compile(r"\bspace\b")),
     ("AS", re.compile(r"\bas\b")),
+    # ASM KEYWORD
+    ("ASM", re.compile(r"\basm\b")),
     # DATA TYPES
     ("STRING_LITERAL", re.compile(r'"(?:\\.|[^"\\])*"')),
     ("CHAR_LITERAL", re.compile(r"'(?:\\.|[^'\\])*'")),

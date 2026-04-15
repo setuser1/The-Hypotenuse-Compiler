@@ -2,6 +2,7 @@
 
 import os
 import copy
+import platform
 
 import error_msgs
 from parser import (
@@ -86,6 +87,7 @@ class CodeGen:
         self._folder_libs = {}  # Maps folder alias -> list of plib names (e.g., "lib" -> ["plstd/streamer", "plstd/other"])
         self._used_functions = set()  # Track used function names for tree-shaking
         self._pending_plibs = []  # Store pending plib ASTs for tree-shaking
+        self._asm_function_names = set()  # Track asm function names for macOS _ prefix
         self._global_dynam_inits = []  # Track global dynam initialization code for main()
         self._plib_global_inits = []  # Track global dynam inits for plib init function
         self._plib_init_funcs = []  # Track plib init function names to auto-call
@@ -100,6 +102,7 @@ class CodeGen:
         self._is_plib_source = source_path and source_path.endswith(
             ".plib"
         )  # Direct plib compilation
+        self._asm_blocks = []  # Store asm blocks for later .asm file generation
 
     def generate(self) -> str:
         """Main entry point. Returns generated C code as string."""
@@ -592,6 +595,10 @@ class CodeGen:
                 # a function defined in that space, prefix with the space name
                 if self._current_space and callee in self._space_local_functions:
                     callee = f"{self._current_space}_{callee}"
+
+            # On macOS, asm functions need _ prefix for C linkage
+            if platform.system() == "Darwin" and callee in self._asm_function_names:
+                callee = f"_{callee}"
 
             # Handle specific imports: using sin from <math> -> math_sin()
             # AND intra-file scoped imports: using X&Y -> map Y to X_Y
@@ -2391,6 +2398,43 @@ class CodeGen:
         self._emit(f"typedef {actual} {alias};")
 
     def _gen_asm_block(self, node):
-        """Pass asm blocks through verbatim."""
-        content = getattr(node, "content", "") or str(node)
-        self._emit_raw(content)
+        """Generate C declaration stub for asm block and store for .asm file generation."""
+        if node.is_function:
+            self._asm_blocks.append(node)
+            self._asm_function_names.add(node.name)
+            ret_type = self._map_type(node.ret_type)
+            params = []
+            for ptype, pname in node.params:
+                mapped_type = self._map_type(ptype)
+                params.append(f"{mapped_type} {pname}")
+            param_str = ", ".join(params) if params else "void"
+            # On macOS, asm functions need _ prefix for C linkage
+            is_macos = platform.system() == "Darwin"
+            func_name = f"_{node.name}" if is_macos else node.name
+            self._emit(f"{ret_type} {func_name}({param_str});")
+        else:
+            self._asm_blocks.append(node)
+            # Generate C variable declarations for asm data section variables
+            for var_info in node.variables:
+                var_name = var_info["name"]
+                var_type = var_info["type"]
+                var_size = var_info.get("size")
+                # Track asm variable for scope resolution
+                self._asm_function_names.add(var_name)
+                # Handle string type specially - it's a char array
+                if var_type == "string":
+                    initializer = var_info.get("initializer", "")
+                    # Calculate size: length of string + null terminator
+                    str_size = (
+                        len(initializer) + 1 if isinstance(initializer, str) else 0
+                    )
+                    self._emit(f"extern char {var_name}[{str_size}];")
+                elif var_size:
+                    # Array declaration
+                    c_type = self._map_type(var_type)
+                    self._emit(f"extern {c_type} {var_name}[{var_size}];")
+                else:
+                    c_type = self._map_type(var_type)
+                    self._emit(f"extern {c_type} {var_name};")
+            if not node.variables:
+                self._emit("/* bare asm block */")
