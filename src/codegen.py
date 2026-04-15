@@ -1429,6 +1429,8 @@ class CodeGen:
                 if prefix not in self._top_level_lib_functions:
                     self._top_level_lib_functions[prefix] = set()
                 space_prefix = f"{prefix}_{decl.name}"
+                # Track space name so @space syntax works (e.g., @printd)
+                self._space_prefix_map[decl.name] = space_prefix
                 for nested_decl in decl.declarations:
                     if isinstance(nested_decl, p.Function):
                         self._top_level_lib_functions[prefix].add(

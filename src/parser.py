@@ -1180,6 +1180,9 @@ class Parser:
         else:
             # Asm function - parse return type
             ret_type = self.advance()[1]
+            if self.peek()[0] == "MULTIPLY":
+                self.advance()
+                ret_type = ret_type + "*"
             # Parse function name
             name = self.expect("IDENTIFIER")[1]
             # Parse parameters
@@ -1187,6 +1190,9 @@ class Parser:
             if self.peek()[0] != "RPAREN":
                 while True:
                     param_type = self.advance()[1]
+                    if self.peek()[0] == "MULTIPLY":
+                        self.advance()
+                        param_type = param_type + "*"
                     param_name = self.expect("IDENTIFIER")[1]
                     params.append((param_type, param_name))
                     if self.peek()[0] == "COMMA":
