@@ -636,8 +636,14 @@ class CodeGen:
                                     )
                                 )
                             # Check if namespace is the library we imported from
+                            # Handle both direct match (plstd) and folder-style (plstd/printd)
                             if namespace == lib_name:
                                 callee = f"{lib_name}_{func_part}"
+                            elif (
+                                "/" in lib_name and namespace == lib_name.split("/")[0]
+                            ):
+                                # Folder-style import: plstd/printd -> plstd prefix
+                                callee = f"{namespace}_{func_part}"
                             elif namespace in self._alias_to_lib:
                                 actual_lib = self._alias_to_lib[namespace]
                                 callee = f"{actual_lib}_{func_part}"
@@ -1201,16 +1207,13 @@ class CodeGen:
 
             # Handle path with folder: lib/func -> import first .plib in folder
             if "/" in lib_name:
-                folder = lib_name.split("/")[0]
+                folder, filename = lib_name.split("/", 1)
+                target_name = f"{filename}.plib"
                 for base in search_paths:
-                    folder_path = os.path.join(base, folder)
-                    if os.path.isdir(folder_path):
-                        for f in sorted(os.listdir(folder_path)):
-                            if f.endswith(".plib"):
-                                plib_path = os.path.join(folder_path, f)
-                                break
-                        if plib_path:
-                            break
+                    candidate = os.path.join(base, folder, target_name)
+                    if os.path.exists(candidate):
+                        plib_path = candidate
+                        break
             else:
                 # First try direct .plib file
                 for base in search_paths:
@@ -1432,27 +1435,36 @@ class CodeGen:
                 parent = os.path.dirname(parent)
             search_paths.extend(self._get_plibs_search_dirs())
 
-            for base in search_paths:
-                candidate = os.path.join(base, f"{search_name}.plib")
-                if os.path.exists(candidate):
-                    plib_path = candidate
-                    break
-
-            if not plib_path:
-                # Check if this is a folder containing plibs
+            if "/" in lib_name:
+                folder, filename = lib_name.split("/", 1)
+                target_name = f"{filename}.plib"
                 for base in search_paths:
-                    folder_path = os.path.join(base, search_name)
-                    if os.path.isdir(folder_path):
-                        # Collect ALL plibs in the folder
-                        for f in sorted(os.listdir(folder_path)):
-                            if f.endswith(".plib"):
-                                full_plib_path = os.path.join(folder_path, f)
-                                plib_name = f[:-5]  # Remove .plib extension
-                                full_lib_name = f"{search_name}/{plib_name}"
-                                self._collect_single_plib(
-                                    full_plib_path, full_lib_name, alias
-                                )
-                        return  # All plibs collected, return
+                    candidate = os.path.join(base, folder, target_name)
+                    if os.path.exists(candidate):
+                        plib_path = candidate
+                        break
+            else:
+                for base in search_paths:
+                    candidate = os.path.join(base, f"{search_name}.plib")
+                    if os.path.exists(candidate):
+                        plib_path = candidate
+                        break
+
+                if not plib_path:
+                    # Check if this is a folder containing plibs
+                    for base in search_paths:
+                        folder_path = os.path.join(base, search_name)
+                        if os.path.isdir(folder_path):
+                            # Collect ALL plibs in the folder
+                            for f in sorted(os.listdir(folder_path)):
+                                if f.endswith(".plib"):
+                                    full_plib_path = os.path.join(folder_path, f)
+                                    plib_name = f[:-5]  # Remove .plib extension
+                                    full_lib_name = f"{search_name}/{plib_name}"
+                                    self._collect_single_plib(
+                                        full_plib_path, full_lib_name, alias
+                                    )
+                            return  # All plibs collected, return
 
         if not plib_path:
             return
