@@ -144,7 +144,7 @@ C△ source files use the `.ctri` extension. Library files use `.plib`.
 
 #### C△-specific types (new)
 
-- `string` — first‑class string type; supports `+` concatenation and `{expr}` f‑string interpolation via `printfs`
+- `string` — first‑class string type; supports `+` concatenation at the moment
 - `auto` — dynamic/inferred type; resolved at runtime via the simulation pass; format specifier `%k`
 - `dynam` — dynamic array; methods: `.push()`, `.pop()`, `.remove(index)`, `len()`; can be initialized: `dynam int x = [1, 2, 3];`
 - `tuple` — heterogeneous list declared with `[]`; e.g. `tuple t = [1, "hello", 3.14];`
@@ -187,18 +187,17 @@ typed struct PoliceDog&Dog&Animal(string name, int badge) { ... }
 
 ### C△-specific keywords
 
-- `using` — import: `using random from <math>`, `using helper from "utils"`, `using scope&myVar`
-- `expose` — globalize a library/namespace: `expose plstd`, `expose lib~io`
-- `lib~` — explicit plstd access without globalizing: `lib~printd(42)`
+- `using` — import: `using random from <math>`, `using helper from "utils"`, `using scope&myVar`, `using "random/randint"`, `using <all>`
+- `expose` — globalize a library/namespace: `expose plstd`
 - `space` — namespace declaration (in `.plib` files)
 - `allocate` — heap allocation: `allocate int buf[256]`, `allocate int x(200) = val`
 - `free` — manual heap deallocation
 - `autoremove` — heap allocation freed automatically at last use via the simulation pass
-- `asm` — inline assembly block (see Assembly section)
+- `asm` — inline assembly block or function (see Assembly section)
 - `lamb` — named lambda, expression form: `lamb double(int num) = num * 2;`
 - `self` — optional self‑reference in struct member functions
-- `init()` — struct constructor lifecycle
-- `end()` — struct destructor lifecycle
+- `init` — struct constructor lifecycle
+- `end` — struct destructor lifecycle
 - `auto` — dynamic/inferred type (repurposed from C11)
 - `len()` - calculates the character length of strings or the digits/decimal places of an integer.
 

@@ -620,7 +620,45 @@ class CodeGen:
                 # If func_name is None or equals base_callee, no transformation needed
                 # The function is already named correctly (top-level function)
                 if func_name is None or func_name == base_callee:
-                    pass  # callee stays as-is
+                    # BUT: if user is using @ syntax (func@namespace), need to transform
+                    # e.g., printd@plstd -> plstd_printd when using "printd from <plstd>"
+                    if "@" in callee:
+                        parts = callee.rsplit("@", 1)
+                        if len(parts) == 2:
+                            func_part, namespace = parts
+                            # Validate non-empty parts
+                            if not func_part or not namespace:
+                                raise ValueError(
+                                    error_msgs.get_error_msg(
+                                        "E805",
+                                        callee=callee,
+                                        fallback=f"Malformed '@' syntax in '{callee}'. Function name and library name cannot be empty.",
+                                    )
+                                )
+                            # Check if namespace is the library we imported from
+                            if namespace == lib_name:
+                                callee = f"{lib_name}_{func_part}"
+                            elif namespace in self._alias_to_lib:
+                                actual_lib = self._alias_to_lib[namespace]
+                                callee = f"{actual_lib}_{func_part}"
+                            else:
+                                # Invalid namespace - raise error (consistent with lines 752-787)
+                                raise ValueError(
+                                    error_msgs.get_error_msg(
+                                        "E804",
+                                        alias=namespace,
+                                        fallback=f"Invalid alias '{namespace}'. Library not imported or does not exist.",
+                                    )
+                                )
+                        else:
+                            # Malformed @ syntax (e.g., func@@lib or func@lib@extra)
+                            raise ValueError(
+                                error_msgs.get_error_msg(
+                                    "E805",
+                                    callee=callee,
+                                    fallback=f"Malformed '@' syntax in '{callee}'. Expected format: function@library",
+                                )
+                            )
                 elif "&" in str(lib_name):
                     # Chain like a&b&c - transform
                     scope_chain = lib_name
@@ -771,6 +809,15 @@ class CodeGen:
                                 fallback=f"Invalid alias '{namespace}'. Library not imported or does not exist.",
                             )
                         )
+                else:
+                    # Malformed @ syntax (e.g., func@@lib or func@lib@extra)
+                    raise ValueError(
+                        error_msgs.get_error_msg(
+                            "E805",
+                            callee=callee,
+                            fallback=f"Malformed '@' syntax in '{callee}'. Expected format: function@library",
+                        )
+                    )
             # Track this function call for tree-shaking plibs
             # Only track external calls, not internal plib calls
             if not getattr(self, "_generating_plib", False):

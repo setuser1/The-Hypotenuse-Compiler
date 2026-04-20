@@ -261,6 +261,7 @@ ERROR_MESSAGES = {
     ],
     "E805": [
         "Invalid call syntax for {func}. Use '{func}()' directly or '{func}@lib()' for library functions.",
+        "Malformed '@' syntax in '{callee}'. Expected format: function@library",
     ],
     "E806": [
         "Library not found: {lib}",
