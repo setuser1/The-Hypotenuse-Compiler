@@ -1145,8 +1145,8 @@ class Parser:
             # Check for @ syntax like expose printd@plstd or expose printd@lib
             if self.peek()[0] == "AT":
                 self.expect("AT")
-                # Can be IDENTIFIER, PLSTD, or LIB for the namespace
-                if self.peek()[0] in ("PLSTD", "LIB"):
+                # Can be IDENTIFIER or PLSTD for the namespace
+                if self.peek()[0] == "PLSTD":
                     namespace = self.advance()[1]
                 else:
                     namespace = self.expect("IDENTIFIER")[1]
@@ -2669,13 +2669,10 @@ class Parser:
                     node = Var(f"{node.name}@@{symbol}")
                 else:
                     # Single @ - treat as namespace prefix
-                    # Accept IDENTIFIER or LIB as namespace
-                    if self.peek()[0] == "IDENTIFIER":
-                        symbol = self.expect("IDENTIFIER")[1]
-                    elif self.peek()[0] == "LIB":
-                        symbol = self.expect("LIB")[1]
+                    if self.peek()[0] == "PLSTD":
+                        symbol = self.advance()[1]
                     else:
-                        raise SyntaxError("Expected identifier or 'lib' after '@'")
+                        symbol = self.expect("IDENTIFIER")[1]
                     node = Var(f"{node.name}@{symbol}")
             else:
                 break
@@ -2792,13 +2789,11 @@ class Parser:
                 # This is function@namespace pattern
                 func_name = self.advance()[1]
                 self.expect("AT")
-                # Namespace can be IDENTIFIER or LIB
-                if self.peek()[0] == "IDENTIFIER":
-                    namespace = self.advance()[1]
-                elif self.peek()[0] == "LIB":
+                # Namespace can be IDENTIFIER or PLSTD
+                if self.peek()[0] in ("IDENTIFIER", "PLSTD"):
                     namespace = self.advance()[1]
                 else:
-                    raise SyntaxError("Expected identifier or 'lib' after '@'")
+                    raise SyntaxError("Expected identifier after '@'")
                 return Var(f"{func_name}@{namespace}")
 
         if tok[0] == "IDENTIFIER":
