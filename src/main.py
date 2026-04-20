@@ -257,6 +257,47 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
     # Determine if we're on macOS (for symbol naming)
     is_macos = platform.system() == "Darwin"
     current_arch = platform.machine()
+    len_label_counter = 0
+
+    def expand_len_instruction(instr, is_arm64_target):
+        """Expand `mov <reg>, len(<ptr>)` into inline assembly."""
+        nonlocal len_label_counter
+
+        match = re.match(r"^\s*mov\s+([^,]+),\s*len\(([^)]+)\)\s*$", instr)
+        if not match:
+            return [instr]
+
+        dest = match.group(1).strip()
+        src = match.group(2).strip()
+        label_id = len_label_counter
+        len_label_counter += 1
+
+        if is_arm64_target:
+            loop_label = f".Lhyp_len_loop_{label_id}"
+            done_label = f".Lhyp_len_done_{label_id}"
+            return [
+                f"mov x10, {src}",
+                f"mov {dest}, #0",
+                f"{loop_label}:",
+                f"ldrb w11, [x10, {dest}]",
+                f"cbz w11, {done_label}",
+                f"add {dest}, {dest}, #1",
+                f"b {loop_label}",
+                f"{done_label}:",
+            ]
+
+        loop_label = f".hyp_len_loop_{label_id}"
+        done_label = f".hyp_len_done_{label_id}"
+        return [
+            f"mov r10, {src}",
+            f"xor {dest}, {dest}",
+            f"{loop_label}:",
+            f"cmp byte [r10 + {dest}], 0",
+            f"je {done_label}",
+            f"inc {dest}",
+            f"jmp {loop_label}",
+            f"{done_label}:",
+        ]
 
     def get_asm_config(asm_block):
         """Determine architecture and format for an asm block.
@@ -306,6 +347,13 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
 
         # Determine config for this asm block
         is_arm64, asm_format = get_asm_config(asm_block)
+
+        if is_macos and asm_format == "elf64":
+            block_name = asm_block.name or "<asm>"
+            raise RuntimeError(
+                f"asm block '{block_name}' targets ELF, but macOS native compilation expects Mach-O objects. "
+                "Use 'syntax arm64_macho' for Apple Silicon, 'syntax x86_64_macho' for Intel macOS, or compile on Linux for 'x86_64_elf'."
+            )
 
         asm_path = os.path.join(base_dir, f"{asm_block.name}.s")
         obj_path = os.path.join(base_dir, f"{asm_block.name}.o")
@@ -368,7 +416,9 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                 for param_name, addr in param_map.items():
                     pattern = r"\b" + re.escape(param_name) + r"\b"
                     updated_instr = re.sub(pattern, addr, updated_instr)
-                updated_instructions.append(updated_instr)
+                updated_instructions.extend(
+                    expand_len_instruction(updated_instr, is_arm64_target=True)
+                )
 
             # Generate .s file for Apple as
             with open(asm_path, "w") as f:
@@ -486,7 +536,9 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                 for param_name, addr in param_map.items():
                     pattern = r"\b" + re.escape(param_name) + r"\b"
                     updated_instr = re.sub(pattern, addr, updated_instr)
-                updated_instructions.append(updated_instr)
+                updated_instructions.extend(
+                    expand_len_instruction(updated_instr, is_arm64_target=False)
+                )
 
             # Generate .asm file
             with open(asm_path, "w") as f:
