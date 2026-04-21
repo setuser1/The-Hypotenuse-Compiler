@@ -365,10 +365,12 @@ class CodeGen:
 
                 # If either operand is a string or string literal, treat as concatenation
                 if left_is_string or right_is_string:
-                    # String concatenation not yet implemented for expressions
-                    raise NotImplementedError(
-                        "String concatenation in expressions is not yet implemented. "
-                        "Use separate string variables and strcpy/strcat manually."
+                    # String concatenation: malloc + strcpy + strcat
+                    left_expr = self._expr(node.left)
+                    right_expr = self._expr(node.right)
+                    return (
+                        f"({{ char* _ct = malloc(strlen({left_expr}) + strlen({right_expr}) + 1); "
+                        f"strcpy(_ct, {left_expr}); strcat(_ct, {right_expr}); _ct; }})"
                     )
 
             left = self._expr(node.left)

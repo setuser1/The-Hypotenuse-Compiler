@@ -584,11 +584,15 @@ def print_asm_block(asm_block, is_arm64: bool):
         stripped = line.strip()
         if not stripped or stripped.startswith("syntax"):
             continue
-        if (
+        # Labels end with : and are not directives
+        if stripped.endswith(":"):
+            instructions.append(stripped)
+        elif (
             stripped.startswith("section ")
-            or stripped.startswith(".")
             or stripped.startswith("global")
         ):
+            directives.append(stripped)
+        elif stripped.startswith("."):
             directives.append(stripped)
         else:
             instructions.append(stripped)
