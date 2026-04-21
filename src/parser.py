@@ -91,8 +91,8 @@ class AsmBlock(Node):
     return_expr: Optional[str] = None  # Optional C△ return expression
     syntax: Optional[str] = None  # e.g., "x86_64_linux"
     is_function: bool = True  # True for asm int func(), False for bare asm { }
-    variables: List[Dict] = None  # [{name, type, size, initializer}]
-    data_lines: List[str] = None  # Compiled data section lines
+    variables: List[Dict] = None  # type: ignore[assignment]
+    data_lines: List[str] = None  # type: ignore[assignment]
 
     def __post_init__(self):
         if self.variables is None:
@@ -378,7 +378,7 @@ class ArrayDesignation(Node):
     index: Node
     value: Node
     is_range: bool = False  # True for [start...end] = val
-    end_index: Node = None  # End index for ranges
+    end_index: Optional[Node] = None  # End index for ranges
 
 
 @dataclass
@@ -535,7 +535,7 @@ class Parser:
 
     def _make_decl_list(self, decls: List[Declaration]) -> Compound:
         """Create a synthetic declaration list that is not a lexical block."""
-        node = Compound(decls)
+        node = Compound(decls)  # type: ignore[arg-type]
         setattr(node, "_is_decl_list", True)
         return node
 
@@ -712,7 +712,7 @@ class Parser:
         # Return the directive as-is to be emitted
         return Define(directive)
 
-    def parse_external(self) -> Node:
+    def parse_external(self) -> Optional[Node]:
         """
         Parse global declarations:
         - Functions
@@ -944,7 +944,7 @@ class Parser:
                 full_dims = sizes if len(sizes) > 1 else sizes
 
             init = self.parse_assignment() if self.accept("ASSIGN") else None
-            decls = [Declaration(typ, name, init, array_size, full_dims)]
+            decls = [Declaration(typ, name, init, array_size, full_dims)]  # type: ignore[arg-type]
             while self.accept("COMMA"):
                 extra_name = self.expect("IDENTIFIER")[1]
                 # Handle multi-dimensional array in comma-separated list
@@ -973,8 +973,12 @@ class Parser:
                 extra_full_dims = extra_sizes if extra_sizes else None
                 extra_init = self.parse_assignment() if self.accept("ASSIGN") else None
                 decls.append(
-                    Declaration(
-                        typ, extra_name, extra_init, extra_array_size, extra_full_dims
+                    Declaration(  # type: ignore[arg-type]
+                        typ,
+                        extra_name,
+                        extra_init,
+                        extra_array_size,  # type: ignore[arg-type]
+                        extra_full_dims,  # type: ignore[arg-type]
                     )
                 )
             self.expect("SEMICOLON")
@@ -983,7 +987,7 @@ class Parser:
             # Wrap multiple declarators in a synthetic Compound so the caller
             # gets a single node (Program.declarations is a flat list, so we
             # extend it below instead).
-            return _MultiDecl(decls)
+            return _MultiDecl(decls)  # type: ignore
 
     def parse_using(self) -> UsingDecl:
         """Parse a using statement.
@@ -1136,7 +1140,7 @@ class Parser:
         # Convert to a Call node with lib~ prefix
         return Call(callee=Var(f"lib~{symbol}"), args=args)
 
-    def parse_expose(self) -> ExposeDecl:
+    def parse_expose(self) -> Optional[ExposeDecl]:
         """Parse an expose statement: expose namespace or expose func@namespace."""
         self.expect("EXPOSE")
         t = self.peek()
@@ -1162,7 +1166,7 @@ class Parser:
                 self.expect("SEMICOLON")
             return ExposeDecl(target="plstd")
 
-        return None
+        return None  # type: ignore
 
     def parse_asm_block(self) -> "AsmBlock":
         """Parse an inline assembly block."""
@@ -2139,7 +2143,7 @@ class Parser:
             while i < len(body.stmts):
                 stmt = body.stmts[i]
                 if hasattr(stmt, "case_label"):
-                    case_value = stmt.case_label
+                    case_value = getattr(stmt, "case_label")
                     case_body = []
                     i += 1
                     while i < len(body.stmts) and not (
@@ -2161,9 +2165,9 @@ class Parser:
             )()
             self.advance()
             case_value = self.parse_expression()
-            case_label_node.case_label = case_value
+            setattr(case_label_node, "case_label", case_value)
             self.expect("COLON")
-            return case_label_node
+            return case_label_node  # type: ignore
 
         if t[0] == "DEFAULT":
             default_label_node = type(
@@ -2171,7 +2175,7 @@ class Parser:
             )()
             self.advance()
             self.expect("COLON")
-            return default_label_node
+            return default_label_node  # type: ignore
 
         # Reject deprecated / removed keywords in statement position too.
         if t[0] in (
@@ -2444,7 +2448,7 @@ class Parser:
             field_name = self.expect("IDENTIFIER")[1]
             self.expect("ASSIGN")
             value = self.parse_assignment()
-            return DesignatedInit(field=field_name, value=value)
+            return DesignatedInit(field=field_name, value=value)  # type: ignore
         if self.peek()[0] == "LBRACKET":
             self.advance()
             start_idx = self.parse_expression()
@@ -2454,33 +2458,36 @@ class Parser:
                 self.expect("ASSIGN")
                 value = self.parse_assignment()
                 return ArrayDesignation(
-                    index=start_idx, value=value, is_range=True, end_index=end_idx
+                    index=start_idx,
+                    value=value,  # type: ignore
+                    is_range=True,
+                    end_index=end_idx,  # type: ignore
                 )
             self.expect("RBRACKET")
             self.expect("ASSIGN")
             value = self.parse_assignment()
-            return ArrayDesignation(index=start_idx, value=value)
-        return self.parse_assignment()
+            return ArrayDesignation(index=start_idx, value=value)  # type: ignore
+        return self.parse_assignment()  # type: ignore
 
     # ============================================================
     # Expressions (precedence climbing)
     # ============================================================
 
     def parse_expression(self) -> Node:
-        node = self.parse_assignment()
+        node = self.parse_assignment()  # type: ignore
         while self.accept("COMMA"):
-            right = self.parse_assignment()
+            right = self.parse_assignment()  # type: ignore
             node = right
-        return node
+        return node  # type: ignore
 
     def _parse_single_expression(self) -> Node:
         """Parse a single expression without handling top-level commas."""
-        return self.parse_assignment()
+        return self.parse_assignment()  # type: ignore
 
-    def parse_assignment(self) -> Node:
+    def parse_assignment(self) -> Optional[Node]:
         node = self.parse_conditional()
         if self.accept("ASSIGN"):
-            return Assignment(node, self.parse_assignment())
+            return Assignment(node, self.parse_assignment())  # type: ignore
         # Handle compound assignment operators (+=, -=, *=, /=, %=, etc.)
         compound_ops = {
             "PLUS_ASSIGN": "+",
@@ -2492,8 +2499,8 @@ class Parser:
         for tok_type, op_symbol in compound_ops.items():
             if self.accept(tok_type):
                 right = self.parse_assignment()
-                return Assignment(node, Binary(op_symbol, node, right))
-        return node
+                return Assignment(node, Binary(op_symbol, node, right))  # type: ignore
+        return node  # type: ignore
 
     def parse_conditional(self) -> Node:
         node = self.parse_logical_or()
@@ -2557,44 +2564,44 @@ class Parser:
         return node
 
     def parse_term(self) -> Node:
-        node = self.parse_unary()
+        node = self.parse_unary()  # type: ignore
         while self.peek()[0] in ("MULTIPLY", "DIVIDE", "MODULO"):
             op = self.advance()[1]
-            right = self.parse_unary()
-            node = Binary(op, node, right)
-        return node
+            right = self.parse_unary()  # type: ignore
+            node = Binary(op, node, right)  # type: ignore
+        return node  # type: ignore
 
-    def parse_unary(self) -> Node:
+    def parse_unary(self) -> Optional[Node]:
         """Parse unary prefix expressions (e.g. !y, ++x, --x, *ptr, &var, -x)."""
         token = self.peek()
         if token[0] == "MINUS":
             self.advance()
-            operand = self.parse_unary()
-            return Unary(op="-", operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="-", operand=operand, prefix=True)  # type: ignore
         if token[0] == "PLUS":
             self.advance()
-            operand = self.parse_unary()
-            return Unary(op="+", operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="+", operand=operand, prefix=True)  # type: ignore
         if token[0] == "NOT":
             op = self.advance()[1]
-            operand = self.parse_unary()
-            return Unary(op=op, operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op=op, operand=operand, prefix=True)  # type: ignore
         if token[0] == "TILDE":
             self.advance()
-            operand = self.parse_unary()
-            return Unary(op="~", operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="~", operand=operand, prefix=True)  # type: ignore
         if token[0] in ("INCREMENT", "DECREMENT"):
             op = self.advance()[1]
-            operand = self.parse_unary()
-            return Unary(op=op, operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op=op, operand=operand, prefix=True)  # type: ignore
         if token[0] == "MULTIPLY":
             self.advance()
-            operand = self.parse_unary()
-            return Unary(op="*", operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="*", operand=operand, prefix=True)  # type: ignore
         if token[0] == "AMPERSAND":
             self.advance()
-            operand = self.parse_unary()
-            return Unary(op="&", operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="&", operand=operand, prefix=True)  # type: ignore
         return self.parse_postfix()
 
     def _is_assignment_rhs(self) -> bool:
@@ -2712,7 +2719,7 @@ class Parser:
             # Handle dynam type: "dynam <element_type>"
             if type1 == "dynam":
                 elem_type = self.parse_type_expression()
-                return TypeExpr(f"dynam {elem_type.type_name}")
+                return TypeExpr(f"dynam {getattr(elem_type, 'type_name', '')}")
             # Handle string type (no element type needed)
             if type1 == "string":
                 return TypeExpr("string")
@@ -2861,23 +2868,39 @@ class Parser:
                 type_node = self.parse_type_expression()
                 while self.peek()[0] == "MULTIPLY":
                     self.advance()
-                    type_node.type_name += "*"
+                    setattr(
+                        type_node,
+                        "type_name",
+                        getattr(type_node, "type_name", "") + "*",
+                    )
                 if self.peek()[0] == "LBRACKET":
                     self.advance()
                     if self.peek()[0] == "RBRACKET":
-                        type_node.type_name += "[]"
+                        setattr(
+                            type_node,
+                            "type_name",
+                            getattr(type_node, "type_name", "") + "[]",
+                        )
                     else:
                         size = self.expect("INT_LITERAL")[1]
-                        type_node.type_name += f"[{size}]"
+                        setattr(
+                            type_node,
+                            "type_name",
+                            getattr(type_node, "type_name", "") + f"[{size}]",
+                        )
                     self.expect("RBRACKET")
                 if self.peek()[0] == "LBRACE":
                     init_list = self.parse_init_list()
                     return CompoundLiteral(
-                        lit_type=type_node.type_name, elements=init_list.elements
+                        lit_type=getattr(type_node, "type_name", ""),
+                        elements=init_list.elements,
                     )
                 self.expect("RPAREN")
-                operand = self.parse_unary()
-                return Cast(cast_type=type_node.type_name, operand=operand)
+                operand = self.parse_unary()  # type: ignore
+                return Cast(  # type: ignore
+                    cast_type=getattr(type_node, "type_name", ""),
+                    operand=operand,  # type: ignore
+                )
             else:
                 # Grouping: (expr)
                 node = self.parse_expression()

@@ -15,7 +15,7 @@ Error codes are organized by category:
 
 import os
 
-_ERRORS = None
+_ERRORS: dict[str, list[str]] = {}
 _ERROR_CATEGORIES = {
     "SYNTAX": "Syntax errors (E0xx)",
     "TYPE": "Type errors (E1xx)",
@@ -325,7 +325,7 @@ def _load_errors():
                     _ERRORS[code].append(msg.strip())
 
 
-def get_error_msg(code: str, fallback: str = None, **kwargs) -> str:
+def get_error_msg(code: str, fallback: str | None = None, **kwargs) -> str:
     """Get an error message for code, format with kwargs.
 
     Args:
@@ -347,7 +347,7 @@ def get_error_msg(code: str, fallback: str = None, **kwargs) -> str:
         return msg
 
 
-def get_random_error_msg(code: str, fallback: str = None, **kwargs) -> str:
+def get_random_error_msg(code: str, fallback: str | None = None, **kwargs) -> str:
     """Get a random error message for code, format with kwargs.
 
     Args:

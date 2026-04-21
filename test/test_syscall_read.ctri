@@ -1,0 +1,16 @@
+asm int sys_read_char() {
+    syntax arm64_macho
+    section .data
+    char buf = 0
+    section .text
+    mov x0, #0
+    adr x1, buf
+    mov x2, #1
+    mov x16, #3
+    svc #0x80
+    ret
+}
+
+int main() {
+    return sys_read_char();
+}

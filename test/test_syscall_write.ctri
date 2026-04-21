@@ -1,0 +1,17 @@
+asm void sys_write_test() {
+    syntax arm64_macho
+    mov x0, #1
+    mov x1, #116
+    mov x2, #1
+    mov x3, #101
+    mov x4, #115
+    mov x5, #116
+    mov x16, #4
+    svc #0x80
+    ret
+}
+
+int main() {
+    sys_write_test();
+    return 0;
+}

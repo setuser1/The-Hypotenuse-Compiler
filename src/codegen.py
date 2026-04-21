@@ -1,7 +1,6 @@
 """C11 code generator for C△ compiler."""
 
 import os
-import copy
 import platform
 
 import error_msgs
@@ -41,6 +40,8 @@ from parser import (
     FieldAccess,
     DesignatedInit,
     ArrayDesignation,
+    CompoundLiteral,
+    Generic,
 )
 
 
@@ -364,9 +365,6 @@ class CodeGen:
 
                 # If either operand is a string or string literal, treat as concatenation
                 if left_is_string or right_is_string:
-                    left_expr = self._expr(node.left)
-                    right_expr = self._expr(node.right)
-
                     # String concatenation not yet implemented for expressions
                     raise NotImplementedError(
                         "String concatenation in expressions is not yet implemented. "
@@ -455,9 +453,7 @@ class CodeGen:
             return f"{target} = {value}"
 
         if isinstance(node, Call):
-            # Check if this is a method call on a dynam array: obj.method(args)
             if isinstance(node.callee, FieldAccess):
-                obj_expr = self._expr(node.callee.obj)
                 method_name = node.callee.field_name
 
                 # Check if this is a dynam array method: push, pop, len
@@ -600,7 +596,6 @@ class CodeGen:
             # AND intra-file scoped imports: using X&Y -> map Y to X_Y
             # This must run BEFORE namespace transformation so "func@lib" can match "func"
             base_callee = callee.split("@")[0] if "@" in callee else callee
-            func_from_unexposed_lib = False
             if (
                 hasattr(self, "_specific_imports")
                 and base_callee in self._specific_imports
@@ -958,12 +953,12 @@ class CodeGen:
                 safe_name = base_name
             safe_name = safe_name.replace("/", "_").replace("-", "_")
             self._emit("")
-            self._emit(f"void {safe_name}_init(void) {{")
+            self._emit("void " + safe_name + "_init(void) {")
             for init_line, push_lines in self._plib_global_inits:
                 self._emit(f"    {init_line}")
                 for p_line in push_lines:
                     self._emit(f"    {p_line}")
-            self._emit(f"}}")
+            self._emit("}")
 
     def _emit_collected_includes(self):
         for inc in sorted(self._collected_includes):
@@ -1160,9 +1155,7 @@ class CodeGen:
             self._exposed_libs.add(exp_target)
             self._exposed_libs.add(exp_base)
 
-    def _gen_plib_code(
-        self, lib_name: str, alias: str = None, plib_ast: "p.Program" = None
-    ):
+    def _gen_plib_code(self, lib_name: str, alias: str = None, plib_ast=None):
         """Generate code from a local plib file."""
         import os
         import lexer
@@ -1393,7 +1386,7 @@ class CodeGen:
                 self._emit(f"    {init_line}")
                 for p_line in push_lines:
                     self._emit(f"    {p_line}")
-            self._emit(f"}}")
+            self._emit("}")
             # Only add to _plib_init_funcs if this is a top-level plib (not nested)
             # Nested plibs' inits are chained via _imported_plib_inits
             if not old_generating:
@@ -1414,8 +1407,6 @@ class CodeGen:
     def _collect_plib_for_tree_shake(self, lib_name: str, alias: str = None):
         """Collect plib AST for tree-shaking - don't generate yet."""
         import os
-        import lexer
-        import parser as p
 
         plib_path = None
         search_name = lib_name.split("/")[-1]
@@ -1651,8 +1642,6 @@ class CodeGen:
     def _collect_plib_includes(self, lib_name: str, alias: str = None):
         """Collect includes from a plib file into self._collected_includes."""
         import os
-        import lexer
-        import parser as p
 
         plib_path = None
 
@@ -2179,39 +2168,47 @@ class CodeGen:
             return
 
         # Generate struct definition
-        self._helper_lines.append(f"typedef struct {{")
-        self._helper_lines.append(f"    {elem_type}* data;")
-        self._helper_lines.append(f"    int size;")
-        self._helper_lines.append(f"    int capacity;")
-        self._helper_lines.append(f"}} {struct_name};")
+        self._helper_lines.append("typedef struct {")
+        self._helper_lines.append("    " + elem_type + "* data;")
+        self._helper_lines.append("    int size;")
+        self._helper_lines.append("    int capacity;")
+        self._helper_lines.append("} " + struct_name + ";")
         self._helper_lines.append("")
 
         # Generate push function
         self._helper_lines.append(
-            f"void {struct_name}_push({struct_name}* arr, {elem_type} val) {{"
+            "void "
+            + struct_name
+            + "_push("
+            + struct_name
+            + "* arr, "
+            + elem_type
+            + " val) {"
         )
-        self._helper_lines.append(f"    if (arr->size >= arr->capacity) {{")
-        self._helper_lines.append(f"        arr->capacity *= 2;")
+        self._helper_lines.append("    if (arr->size >= arr->capacity) {")
+        self._helper_lines.append("        arr->capacity *= 2;")
         self._helper_lines.append(
             f"        arr->data = realloc(arr->data, arr->capacity * sizeof({elem_type}));"
         )
-        self._helper_lines.append(f"    }}")
-        self._helper_lines.append(f"    arr->data[arr->size++] = val;")
-        self._helper_lines.append(f"}}")
+        self._helper_lines.append("    }")
+        self._helper_lines.append("    arr->data[arr->size++] = val;")
+        self._helper_lines.append("}")
         self._helper_lines.append("")
 
         # Generate pop function
         self._helper_lines.append(
-            f"{elem_type} {struct_name}_pop({struct_name}* arr) {{"
+            elem_type + " " + struct_name + "_pop(" + struct_name + "* arr) {"
         )
-        self._helper_lines.append(f"    return arr->data[--arr->size];")
-        self._helper_lines.append(f"}}")
+        self._helper_lines.append("    return arr->data[--arr->size];")
+        self._helper_lines.append("}")
         self._helper_lines.append("")
 
         # Generate len function
-        self._helper_lines.append(f"int {struct_name}_len({struct_name}* arr) {{")
-        self._helper_lines.append(f"    return arr->size;")
-        self._helper_lines.append(f"}}")
+        self._helper_lines.append(
+            "int " + struct_name + "_len(" + struct_name + "* arr) {"
+        )
+        self._helper_lines.append("    return arr->size;")
+        self._helper_lines.append("}")
         self._helper_lines.append("")
 
         # Track generated functions to avoid duplicates

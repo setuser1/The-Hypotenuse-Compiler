@@ -20,7 +20,7 @@ run: install
 # lint: catch syntax errors and undefined names across all source files
 # ---------------------------------------------------------------
 lint:
-	python3 -m pyflakes src/lexer.py src/parser.py src/structure.py src/main.py
+	python3 -m pyflakes src/lexer.py src/parser.py src/structure.py src/codegen.py src/assembler.py src/main.py
 
 # ---------------------------------------------------------------
 # typecheck: run the compiler against every .ctri test file and

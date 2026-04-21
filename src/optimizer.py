@@ -19,7 +19,6 @@ from parser import (
     Assignment,
     Binary,
     Unary,
-    Literal,
     Var,
     Call,
     ArrayAccess,
