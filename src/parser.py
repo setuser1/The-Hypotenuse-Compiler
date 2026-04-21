@@ -2575,10 +2575,14 @@ class Parser:
             self.advance()
             operand = self.parse_unary()
             return Unary(op="+", operand=operand, prefix=True)
-        if token[0] == "NOT" or token[0] == "BITWISE_NOT":
+        if token[0] == "NOT":
             op = self.advance()[1]
             operand = self.parse_unary()
             return Unary(op=op, operand=operand, prefix=True)
+        if token[0] == "TILDE":
+            self.advance()
+            operand = self.parse_unary()
+            return Unary(op="~", operand=operand, prefix=True)
         if token[0] in ("INCREMENT", "DECREMENT"):
             op = self.advance()[1]
             operand = self.parse_unary()
@@ -2661,12 +2665,35 @@ class Parser:
                 # Only valid when node is a Var (identifier)
                 if not isinstance(node, Var):
                     break
+                if "@" in node.name:
+                    # Multiple @ signs detected - raise E805
+                    tok = self.peek()
+                    line = tok[2] if len(tok) > 2 else 0
+                    col = tok[3] if len(tok) > 3 else 0
+                    raise SyntaxError(
+                        error_msgs.get_error_msg(
+                            "E805",
+                            func=node.name,
+                            line=line,
+                            col=col,
+                            fallback="Multiple @ signs not allowed. Use 'func@lib()' for library functions.",
+                        )
+                    )
                 self.advance()
                 if self.peek()[0] == "AT":
-                    # Handle @@ (two ats) for nested namespace
-                    self.advance()
-                    symbol = self.expect("IDENTIFIER")[1]
-                    node = Var(f"{node.name}@@{symbol}")
+                    # Multiple @ signs detected - raise E805 (two @ in a row)
+                    tok = self.peek()
+                    line = tok[2] if len(tok) > 2 else 0
+                    col = tok[3] if len(tok) > 3 else 0
+                    raise SyntaxError(
+                        error_msgs.get_error_msg(
+                            "E805",
+                            func=node.name,
+                            line=line,
+                            col=col,
+                            fallback="Multiple @ signs not allowed. Use 'func@lib()' for library functions.",
+                        )
+                    )
                 else:
                     # Single @ - treat as namespace prefix
                     if self.peek()[0] == "PLSTD":

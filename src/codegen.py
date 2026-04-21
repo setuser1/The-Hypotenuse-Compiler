@@ -649,7 +649,7 @@ class CodeGen:
                                 callee = f"{actual_lib}_{func_part}"
                             else:
                                 # Invalid namespace - raise error (consistent with lines 752-787)
-                                raise ValueError(
+                                raise SyntaxError(
                                     error_msgs.get_error_msg(
                                         "E804",
                                         alias=namespace,
@@ -658,7 +658,7 @@ class CodeGen:
                                 )
                         else:
                             # Malformed @ syntax (e.g., func@@lib or func@lib@extra)
-                            raise ValueError(
+                            raise SyntaxError(
                                 error_msgs.get_error_msg(
                                     "E805",
                                     callee=callee,
@@ -695,7 +695,7 @@ class CodeGen:
                         self, "_top_level_lib_functions", {}
                     ).items():
                         if base_callee in funcs:
-                            raise ValueError(
+                            raise SyntaxError(
                                 error_msgs.get_error_msg(
                                     "E802",
                                     lib=lib_name,
@@ -798,7 +798,7 @@ class CodeGen:
                                 found = True
                                 break
                         if not found:
-                            raise ValueError(
+                            raise SyntaxError(
                                 error_msgs.get_error_msg(
                                     "E803",
                                     func=func,
@@ -808,7 +808,7 @@ class CodeGen:
                             )
                     else:
                         # Invalid alias
-                        raise ValueError(
+                        raise SyntaxError(
                             error_msgs.get_error_msg(
                                 "E804",
                                 alias=namespace,
@@ -817,7 +817,7 @@ class CodeGen:
                         )
                 else:
                     # Malformed @ syntax (e.g., func@@lib or func@lib@extra)
-                    raise ValueError(
+                    raise SyntaxError(
                         error_msgs.get_error_msg(
                             "E805",
                             callee=callee,

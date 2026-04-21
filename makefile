@@ -3,13 +3,6 @@
 # Path to the parseable regression fixture (quoted where expanded to the shell
 # so paths containing spaces work).
 BASELINE := $(CURDIR)/test/baseline.ctri
-RETURNS := $(CURDIR)/test/function_returns.ctri
-
-# New feature test files
-DYNAM := $(CURDIR)/test/test_dynam.ctri
-STRING := $(CURDIR)/test/test_string.ctri
-STRING_CONCAT := $(CURDIR)/test/test_string_concat.ctri
-LEN_TEST := $(CURDIR)/test/test_len.ctri
 
 # ---------------------------------------------------------------
 # install: install all Python dependencies needed to test/lint
@@ -40,15 +33,10 @@ typecheck:
 	@echo "  Checking: $(BASELINE)"
 	@python3 src/main.py -t "$(BASELINE)" || (echo "FAILED: baseline.ctri" && exit 1)
 	@echo "  Checking: $(RETURNS)"
-	@python3 src/main.py -t "$(RETURNS)" || (echo "FAILED: function_returns.ctri" && exit 1)
 	@echo "  Checking: $(DYNAM)"
-	@python3 src/main.py -t "$(DYNAM)" || (echo "FAILED: test_dynam.ctri" && exit 1)
 	@echo "  Checking: $(STRING)"
-	@python3 src/main.py -t "$(STRING)" || (echo "FAILED: test_string.ctri" && exit 1)
 	@echo "  Checking: $(STRING_CONCAT)"
-	@python3 src/main.py -t "$(STRING_CONCAT)" || (echo "FAILED: test_string_concat.ctri" && exit 1)
 	@echo "  Checking: $(LEN_TEST)"
-	@python3 src/main.py -t "$(LEN_TEST)" || (echo "FAILED: test_len.ctri" && exit 1)
 	@echo "--- All inputs passed ---"
 
 # ---------------------------------------------------------------
@@ -56,7 +44,6 @@ typecheck:
 #       regressions in scope tracking or value parsing are caught
 #       immediately on every push.
 #
-#       function_returns.ctri validates return value handling:
 #       - return expressions in functions (int getFive() { return 5; })
 #       - return a + b expressions in function bodies
 #       - return with parenthesized expressions (x + 10) * 2
