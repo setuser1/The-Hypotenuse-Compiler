@@ -1,59 +1,6 @@
 """Assembly and linking for C triangle compiler."""
 
-SYS_WRITE_X86 = 1
-SYS_READ_X86 = 0
-SYS_OPEN_X86 = 2
-SYS_CLOSE_X86 = 3
-SYS_EXIT_X86 = 60
-
-SYS_WRITE_ARM64_MACOS = 4
-SYS_READ_ARM64_MACOS = 3
-SYS_OPEN_ARM64_MACOS = 5
-SYS_CLOSE_ARM64_MACOS = 6
-SYS_EXIT_ARM64_MACOS = 1
-
-
-def emit_syscall(
-    syscall_num: int,
-    args: list = [],
-    is_arm64: bool = False,
-    is_macos: bool = False,
-) -> list:
-    """Emit syscall instruction sequence for current architecture.
-
-    Args:
-        syscall_num: Syscall number
-        args: List of register arguments (will be placed in order)
-        is_arm64: True for ARM64, False for x86_64
-        is_macos: True if targeting macOS
-
-    Returns:
-        List of assembly instructions
-    """
-    if args is None:
-        args = []
-
-    if is_arm64:
-        if is_macos:
-            lines = [f"mov x16, #{syscall_num}"]
-            for i, arg in enumerate(args[:6]):
-                lines.append(f"mov x{i}, {arg}")
-            lines.append("svc #0x80")
-            return lines
-        else:
-            lines = [f"mov x8, {syscall_num}"]
-            for i, arg in enumerate(args[:6]):
-                lines.append(f"mov x{i}, {arg}")
-            lines.append("svc #0")
-            return lines
-    else:
-        x86_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-        lines = [f"mov rax, {syscall_num}"]
-        for i, arg in enumerate(args[:6]):
-            reg = x86_regs[i]
-            lines.append(f"mov {reg}, {arg}")
-        lines.append("syscall")
-        return lines
+import asm_common
 
 
 def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format=None):
@@ -85,99 +32,14 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
 
     def expand_write_call(instr, is_arm64_target):
         """Replace _write calls with pure syscalls."""
-        stripped = instr.strip()
-        if "bl" in stripped.lower() and "_write" in stripped:
-            if is_arm64_target:
-                return [
-                    "mov x16, #4",
-                    "svc #0x80",
-                ]
-            else:
-                return [
-                    "mov rax, 1",
-                    "syscall",
-                ]
-        return [instr]
+        return asm_common._expand_write_call(instr, is_arm64_target)
 
     def expand_len_instruction(instr, is_arm64_target):
         """Expand `mov <reg>, len(<ptr>)` into inline assembly."""
         nonlocal len_label_counter
-
-        match = re.match(r"^\s*mov\s+([^,]+),\s*len\(([^)]+)\)\s*$", instr)
-        if not match:
-            return [instr]
-
-        dest = match.group(1).strip()
-        src = match.group(2).strip()
         label_id = len_label_counter
         len_label_counter += 1
-
-        if is_arm64_target:
-            loop_label = f".Lhyp_len_loop_{label_id}"
-            done_label = f".Lhyp_len_done_{label_id}"
-            return [
-                f"mov x10, {src}",
-                f"mov {dest}, #0",
-                f"{loop_label}:",
-                f"ldrb w11, [x10, {dest}]",
-                f"cbz w11, {done_label}",
-                f"add {dest}, {dest}, #1",
-                f"b {loop_label}",
-                f"{done_label}:",
-            ]
-
-        loop_label = f".hyp_len_loop_{label_id}"
-        done_label = f".hyp_len_done_{label_id}"
-        return [
-            f"mov r10, {src}",
-            f"xor {dest}, {dest}",
-            f"{loop_label}:",
-            f"cmp byte [r10 + {dest}], 0",
-            f"je {done_label}",
-            f"inc {dest}",
-            f"jmp {loop_label}",
-            f"{done_label}:",
-        ]
-
-    def split_binary_expr(expr):
-        parts = expr.split()
-        if len(parts) == 3 and parts[1] in ("+", "-", "*", "/", "%"):
-            return parts[0], parts[1], parts[2]
-        return None
-
-    def emit_integer_return(f, expr, dst, is_arm64_target):
-        binary = split_binary_expr(expr)
-        if not binary:
-            f.write(f"    mov {dst}, {expr}\n")
-            return
-        left, op, right = binary
-        f.write(f"    mov {dst}, {left}\n")
-        if is_arm64_target:
-            if op == "+":
-                f.write(f"    add {dst}, {dst}, {right}\n")
-            elif op == "-":
-                f.write(f"    sub {dst}, {dst}, {right}\n")
-            elif op == "*":
-                f.write(f"    mul {dst}, {dst}, {right}\n")
-            elif op in ("/", "%"):
-                f.write(f"    sdiv x9, {dst}, {right}\n")
-                if op == "/":
-                    f.write(f"    mov {dst}, x9\n")
-                else:
-                    f.write(f"    msub {dst}, x9, {right}, {dst}\n")
-            return
-        if op == "+":
-            f.write(f"    add {dst}, {right}\n")
-        elif op == "-":
-            f.write(f"    sub {dst}, {right}\n")
-        elif op == "*":
-            f.write(f"    imul {dst}, {right}\n")
-        elif op in ("/", "%"):
-            f.write("    cqo\n")
-            f.write(f"    mov r10, {right}\n")
-            f.write("    idiv r10\n")
-            if op == "%":
-                f.write(f"    mov {dst}, rdx\n")
+        return asm_common._expand_len_instruction(instr, is_arm64_target, str(label_id))
 
     def emit_return_expr(f, asm_block, is_arm64_target):
         if asm_block.return_expr is None or asm_block.return_expr == "":
@@ -187,18 +49,11 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                 f.write(f"    fmov v0, {asm_block.return_expr}\n")
             else:
                 f.write(f"    movq xmm0, {asm_block.return_expr}\n")
-        elif is_arm64_target:
-            emit_integer_return(f, asm_block.return_expr, "x0", True)
         else:
-            emit_integer_return(f, asm_block.return_expr, "rax", False)
-
-    def _escape_quoted_string(value):
-        return (
-            value.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-            .replace("\t", "\\t")
-        )
+            if is_arm64_target:
+                asm_common._emit_integer_expr_arm64(f, asm_block.return_expr, "x0")
+            else:
+                asm_common._emit_integer_expr_x86(f, asm_block.return_expr, "rax")
 
     def build_data_lines(asm_block, is_arm64_target):
         """Build target-specific data declarations for asm variables."""
@@ -216,7 +71,7 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                 lines.append(f".globl {symbol_name}")
                 lines.append(f"{symbol_name}:")
                 if var_type == "string":
-                    escaped = _escape_quoted_string(initializer or "")
+                    escaped = asm_common._escape_string(initializer or "")
                     lines.append(f'.asciz "{escaped}"')
                 elif var_type == "char":
                     if array_size:
@@ -271,49 +126,35 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
         return stripped
 
     def get_asm_config(asm_block):
-        """Determine architecture and format for an asm block.
+        """Determine architecture and format for an asm block."""
+        return asm_common.get_asm_config(
+            asm_block.syntax, target_arch, output_format, is_macos, current_arch
+        )
 
-        Priority:
-        1. asm block's explicit syntax (syntax x86_64_elf or syntax arm64_macho)
-        2. command-line --target flag
-        3. command-line --format flag
-        4. auto-detect from platform
-        """
-        # Check for explicit syntax in asm block
-        if asm_block.syntax:
-            syntax = asm_block.syntax.lower()
-            if "x86_64" in syntax and "elf" in syntax:
-                return False, "elf64"
-            elif "arm64" in syntax and "macho" in syntax:
-                return True, "macho64"
-            elif "x86_64" in syntax and "macho" in syntax:
-                return False, "macho64"
-            elif "arm64" in syntax:
-                return True, "macho64"
-            elif "elf" in syntax:
-                return False, "elf64"
-
-        # Check command-line flags
-        if target_arch == "x86_64":
-            return False, "macho64" if is_macos else "elf64"
-        elif target_arch == "arm64":
-            return True, "macho64"
-        elif output_format == "macho":
-            return True, "macho64"
-        elif output_format == "elf":
-            return False, "elf64"
-
+    # Determine target architecture for filtering
+    if target_arch:
+        target_is_arm64 = (target_arch == "arm64")
+    else:
         # Auto-detect from platform
-        if is_macos and current_arch == "arm64":
-            return True, "macho64"
-        elif is_macos and current_arch == "x86_64":
-            return False, "macho64"
+        if is_macos:
+            target_is_arm64 = (current_arch == "arm64")
         else:
-            return False, "elf64"
+            target_is_arm64 = False  # Linux defaults to x86_64
 
     for asm_index, asm_block in enumerate(asm_blocks):
         # Determine config for this asm block
         is_arm64, asm_format = get_asm_config(asm_block)
+
+        # Skip blocks that don't match current target architecture
+        if asm_block.syntax:
+            # Check block's own syntax to determine its architecture
+            block_is_arm64, _ = asm_common.get_asm_config(
+                asm_block.syntax, None, None, is_macos, current_arch
+            )
+            if target_is_arm64 and not block_is_arm64:
+                continue
+            if not target_is_arm64 and block_is_arm64:
+                continue
 
         if is_macos and asm_format == "elf64":
             block_name = asm_block.name or "<asm>"
@@ -326,13 +167,9 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
         asm_path = os.path.join(base_dir, f"{asm_stem}.s")
         obj_path = os.path.join(base_dir, f"{asm_stem}.o")
 
-        import re
-
         if is_arm64:
             # ARM64: Use Apple as
             # AAPCS64: integer params in x0-x7, float params in v0-v7
-            arm64_int_regs = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"]
-            arm64_float_regs = ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"]
 
             # Collect directives and instructions
             directives = []
@@ -342,7 +179,10 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                 # Skip syntax declaration and empty lines
                 if not stripped or stripped.startswith("syntax"):
                     continue
-                if (
+                # Labels end with : and are not directives
+                if stripped.endswith(":"):
+                    instructions.append(stripped)
+                elif (
                     stripped.startswith("section")
                     or stripped.startswith(".")
                     or stripped.startswith("global")
@@ -352,42 +192,22 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                     instructions.append(stripped)
 
             # Generate parameter mapping based on type
-            param_map = {}
-            int_reg_idx = 0
-            float_reg_idx = 0
-            offset = 0
-            for param_type, param_name in asm_block.params:
-                # Determine register based on type
-                if param_type in ("float", "double"):
-                    if float_reg_idx < len(arm64_float_regs):
-                        # Float params go in float registers
-                        param_map[param_name] = arm64_float_regs[float_reg_idx]
-                        float_reg_idx += 1
-                    else:
-                        # 溢出 to stack
-                        param_map[param_name] = f"[sp, #{offset}]"
-                        offset += 8
-                else:
-                    # Integer params go in integer registers
-                    if int_reg_idx < len(arm64_int_regs):
-                        param_map[param_name] = arm64_int_regs[int_reg_idx]
-                        int_reg_idx += 1
-                    else:
-                        # 溢出 to stack
-                        param_map[param_name] = f"[sp, #{offset}]"
-                        offset += 8
+            param_map = asm_common._build_param_map(
+                asm_block.params, asm_common.ARM64_INT_REGS, asm_common.ARM64_FLOAT_REGS, is_arm64=True
+            )
 
             # Update instructions to use register names or stack offsets
-            updated_instructions = []
-            for instr in instructions:
-                updated_instr = instr
-                for param_name, addr in param_map.items():
-                    pattern = r"\b" + re.escape(param_name) + r"\b"
-                    updated_instr = re.sub(pattern, addr, updated_instr)
-                for expanded in expand_write_call(updated_instr, is_arm64_target=True):
-                    updated_instructions.extend(
+            updated_instructions = asm_common._process_instructions(
+                instructions, param_map, is_arm64=True
+            )
+            # Expand _write calls and len() instructions
+            final_instructions = []
+            for instr in updated_instructions:
+                for expanded in expand_write_call(instr, is_arm64_target=True):
+                    final_instructions.extend(
                         expand_len_instruction(expanded, is_arm64_target=True)
                     )
+            updated_instructions = final_instructions
 
             # Generate .s file for Apple as
             with open(asm_path, "w") as f:
@@ -453,19 +273,6 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                     "nasm not found in PATH. Install NASM to use inline assembly."
                 )
 
-            # x86_64 System V ABI: integer and float parameter registers
-            x86_int_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
-            x86_float_regs = [
-                "xmm0",
-                "xmm1",
-                "xmm2",
-                "xmm3",
-                "xmm4",
-                "xmm5",
-                "xmm6",
-                "xmm7",
-            ]
-
             # Collect directives and instructions
             directives = []
             instructions = []
@@ -474,48 +281,31 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                 # Skip syntax declaration and empty lines
                 if not stripped or stripped.startswith("syntax"):
                     continue
-                if stripped.startswith("section ") or stripped.startswith("."):
+                # Labels end with : and are not directives
+                if stripped.endswith(":"):
+                    instructions.append(stripped)
+                elif stripped.startswith("section ") or stripped.startswith("."):
                     directives.append(stripped)
                 else:
                     instructions.append(stripped)
 
             # Generate parameter mapping based on type
-            param_map = {}
-            int_reg_idx = 0
-            float_reg_idx = 0
-            offset = 8
-            for param_type, param_name in asm_block.params:
-                # Determine register based on type
-                if param_type in ("float", "double"):
-                    if float_reg_idx < len(x86_float_regs):
-                        # Float params go in xmm registers
-                        param_map[param_name] = x86_float_regs[float_reg_idx]
-                        float_reg_idx += 1
-                    else:
-                        # 溢出 to stack
-                        param_map[param_name] = f"[rbp-{offset}]"
-                        offset += 8
-                else:
-                    # Integer params go in integer registers
-                    if int_reg_idx < len(x86_int_regs):
-                        param_map[param_name] = x86_int_regs[int_reg_idx]
-                        int_reg_idx += 1
-                    else:
-                        # 溢出 to stack
-                        param_map[param_name] = f"[rbp-{offset}]"
-                        offset += 8
+            param_map = asm_common._build_param_map(
+                asm_block.params, asm_common.X86_INT_REGS, asm_common.X86_FLOAT_REGS, is_arm64=False
+            )
 
             # Update instructions to use register names
-            updated_instructions = []
-            for instr in instructions:
-                updated_instr = instr
-                for param_name, addr in param_map.items():
-                    pattern = r"\b" + re.escape(param_name) + r"\b"
-                    updated_instr = re.sub(pattern, addr, updated_instr)
-                for expanded in expand_write_call(updated_instr, is_arm64_target=False):
-                    updated_instructions.extend(
+            updated_instructions = asm_common._process_instructions(
+                instructions, param_map, is_arm64=False
+            )
+            # Expand _write calls and len() instructions
+            final_instructions = []
+            for instr in updated_instructions:
+                for expanded in expand_write_call(instr, is_arm64_target=False):
+                    final_instructions.extend(
                         expand_len_instruction(expanded, is_arm64_target=False)
                     )
+            updated_instructions = final_instructions
 
             # Generate .asm file
             with open(asm_path, "w") as f:

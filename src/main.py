@@ -271,9 +271,29 @@ def main():
             # ASM mode
             # -----------------------------
             if args.asm:
+                # Determine target architecture for filtering
+                target_arch = getattr(args, "target", None)
+                if target_arch:
+                    target_is_arm64 = (target_arch == "arm64")
+                else:
+                    # Auto-detect from platform
+                    import platform
+                    is_macos = platform.system() == "Darwin"
+                    current_arch = platform.machine()
+                    if is_macos:
+                        target_is_arm64 = (current_arch == "arm64")
+                    else:
+                        target_is_arm64 = False
+
                 for asm_block in asm_blocks:
-                    is_arm64, _ = nasmgen.get_asm_config(asm_block.syntax)
-                    nasmgen.print_asm_block(asm_block, is_arm64)
+                    # Check if block matches target architecture
+                    if asm_block.syntax:
+                        block_is_arm64, _ = nasmgen.get_asm_config(asm_block.syntax)
+                        if target_is_arm64 and not block_is_arm64:
+                            continue
+                        if not target_is_arm64 and block_is_arm64:
+                            continue
+                    nasmgen.print_asm_block(asm_block, target_is_arm64)
                 continue
 
             # -----------------------------
