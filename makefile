@@ -103,6 +103,23 @@ assert ast is not None, 'parser returned None'; \
 print('top-level declarations:', len(ast.declarations))"
 	@echo "PASS: parser"
 
+	@echo "--- Test: intra-file variable imports from asm and normal functions ---"
+	@python3 -c "\
+import sys; sys.path.insert(0,'src'); \
+import lexer, parser as p, structure, codegen; \
+asm_src = 'asm int asm_owner() {\\n    syntax arm64_macho\\n    .section __TEXT,__text\\n    int asm_value = 42\\n    return asm_value\\n}\\nusing asm_owner&asm_value\\nint main() { return asm_value; }\\n'; \
+normal_src = 'int normal_owner() {\\n    int normal_value = 7;\\n    return normal_value;\\n}\\nusing normal_owner&normal_value\\nint main() { return normal_value; }\\n'; \
+bad_src = 'asm int missing_section() {\\n    syntax x86_64_elf\\n    return 1\\n}\\n'; \
+exec('def gen(src):\\n    ast = p.Parser(lexer.Lexer(src).lex()).parse_program()\\n    s = structure.Structor(ast)\\n    s.build_from_ast()\\n    return codegen.CodeGen(ast, s).generate()'); \
+asm_c = gen(asm_src); \
+normal_c = gen(normal_src); \
+assert 'extern int asm_value;' in asm_c, asm_c; \
+assert 'return asm_value;' in asm_c, asm_c; \
+assert 'int normal_owner_normal_value = 7;' in normal_c, normal_c; \
+assert 'return normal_owner_normal_value;' in normal_c, normal_c; \
+exec('try:\\n    p.Parser(lexer.Lexer(bad_src).lex()).parse_program()\\n    raise AssertionError(\"missing asm text section did not fail\")\\nexcept SyntaxError as exc:\\n    assert \"text section\" in str(exc), exc'); \
+print('PASS: intra-file variable imports')"
+
 	@echo "=== All tests passed ==="
 
 # ---------------------------------------------------------------

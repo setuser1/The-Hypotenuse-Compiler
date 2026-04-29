@@ -10,7 +10,7 @@ The parser consumes tokens produced by an external lexer and builds
 a structured AST suitable for semantic analysis or code generation.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import error_msgs
@@ -39,7 +39,7 @@ class UsingDecl(Node):
     """using statement for imports.
 
     item: specific item to import (None means import all)
-    source: "<lib>" for system, "\"path\"" for local, "scope&name" for scoped
+    source: "<lib>" for system, "\"path\"" for local, "owner&name" for intra-file imports
     alias: optional rename
     """
 
@@ -91,14 +91,8 @@ class AsmBlock(Node):
     return_expr: Optional[str] = None  # Optional C△ return expression
     syntax: Optional[str] = None  # e.g., "x86_64_linux"
     is_function: bool = True  # True for asm int func(), False for bare asm { }
-    variables: List[Dict] = None  # type: ignore[assignment]
-    data_lines: List[str] = None  # type: ignore[assignment]
-
-    def __post_init__(self):
-        if self.variables is None:
-            self.variables = []
-        if self.data_lines is None:
-            self.data_lines = []
+    variables: List[Dict] = field(default_factory=list)
+    data_lines: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -851,7 +845,7 @@ class Parser:
             typ = self._consume_pointer_stars(typ)
             # Expected Identifier error handling
             # Check if next token is a literal (not a type or identifier) - this can happen after compound types
-            if self.peek()[0] in (
+            valid_initializer_start = self.peek()[0] in (
                 "INT_LITERAL",
                 "HEX_LITERAL",
                 "BINARY_LITERAL",
@@ -859,9 +853,8 @@ class Parser:
                 "CHAR_LITERAL",
                 "STRING_LITERAL",
                 "FLOAT_LITERAL",
-            ):
-                pass  # This is a valid declaration, don't raise error
-            elif self.peek()[0] != "IDENTIFIER":
+            )
+            if not valid_initializer_start and self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
                 line = bad_tok[2] if len(bad_tok) > 2 else 0
                 col = bad_tok[3] if len(bad_tok) > 3 else 0
@@ -998,9 +991,9 @@ class Parser:
             using X from <Y>    # import specific from system
             using X from "Y"    # import specific from local
             using X from <Y> as Z  # import with alias
-            using scope&X       # import from scoped
-            using main&X       # import from scoped (any identifier)
-            using foo&X as Y  # import from scoped with alias
+            using owner&X       # import X from owner
+            using main&X        # import X from main
+            using foo&X as Y    # import X from foo as Y
         """
         self.expect("USING")
         t = self.peek()
@@ -1212,7 +1205,6 @@ class Parser:
         data_lines = []
         return_expr = None
         syntax = None
-        in_data_section = False
 
         while self.peek()[0] != "RBRACE":
             if self.peek()[0] == "EOF":
@@ -1238,8 +1230,9 @@ class Parser:
                     syntax = self.advance()[1]
                 continue
 
-            # Check for C△ variable declarations in .data section
-            if in_data_section and self.peek()[0] in (
+            # Check for C△ variable declarations. ASM blocks allow declarations
+            # anywhere; they are emitted into the generated data section.
+            if self.peek()[0] in (
                 "STRING",
                 "INT",
                 "CHAR",
@@ -1258,7 +1251,7 @@ class Parser:
             if self.peek()[0] == "RETURN":
                 self.advance()
                 # Check if there's an expression after return (optional)
-                if self.peek()[0] != "RBRACE" and self.peek()[0] != "EOF":
+                if self.peek()[0] not in ("SEMICOLON", "RBRACE", "EOF"):
                     # Parse the return expression until end of line or brace
                     expr_parts = []
                     paren_depth = 0
@@ -1269,6 +1262,9 @@ class Parser:
                         if first_expr_line is None:
                             first_expr_line = tok_line
                         elif tok_line > first_expr_line:
+                            break
+                        if tok[0] == "SEMICOLON" and paren_depth == 0:
+                            self.advance()
                             break
                         if tok[0] == "LPAREN":
                             paren_depth += 1
@@ -1281,6 +1277,10 @@ class Parser:
                         expr_parts.append(tok[1])
                         self.advance()
                     return_expr = " ".join(expr_parts).strip()
+                else:
+                    return_expr = ""
+                    if self.peek()[0] == "SEMICOLON":
+                        self.advance()
                 continue  # don't add return to lines
 
             # Check for C△ function call (call func(args))
@@ -1292,15 +1292,10 @@ class Parser:
             # Collect the line as-is
             line = self._read_asm_line()
             if line:
-                # After reading the line, check if it was a section directive
-                if line.startswith("section") or line.startswith(".section"):
-                    if "data" in line:
-                        in_data_section = True
-                    elif "text" in line:
-                        in_data_section = False
                 lines.append(line)
 
         self.expect("RBRACE")
+        self._validate_asm_sections(lines, syntax, name)
 
         return AsmBlock(
             ret_type=ret_type,
@@ -1312,6 +1307,32 @@ class Parser:
             is_function=is_function,
             variables=variables,
             data_lines=data_lines,
+        )
+
+    def _validate_asm_sections(self, lines: List[str], syntax: Optional[str], name: Optional[str]):
+        """Require an explicit text section directive that matches the asm syntax."""
+        syntax_name = (syntax or "").lower()
+        normalized_lines = [line.strip().lower() for line in lines]
+        compact_lines = [line.replace(" ", "") for line in normalized_lines]
+        has_arm64_macho_text = any(line == ".section__text,__text" for line in compact_lines)
+        has_generic_text = any(line in ("section .text", ".section .text") for line in normalized_lines)
+
+        if "arm64" in syntax_name and "macho" in syntax_name:
+            if has_arm64_macho_text:
+                return
+            block_name = name or "<asm>"
+            raise SyntaxError(
+                f"asm block '{block_name}' uses syntax {syntax}, so it must declare "
+                ".section __TEXT,__text"
+            )
+
+        if has_generic_text:
+            return
+
+        block_name = name or "<asm>"
+        expected = ".section __TEXT,__text" if "arm64" in syntax_name and "macho" in syntax_name else "section .text"
+        raise SyntaxError(
+            f"asm block '{block_name}' must declare an explicit text section for its syntax: {expected}"
         )
 
     def _read_asm_line(self) -> str:
@@ -1472,6 +1493,8 @@ class Parser:
                 self.advance()
 
         if nasm_directive:
+            if self.peek()[0] == "SEMICOLON":
+                self.advance()
             return {
                 "name": var_name,
                 "type": var_type,
@@ -2310,7 +2333,7 @@ class Parser:
             typ = self._consume_pointer_stars(typ)
 
             # Allow literals after compound types (e.g., unsigned long long x = 0xFF)
-            if self.peek()[0] in (
+            valid_initializer_start = self.peek()[0] in (
                 "INT_LITERAL",
                 "HEX_LITERAL",
                 "BINARY_LITERAL",
@@ -2318,9 +2341,8 @@ class Parser:
                 "CHAR_LITERAL",
                 "STRING_LITERAL",
                 "FLOAT_LITERAL",
-            ):
-                pass  # valid - will be handled in initialization
-            elif self.peek()[0] != "IDENTIFIER":
+            )
+            if not valid_initializer_start and self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
                 raise SyntaxError(
                     error_msgs.get_error_msg(

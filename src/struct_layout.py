@@ -179,7 +179,6 @@ def cache_analysis(layout: StructLayout, line_size: int = 64) -> dict:
     fields_by_line = []
     current_line_end = 0
     for field in layout.fields:
-        field_end = field.offset + field.size
         if field.offset >= current_line_end:
             fields_by_line.append([field])
             current_line_end = ((field.offset // line_size) + 1) * line_size

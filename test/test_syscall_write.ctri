@@ -1,5 +1,6 @@
 asm void sys_write_test() {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x0, #1
     mov x1, #116
     mov x2, #1

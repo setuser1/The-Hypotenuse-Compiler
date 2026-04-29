@@ -187,7 +187,7 @@ typed struct PoliceDog&Dog&Animal(string name, int badge) { ... }
 
 ### C△-specific keywords
 
-- `using` — import: `using random from <math>`, `using helper from "utils"`, `using scope&myVar`, `using "random/randint"`, `using <all>`
+- `using` — import: `using random from <math>`, `using helper from "utils"`, `using functionName&myVar`, `using "random/randint"`, `using <all>`
 - `expose` — globalize a library/namespace: `expose plstd`
 - `space` — namespace declaration (in `.plib` files)
 - `allocate` — heap allocation: `allocate int buf[256]`, `allocate int x(200) = val`

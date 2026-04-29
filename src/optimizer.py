@@ -1,7 +1,7 @@
 """Optimizer for C△ compiler. C11 compliant."""
 
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from parser import (
     Program,
@@ -12,7 +12,6 @@ from parser import (
     While,
     For,
     Switch,
-    Case,
     Return,
     Break,
     ExprStmt,
@@ -21,22 +20,10 @@ from parser import (
     Unary,
     Var,
     Call,
-    ArrayAccess,
-    Cast,
-    InitList,
-    Include,
-    StructDef,
-    Typedef,
-    FieldAccess,
-    DesignatedInit,
-    ArrayDesignation,
 )
 from struct_layout import (
     compute_layout,
     StructLayout,
-    FieldInfo,
-    padding_report as generate_padding_report,
-    cache_analysis,
     suggest_reordering,
 )
 

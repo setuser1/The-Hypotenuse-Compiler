@@ -1,5 +1,6 @@
 asm int strcmp(string a, string b) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x2, x0
     mov x3, x1
 .loop:
@@ -15,6 +16,7 @@ asm int strcmp(string a, string b) {
 
 asm string strcpy(string dest, string src) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x2, x0
     mov x3, x1
 .loop:
@@ -26,6 +28,7 @@ asm string strcpy(string dest, string src) {
 
 asm string strcat(string dest, string src) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x2, x0
     mov x3, x1
     mov x4, x0
@@ -42,6 +45,7 @@ asm string strcat(string dest, string src) {
 
 asm string strdup(string s) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x2, x0
     mov x3, x0
     mov x4, #0
@@ -67,6 +71,7 @@ asm string strdup(string s) {
 
 asm int strchr(string s, char c) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x2, x0
     mov x3, x1
     and x3, x3, #0xFF
@@ -86,6 +91,7 @@ asm int strchr(string s, char c) {
 
 asm int strstr(string haystack, string needle) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x2, x0
     mov x3, x1
     mov x4, x0
@@ -111,6 +117,7 @@ asm int strstr(string haystack, string needle) {
 
 asm int strlen(string s) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x1, x0
     mov x0, #0
 .loop:
@@ -123,6 +130,7 @@ asm int strlen(string s) {
 
 asm string strncpy(string dest, string src, int n) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x2, x0
     mov x3, x1
     mov x4, x2
@@ -138,6 +146,7 @@ asm string strncpy(string dest, string src, int n) {
 
 asm string strncat(string dest, string src, int n) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x2, x0
     mov x3, x1
     mov x4, x0
@@ -158,6 +167,7 @@ asm string strncat(string dest, string src, int n) {
 
 asm int strncmp(string a, string b, int n) {
     syntax arm64_macho
+    .section __TEXT,__text
     mov x2, x0
     mov x3, x1
     mov x4, x2

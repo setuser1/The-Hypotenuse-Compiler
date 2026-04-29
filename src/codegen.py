@@ -68,6 +68,10 @@ class CodeGen:
         self._lines = []
         self._indent = 0
         self._specific_imports = {}  # item -> (lib_name, namespace)
+        self._scoped_var_imports = {}  # imported name -> (owner, symbol, generated name)
+        self._scoped_var_globals = []
+        self._emitted_scoped_var_globals = set()
+        self._current_function_name = None
         self._current_alias = {}  # lib_name -> alias
         self._generating_plib = False  # Flag to bypass checks when generating plib code
         self._current_lib_name = None  # Current library name for function prefixing
@@ -197,11 +201,6 @@ class CodeGen:
         indent = "    " * self._indent
         self._lines.append(indent + line)
 
-    def _emit_raw(self, text: str):
-        """Emit a pre-indented block of text verbatim (e.g. asm blocks)."""
-        for line in text.splitlines():
-            self._lines.append(line)
-
     # ------------------------------------------------------------------
     # Type mapping
     # ------------------------------------------------------------------
@@ -312,6 +311,9 @@ class CodeGen:
             return str(val)
 
         if isinstance(node, Var):
+            scoped_var = self._scoped_var_imports.get(node.name)
+            if scoped_var and self._current_function_name != scoped_var[0]:
+                return scoped_var[2]
             return node.name
 
         if isinstance(node, TypeExpr):
@@ -666,10 +668,7 @@ class CodeGen:
                     # Chain like a&b&c - transform
                     scope_chain = lib_name
                     callee = scope_chain.replace("&", "_") + "_" + func_name
-                elif lib_name == func_name:
-                    # Alias used - callee should already be the alias
-                    pass  # callee stays as-is (already matches)
-                else:
+                elif lib_name != func_name:
                     # Single scope like foo - transform to foo_bar
                     callee = lib_name + "_" + func_name
 
@@ -897,14 +896,6 @@ class CodeGen:
     # Top-level
     # ------------------------------------------------------------------
 
-    def _gen_program(self, node):
-        # First collect all includes from user file and all plib dependencies
-        self._gen_imports()
-        # Now generate main program code
-        self._gen_program_code(node)
-        # Emit pending plibs with tree-shaking
-        self._emit_pending_plibs()
-
     def _gen_program_code(self, node):
         # Now emit collected includes at the very beginning (prepend)
         includes_to_emit = []
@@ -913,6 +904,11 @@ class CodeGen:
         # Prepend includes before any existing code
         self._lines = includes_to_emit + self._lines
         # Now generate rest of code (plib functions included via _gen_plib_code)
+        for line in self._scoped_var_globals:
+            self._emit(line)
+        if self._scoped_var_globals:
+            self._emit("")
+
         for decl in node.declarations:
             if isinstance(decl, SpaceDecl):
                 # Handle SpaceDecl in main file - generate nested declarations with prefix
@@ -962,10 +958,6 @@ class CodeGen:
                     self._emit(f"    {p_line}")
             self._emit("}")
 
-    def _emit_collected_includes(self):
-        for inc in sorted(self._collected_includes):
-            self._emit(inc)
-
     def _gen_imports(self):
         """Generate import-related code (includes, exposes)."""
         if self.structor is None:
@@ -1005,22 +997,25 @@ class CodeGen:
                 if imp.item:
                     specific_imports[imp.item] = lib_name
             elif "&" in source:
-                # Handle intra-file scoped imports: using X&Y or using a&b&c&Y
-                # This imports a symbol Y from scope X (chain of scopes)
-                # We need to track this and map the symbol accordingly
+                # Handle intra-file imports: using owner&symbol or using a&b&c&symbol.
                 parts = source.split("&")
                 if len(parts) >= 2:
-                    # Last part is the symbol being imported
-                    # First part(s) are the scope chain
                     symbol_name = parts[-1]
                     scope_chain = "&".join(parts[:-1])
-                    # If there's an alias, use it instead of scope chain
+                    imported_name = imp.alias or symbol_name
+                    generated_name = self._resolve_scoped_var_import(
+                        scope_chain, symbol_name
+                    )
+                    if generated_name:
+                        self._scoped_var_imports[imported_name] = (
+                            scope_chain,
+                            symbol_name,
+                            generated_name,
+                        )
                     if imp.alias:
                         self._specific_imports[symbol_name] = (imp.alias, imp.alias)
                     else:
-                        # Store for later mapping in _expr
                         self._specific_imports[symbol_name] = (scope_chain, symbol_name)
-                pass
             else:
                 if source not in seen_libs:
                     local_imports.append(source)
@@ -1156,6 +1151,46 @@ class CodeGen:
             # Track that this library is now exposed
             self._exposed_libs.add(exp_target)
             self._exposed_libs.add(exp_base)
+
+    def _resolve_scoped_var_import(self, owner, symbol):
+        """Return the generated C name for an intra-file variable import."""
+        if self.structor is None:
+            return None
+
+        objects = getattr(self.structor, "objects", {})
+        owner_node = objects.get(f"{owner}::{symbol}")
+        program_node = objects.get(f"program::{symbol}")
+        if owner_node is None or not getattr(owner_node, "is_variable", False):
+            return None
+
+        if program_node is not None and getattr(program_node, "is_variable", False):
+            return symbol
+
+        generated_name = f"{owner.replace('&', '_')}_{symbol}"
+        if generated_name not in self._emitted_scoped_var_globals:
+            c_type = self._map_type(getattr(owner_node, "var_type", None) or "int")
+            value = getattr(owner_node, "value", None)
+            if value is None:
+                self._scoped_var_globals.append(f"{c_type} {generated_name};")
+            else:
+                self._scoped_var_globals.append(
+                    f"{c_type} {generated_name} = {self._literal_to_c(value)};"
+                )
+            self._emitted_scoped_var_globals.add(generated_name)
+        return generated_name
+
+    def _literal_to_c(self, value):
+        if isinstance(value, str):
+            stripped = value.lstrip("-")
+            if (
+                value.startswith('"')
+                or value.startswith("'")
+                or stripped.isdigit()
+                or stripped.replace(".", "", 1).isdigit()
+            ):
+                return value
+            return f'"{value}"'
+        return str(value)
 
     def _gen_plib_code(self, lib_name: str, alias: str = None, plib_ast=None):
         """Generate code from a local plib file."""
@@ -1639,7 +1674,7 @@ class CodeGen:
                         if isinstance(decl, p.Function):
                             self._top_level_lib_functions[full_lib_name].add(decl.name)
                 except Exception:
-                    pass  # Skip files that can't be parsed
+                    continue
 
     def _collect_plib_includes(self, lib_name: str, alias: str = None):
         """Collect includes from a plib file into self._collected_includes."""
@@ -1775,12 +1810,8 @@ class CodeGen:
             self._gen_asm_block(node)
         elif hasattr(node, "__class__") and node.__class__.__name__ == "AsmBlock":
             self._gen_asm_block(node)
-        elif isinstance(node, UsingDecl):
-            pass  # Imports handled in header generation
-        elif isinstance(node, ExposeDecl):
-            pass  # Expose handled in header generation
-        elif isinstance(node, LibAccess):
-            pass  # Handled in expression context
+        elif isinstance(node, (UsingDecl, ExposeDecl, LibAccess)) or node is None:
+            return
         elif isinstance(node, SpaceDecl):
             old_space = self._current_space
             old_local_funcs = self._space_local_functions.copy()
@@ -1790,11 +1821,9 @@ class CodeGen:
                 if isinstance(decl, Function):
                     self._space_local_functions.add(decl.name)
             for decl in node.declarations:
-                self._gen_statement(decl)
+                self._gen_node(decl)
             self._current_space = old_space
             self._space_local_functions = old_local_funcs
-        elif node is None:
-            pass  # Skip None declarations (e.g., skipped extern "C" blocks)
         else:
             # Expression used as a statement (e.g. bare assignment at top level)
             self._emit(f"{self._expr(node)};")
@@ -1844,6 +1873,8 @@ class CodeGen:
             func_name = f"{self._current_lib_name}_{func_name}"
         self._emit(f"{ret_type} {func_name}({param_str}) {{")
         self._indent += 1
+        old_function_name = self._current_function_name
+        self._current_function_name = node.name
 
         # Insert global dynam initializations at the start of main()
         if (
@@ -1870,11 +1901,14 @@ class CodeGen:
         old_in_global = self._in_global_scope
         self._in_global_scope = False
 
-        if isinstance(node.body, Compound):
-            for stmt in node.body.stmts:
-                self._gen_node(stmt)
-        else:
-            self._gen_node(node.body)
+        try:
+            if isinstance(node.body, Compound):
+                for stmt in node.body.stmts:
+                    self._gen_node(stmt)
+            else:
+                self._gen_node(node.body)
+        finally:
+            self._current_function_name = old_function_name
         self._indent -= 1
         self._emit("}")
         self._emit("")  # blank line after function
@@ -2026,9 +2060,6 @@ class CodeGen:
                     # Generate: char* name = strdup("hello");
                     self._emit(f"char* {name} = strdup({init_val});")
                     return
-            # Empty string
-            self._emit(f'char* {name} = strdup("");')
-            return
             # Empty string
             self._emit(f'char* {name} = strdup("");')
             return
@@ -2502,29 +2533,27 @@ class CodeGen:
             is_macos = platform.system() == "Darwin"
             func_name = f"_{node.name}" if is_macos else node.name
             self._emit(f"{ret_type} {func_name}({param_str});")
+            self._gen_asm_variable_externs(node)
         else:
             self._asm_blocks.append(node)
-            # Generate C variable declarations for asm data section variables
-            for var_info in node.variables:
-                var_name = var_info["name"]
-                var_type = var_info["type"]
-                var_size = var_info.get("size")
-                # Track asm variable for scope resolution
-                self._asm_function_names.add(var_name)
-                # Handle string type specially - it's a char array
-                if var_type == "string":
-                    initializer = var_info.get("initializer", "")
-                    # Calculate size: length of string + null terminator
-                    str_size = (
-                        len(initializer) + 1 if isinstance(initializer, str) else 0
-                    )
-                    self._emit(f"extern char {var_name}[{str_size}];")
-                elif var_size:
-                    # Array declaration
-                    c_type = self._map_type(var_type)
-                    self._emit(f"extern {c_type} {var_name}[{var_size}];")
-                else:
-                    c_type = self._map_type(var_type)
-                    self._emit(f"extern {c_type} {var_name};")
+            self._gen_asm_variable_externs(node)
             if not node.variables:
                 self._emit("/* bare asm block */")
+
+    def _gen_asm_variable_externs(self, node):
+        """Emit C extern declarations for variables owned by an asm block."""
+        for var_info in node.variables:
+            var_name = var_info["name"]
+            var_type = var_info["type"]
+            var_size = var_info.get("size")
+            self._asm_function_names.add(var_name)
+            if var_type == "string":
+                initializer = var_info.get("initializer", "")
+                str_size = len(initializer) + 1 if isinstance(initializer, str) else 0
+                self._emit(f"extern char {var_name}[{str_size}];")
+            elif var_size:
+                c_type = self._map_type(var_type)
+                self._emit(f"extern {c_type} {var_name}[{var_size}];")
+            else:
+                c_type = self._map_type(var_type)
+                self._emit(f"extern {c_type} {var_name};")

@@ -264,17 +264,16 @@ def _generate_x86_asm(asm_block, f, symbol_prefix: str, is_macos: bool = False):
                 continue
             f.write(f"    {instr}\n")
 
-        if asm_block.return_expr:
-            if asm_block.ret_type in ("float", "double"):
-                f.write(f"    movq xmm0, {asm_block.return_expr}\n")
-            else:
-                f.write(f"    mov rax, {asm_block.return_expr}\n")
+        _emit_return_expr(f, asm_block.return_expr, asm_block.ret_type, is_arm64=False)
 
         f.write("    pop rbp\n")
         f.write("    ret\n")
     else:
         for instr in updated_instructions:
             f.write(f"{instr}\n")
+        if asm_block.return_expr is not None:
+            _emit_return_expr(f, asm_block.return_expr, asm_block.ret_type, is_arm64=False)
+            f.write("    ret\n")
 
 
 def _generate_arm64_asm(asm_block, f, symbol_prefix: str):
@@ -312,13 +311,74 @@ def _generate_arm64_asm(asm_block, f, symbol_prefix: str):
             continue
         f.write(f"    {instr}\n")
 
-    if asm_block.return_expr:
-        if asm_block.ret_type in ("float", "double"):
-            f.write(f"    fmov v0, {asm_block.return_expr}\n")
-        else:
-            f.write(f"    mov x0, {asm_block.return_expr}\n")
+    _emit_return_expr(f, asm_block.return_expr, asm_block.ret_type, is_arm64=True)
 
-    f.write("    ret\n")
+    if asm_block.is_function or asm_block.return_expr is not None:
+        f.write("    ret\n")
+
+
+def _emit_return_expr(f, return_expr, ret_type, is_arm64: bool):
+    """Emit instructions that place a simple return expression in the ABI register."""
+    if return_expr is None or return_expr == "":
+        return
+    if ret_type in ("float", "double"):
+        dst = "v0" if is_arm64 else "xmm0"
+        op = "fmov" if is_arm64 else "movq"
+        f.write(f"    {op} {dst}, {return_expr}\n")
+        return
+    if is_arm64:
+        _emit_integer_expr_arm64(f, return_expr, "x0")
+    else:
+        _emit_integer_expr_x86(f, return_expr, "rax")
+
+
+def _split_binary_expr(expr: str):
+    parts = expr.split()
+    if len(parts) == 3 and parts[1] in ("+", "-", "*", "/", "%"):
+        return parts[0], parts[1], parts[2]
+    return None
+
+
+def _emit_integer_expr_x86(f, expr: str, dst: str):
+    binary = _split_binary_expr(expr)
+    if not binary:
+        f.write(f"    mov {dst}, {expr}\n")
+        return
+    left, op, right = binary
+    f.write(f"    mov {dst}, {left}\n")
+    if op == "+":
+        f.write(f"    add {dst}, {right}\n")
+    elif op == "-":
+        f.write(f"    sub {dst}, {right}\n")
+    elif op == "*":
+        f.write(f"    imul {dst}, {right}\n")
+    elif op in ("/", "%"):
+        f.write("    cqo\n")
+        f.write(f"    mov r10, {right}\n")
+        f.write("    idiv r10\n")
+        if op == "%":
+            f.write(f"    mov {dst}, rdx\n")
+
+
+def _emit_integer_expr_arm64(f, expr: str, dst: str):
+    binary = _split_binary_expr(expr)
+    if not binary:
+        f.write(f"    mov {dst}, {expr}\n")
+        return
+    left, op, right = binary
+    f.write(f"    mov {dst}, {left}\n")
+    if op == "+":
+        f.write(f"    add {dst}, {dst}, {right}\n")
+    elif op == "-":
+        f.write(f"    sub {dst}, {dst}, {right}\n")
+    elif op == "*":
+        f.write(f"    mul {dst}, {dst}, {right}\n")
+    elif op in ("/", "%"):
+        f.write(f"    sdiv x9, {dst}, {right}\n")
+        if op == "/":
+            f.write(f"    mov {dst}, x9\n")
+        else:
+            f.write(f"    msub {dst}, x9, {right}, {dst}\n")
 
 
 def _build_param_map(
@@ -524,23 +584,23 @@ def _expand_len_instruction(instr: str, is_arm64: bool) -> List[str]:
         return [
             f"mov x10, {src}",
             f"mov {dest}, #0",
-            f".Lhyp_len_loop:",
+            ".Lhyp_len_loop:",
             f"ldrb w11, [x10, {dest}]",
-            f"cbz w11, .Lhyp_len_done",
+            "cbz w11, .Lhyp_len_done",
             f"add {dest}, {dest}, #1",
-            f"b .Lhyp_len_loop",
-            f".Lhyp_len_done:",
+            "b .Lhyp_len_loop",
+            ".Lhyp_len_done:",
         ]
     else:
         return [
             f"mov r10, {src}",
             f"xor {dest}, {dest}",
-            f".hyp_len_loop:",
+            ".hyp_len_loop:",
             f"cmp byte [r10 + {dest}], 0",
-            f"je .hyp_len_done",
+            "je .hyp_len_done",
             f"inc {dest}",
-            f"jmp .hyp_len_loop",
-            f".hyp_len_done:",
+            "jmp .hyp_len_loop",
+            ".hyp_len_done:",
         ]
 
 

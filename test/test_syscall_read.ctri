@@ -2,7 +2,7 @@ asm int sys_read_char() {
     syntax arm64_macho
     section .data
     char buf = 0
-    section .text
+    .section __TEXT,__text
     mov x0, #0
     adr x1, buf
     mov x2, #1

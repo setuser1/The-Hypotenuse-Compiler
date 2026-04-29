@@ -139,6 +139,59 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
             f"{done_label}:",
         ]
 
+    def split_binary_expr(expr):
+        parts = expr.split()
+        if len(parts) == 3 and parts[1] in ("+", "-", "*", "/", "%"):
+            return parts[0], parts[1], parts[2]
+        return None
+
+    def emit_integer_return(f, expr, dst, is_arm64_target):
+        binary = split_binary_expr(expr)
+        if not binary:
+            f.write(f"    mov {dst}, {expr}\n")
+            return
+        left, op, right = binary
+        f.write(f"    mov {dst}, {left}\n")
+        if is_arm64_target:
+            if op == "+":
+                f.write(f"    add {dst}, {dst}, {right}\n")
+            elif op == "-":
+                f.write(f"    sub {dst}, {dst}, {right}\n")
+            elif op == "*":
+                f.write(f"    mul {dst}, {dst}, {right}\n")
+            elif op in ("/", "%"):
+                f.write(f"    sdiv x9, {dst}, {right}\n")
+                if op == "/":
+                    f.write(f"    mov {dst}, x9\n")
+                else:
+                    f.write(f"    msub {dst}, x9, {right}, {dst}\n")
+            return
+        if op == "+":
+            f.write(f"    add {dst}, {right}\n")
+        elif op == "-":
+            f.write(f"    sub {dst}, {right}\n")
+        elif op == "*":
+            f.write(f"    imul {dst}, {right}\n")
+        elif op in ("/", "%"):
+            f.write("    cqo\n")
+            f.write(f"    mov r10, {right}\n")
+            f.write("    idiv r10\n")
+            if op == "%":
+                f.write(f"    mov {dst}, rdx\n")
+
+    def emit_return_expr(f, asm_block, is_arm64_target):
+        if asm_block.return_expr is None or asm_block.return_expr == "":
+            return
+        if asm_block.ret_type in ("float", "double"):
+            if is_arm64_target:
+                f.write(f"    fmov v0, {asm_block.return_expr}\n")
+            else:
+                f.write(f"    movq xmm0, {asm_block.return_expr}\n")
+        elif is_arm64_target:
+            emit_integer_return(f, asm_block.return_expr, "x0", True)
+        else:
+            emit_integer_return(f, asm_block.return_expr, "rax", False)
+
     def _escape_quoted_string(value):
         return (
             value.replace("\\", "\\\\")
@@ -374,19 +427,16 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                         if instr_lower == "ret":
                             continue  # Skip user's ret, we add our own
                         f.write(f"    {instr}\n")
-                    # Handle return expression
-                    if asm_block.return_expr:
-                        # Use appropriate register based on return type
-                        if asm_block.ret_type in ("float", "double"):
-                            f.write(f"    fmov v0, {asm_block.return_expr}\n")
-                        else:
-                            f.write(f"    mov x0, {asm_block.return_expr}\n")
+                    emit_return_expr(f, asm_block, is_arm64_target=True)
                     # Epilogue (always needed to restore x29/x30)
                     f.write("    ldp x29, x30, [sp], #16\n")
                     f.write("    ret\n")
                 else:
                     for instr in updated_instructions:
                         f.write(f"{instr}\n")
+                    if asm_block.return_expr is not None:
+                        emit_return_expr(f, asm_block, is_arm64_target=True)
+                        f.write("    ret\n")
 
             # Assemble with Apple as
             result = subprocess.run(
@@ -512,18 +562,16 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                         if instr_lower == "ret":
                             continue  # Skip user's ret, we add our own
                         f.write(f"    {instr}\n")
-                    # Handle return expression if provided
-                    if asm_block.return_expr:
-                        if asm_block.ret_type in ("float", "double"):
-                            f.write(f"    movq xmm0, {asm_block.return_expr}\n")
-                        else:
-                            f.write(f"    mov rax, {asm_block.return_expr}\n")
+                    emit_return_expr(f, asm_block, is_arm64_target=False)
                     # Epilogue (always needed)
                     f.write("    pop rbp\n")
                     f.write("    ret\n")
                 else:
                     for instr in updated_instructions:
                         f.write(f"{instr}\n")
+                    if asm_block.return_expr is not None:
+                        emit_return_expr(f, asm_block, is_arm64_target=False)
+                        f.write("    ret\n")
 
             # Assemble with NASM
             result = subprocess.run(

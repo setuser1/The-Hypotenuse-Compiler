@@ -1071,6 +1071,14 @@ class Structor:
             self._register(callee, scope)
             func_scope = Scope(node.name, scope)
             for var_info in node.variables:
+                parent_var = Callee(
+                    var_info["name"],
+                    scope,
+                    var_info.get("initializer"),
+                    var_type=var_info["type"],
+                )
+                parent_var.is_variable = True
+                self._register(parent_var, scope)
                 var_callee = Callee(
                     var_info["name"],
                     func_scope,

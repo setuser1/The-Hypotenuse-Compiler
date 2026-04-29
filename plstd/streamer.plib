@@ -1,15 +1,51 @@
-#include <unistd.h>
 #include <stddef.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 
 space streams {
+    asm int sys_read(int fd, string buf, int count) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x16, #3
+        svc #0x80
+        ret
+    }
+
+    asm int sys_write(int fd, string buf, int count) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x16, #4
+        svc #0x80
+        ret
+    }
+
+    asm int sys_open(string path, int flags, int mode) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x16, #5
+        svc #0x80
+        ret
+    }
+
+    asm int sys_close(int fd) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x16, #6
+        svc #0x80
+        ret
+    }
+
+    asm int sys_unlink(string path) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x16, #10
+        svc #0x80
+        ret
+    }
+
     string read_file(int fd) {
         dynam char buffer = [];
         char tmp[256];
         int n;
-        while ((n = read(fd, tmp, 256)) > 0) {
+        while ((n = sys_read@streams(fd, tmp, 256)) > 0) {
             int i = 0;
             while (i < n) { buffer.push(tmp[i]); i = i + 1; }
         }
@@ -19,26 +55,28 @@ space streams {
     }
 
     int open_file(string path) {
-        return open(path, O_RDONLY);
+        return sys_open@streams(path, 0, 0);
     }
 
     string write_file(string s, int fd) {
-        if (s) { write(fd, s, len(s)); }
+        if (s) { sys_write@streams(fd, s, len(s)); }
         return s;
     }
 
     void close_file(int fd) {
-        close(fd);
+        sys_close@streams(fd);
     }
 
     int exists(string path) {
-        struct stat st;
-        return stat(path, &st) == 0;
+        int fd = open_file@streams(path);
+        if (fd < 0) { return 0; }
+        close_file@streams(fd);
+        return 1;
     }
 
     string remove_file(string path) {
         if (exists(path)) {
-            unlink(path);
+            sys_unlink@streams(path);
             return path;
         }
         return NULL;
