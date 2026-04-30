@@ -1,3 +1,11 @@
+space string_x86 {
+
+}
+space string_arm64 {
+
+}
+
+#ifdef __ARM64__
 asm int strcmp(string a, string b) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -13,7 +21,7 @@ asm int strcmp(string a, string b) {
 .done:
     ret
 }
-
+#elif defined(__x86_64__)
 asm int strcmp(string a, string b) {
     syntax x86_64_linux
     mov rcx, rdi
@@ -30,8 +38,9 @@ asm int strcmp(string a, string b) {
     jmp .loop
 .done:
     ret
-}
+#endif
 
+#ifdef __ARM64__
 asm string strcpy(string dest, string src) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -43,7 +52,7 @@ asm string strcpy(string dest, string src) {
     cbnz w4, .loop
     ret
 }
-
+#elif defined(__x86_64__)
 asm string strcpy(string dest, string src) {
     syntax x86_64_linux
     mov rax, rdi
@@ -58,7 +67,9 @@ asm string strcpy(string dest, string src) {
     jne .loop
     ret
 }
+#endif
 
+#ifdef __ARM64__
 asm string strcat(string dest, string src) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -75,7 +86,7 @@ asm string strcat(string dest, string src) {
     cbnz w5, .copy
     ret
 }
-
+#elif defined(__x86_64__)
 asm string strcat(string dest, string src) {
     syntax x86_64_linux
     mov rax, rdi
@@ -96,7 +107,9 @@ asm string strcat(string dest, string src) {
     jne .copy
     ret
 }
+#endif
 
+#ifdef __ARM64__
 asm string strdup(string s) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -126,7 +139,7 @@ asm string strdup(string s) {
     mov x0, #0
     ret
 }
-
+#elif defined(__x86_64__)
 asm string strdup(string s) {
     syntax x86_64_linux
     mov r8, rdi
@@ -159,7 +172,9 @@ asm string strdup(string s) {
     mov rax, 0
     ret
 }
+#endif
 
+#ifdef __ARM64__
 asm int strchr(string s, char c) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -179,7 +194,7 @@ asm int strchr(string s, char c) {
     sub x0, x0, #1
     ret
 }
-
+#elif defined(__x86_64__)
 asm int strchr(string s, char c) {
     syntax x86_64_linux
     mov rcx, rdi
@@ -202,7 +217,9 @@ asm int strchr(string s, char c) {
     mov rax, -1
     ret
 }
+#endif
 
+#ifdef __ARM64__
 asm int strstr(string haystack, string needle) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -228,7 +245,7 @@ asm int strstr(string haystack, string needle) {
     sub x0, x2, x4
     ret
 }
-
+#elif defined(__x86_64__)
 asm int strstr(string haystack, string needle) {
     syntax x86_64_linux
     mov rcx, rdi
@@ -259,7 +276,9 @@ asm int strstr(string haystack, string needle) {
     sub rax, r8
     ret
 }
+#endif
 
+#ifdef __ARM64__
 asm int strlen(string s) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -272,7 +291,7 @@ asm int strlen(string s) {
     sub x0, x0, #1
     ret
 }
-
+#elif defined(__x86_64__)
 asm int strlen(string s) {
     syntax x86_64_linux
     mov rax, 0
@@ -288,7 +307,9 @@ asm int strlen(string s) {
     sub rax, rdi
     ret
 }
+#endif
 
+#ifdef __ARM64__
 asm string strncpy(string dest, string src, int n) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -304,7 +325,7 @@ asm string strncpy(string dest, string src, int n) {
 .done:
     ret
 }
-
+#elif defined(__x86_64__)
 asm string strncpy(string dest, string src, int n) {
     syntax x86_64_linux
     mov rax, rdi
@@ -325,7 +346,9 @@ asm string strncpy(string dest, string src, int n) {
 .done:
     ret
 }
+#endif
 
+#ifdef __ARM64__
 asm string strncat(string dest, string src, int n) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -346,7 +369,7 @@ asm string strncat(string dest, string src, int n) {
     mov x0, x4
     ret
 }
-
+#elif defined(__x86_64__)
 asm string strncat(string dest, string src, int n) {
     syntax x86_64_linux
     mov rax, rdi
@@ -373,7 +396,9 @@ asm string strncat(string dest, string src, int n) {
 .copy_done:
     ret
 }
+#endif
 
+#ifdef __ARM64__
 asm int strncmp(string a, string b, int n) {
     syntax arm64_macho
     .section __TEXT,__text
@@ -394,7 +419,7 @@ asm int strncmp(string a, string b, int n) {
 .done:
     ret
 }
-
+#elif defined(__x86_64__)
 asm int strncmp(string a, string b, int n) {
     syntax x86_64_linux
     mov rcx, rdi
@@ -418,3 +443,4 @@ asm int strncmp(string a, string b, int n) {
     movsx eax, al
     ret
 }
+#endif

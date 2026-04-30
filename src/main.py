@@ -146,11 +146,234 @@ def print_objects(objects):
     print("\u2514" + "\u2500" * 54 + "\u2518")
 
 
-def compile_file(path):
+def preprocess_source(source, target_arch=None):
+    """Preprocess source code handling #define, #ifdef, #ifndef, #if, #else, #elif, #endif.
+    
+    Args:
+        source: Source code string
+        target_arch: Target architecture (x86_64, arm64) or None for auto-detect
+    
+    Returns:
+        Preprocessed source code string
+    """
+    import platform
+    import re
+    
+    # Define architecture macros
+    if target_arch is None:
+        arch = platform.machine()
+    else:
+        arch = target_arch
+    
+    defined_macros = {}
+    
+    # Add architecture defines
+    if arch in ("arm64", "aarch64"):
+        defined_macros["__ARM64__"] = "1"
+    elif arch in ("x86_64", "amd64"):
+        defined_macros["__x86_64__"] = "1"
+    
+    lines = source.split('\n')
+    output_lines = []
+    # Stack to track conditional compilation state
+    # Each element is (should_include, branch_taken)
+    # - should_include: whether the current block should be included
+    # - branch_taken: whether any branch in this #if/#elif/#else chain has already been taken
+    condition_stack = []
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        
+        if stripped.startswith('#'):
+            # Handle #define
+            if stripped.startswith('#define '):
+                match = re.match(r'#define\s+(\w+)(?:\s+(.*))?$', stripped)
+                if match:
+                    macro_name = match.group(1)
+                    macro_value = match.group(2) if match.group(2) else ""
+                    defined_macros[macro_name] = macro_value
+                i += 1
+                continue
+            
+            # Handle #undef
+            if stripped.startswith('#undef '):
+                match = re.match(r'#undef\s+(\w+)$', stripped)
+                if match:
+                    macro_name = match.group(1)
+                    defined_macros.pop(macro_name, None)
+                i += 1
+                continue
+            
+            # Handle #ifdef
+            if stripped.startswith('#ifdef '):
+                macro_name = stripped[7:].strip()
+                is_defined = macro_name in defined_macros
+                condition_stack.append((is_defined, is_defined))
+                i += 1
+                continue
+            
+            # Handle #ifndef
+            if stripped.startswith('#ifndef '):
+                macro_name = stripped[8:].strip()
+                is_defined = macro_name in defined_macros
+                condition_stack.append((not is_defined, not is_defined))
+                i += 1
+                continue
+            
+            # Handle #if
+            if stripped.startswith('#if '):
+                condition_expr = stripped[4:].strip()
+                result = _eval_preprocessor_expr(condition_expr, defined_macros)
+                condition_stack.append((result, result))
+                i += 1
+                continue
+            
+            # Handle #elif
+            if stripped.startswith('#elif '):
+                if condition_stack:
+                    should_include, branch_taken = condition_stack[-1]
+                    if not branch_taken:
+                        # Evaluate elif condition
+                        condition_expr = stripped[6:].strip()
+                        result = _eval_preprocessor_expr(condition_expr, defined_macros)
+                        condition_stack[-1] = (result, result)
+                    else:
+                        # A previous branch was already taken, skip this elif
+                        condition_stack[-1] = (False, True)
+                i += 1
+                continue
+            
+            # Handle #else
+            if stripped == '#else':
+                if condition_stack:
+                    should_include, branch_taken = condition_stack[-1]
+                    # Include else block only if no branch was taken yet
+                    condition_stack[-1] = (not branch_taken, True)
+                i += 1
+                continue
+            
+            # Handle #endif
+            if stripped == '#endif':
+                if condition_stack:
+                    condition_stack.pop()
+                i += 1
+                continue
+            
+            # Handle other directives - just pass through for now
+            i += 1
+            continue
+        
+        # Check if we should include this line based on condition stack
+        should_include = True
+        for include, _ in condition_stack:
+            if not include:
+                should_include = False
+                break
+        
+        if should_include:
+            output_lines.append(line)
+        i += 1
+    
+    return '\n'.join(output_lines)
+
+
+def _eval_preprocessor_expr(expr, defined_macros):
+    """Evaluate a preprocessor condition expression.
+    
+    Supports: defined(MACRO), &&, ||, !, comparisons
+    """
+    import re
+    
+    # Replace defined(MACRO) with 1 or 0
+    def replace_defined(match):
+        macro_name = match.group(1)
+        return "1" if macro_name in defined_macros else "0"
+    
+    expr = re.sub(r'defined\s*\(\s*(\w+)\s*\)', replace_defined, expr)
+    
+    # Simple evaluation - handle basic cases
+    expr = expr.strip()
+    
+    # Handle empty expression
+    if not expr:
+        return False
+    
+    # After defined() replacement, evaluate the resulting expression
+    # Handle simple values: 1 = True, 0 = False, or check if macro is defined
+    if expr == "1":
+        return True
+    if expr == "0":
+        return False
+    
+    # Handle simple macro name (standalone identifier)
+    if re.match(r'^\w+$', expr):
+        return expr in defined_macros
+    
+    # Handle ! (not)
+    if expr.startswith('!'):
+        return not _eval_preprocessor_expr(expr[1:].strip(), defined_macros)
+    
+    # Handle && (and)
+    if '&&' in expr:
+        parts = expr.split('&&', 1)
+        left = _eval_preprocessor_expr(parts[0].strip(), defined_macros)
+        right = _eval_preprocessor_expr(parts[1].strip(), defined_macros)
+        return left and right
+    
+    # Handle || (or)
+    if '||' in expr:
+        parts = expr.split('||', 1)
+        left = _eval_preprocessor_expr(parts[0].strip(), defined_macros)
+        right = _eval_preprocessor_expr(parts[1].strip(), defined_macros)
+        return left or right
+    
+    # Handle comparisons
+    for op in ['==', '!=', '<', '>', '<=', '>=']:
+        if op in expr:
+            parts = expr.split(op, 1)
+            left = parts[0].strip()
+            right = parts[1].strip()
+            
+            # Get values
+            left_val = defined_macros.get(left, left)
+            right_val = defined_macros.get(right, right)
+            
+            # Convert to numbers if possible
+            try:
+                left_val = int(left_val)
+            except (ValueError, TypeError):
+                pass
+            try:
+                right_val = int(right_val)
+            except (ValueError, TypeError):
+                pass
+            
+            if op == '==':
+                return left_val == right_val
+            elif op == '!=':
+                return left_val != right_val
+            elif op == '<':
+                return left_val < right_val
+            elif op == '>':
+                return left_val > right_val
+            elif op == '<=':
+                return left_val <= right_val
+            elif op == '>=':
+                return left_val >= right_val
+    
+    return False
+
+
+def compile_file(path, target_arch=None):
     """Lex, parse, structure, and generate code for a file."""
     with open(path, "r") as f:
         content = f.read()
 
+    # Preprocess source
+    content = preprocess_source(content, target_arch)
+    
     tokens = lexer.Lexer(content).lex()
     tokens.append(("EOF", "EOF", 0, 0))
 
@@ -258,7 +481,7 @@ def main():
             print(f"Error: Only .ctri/.plib files are supported, got '{path}'")
             continue
         try:
-            tokens, output, objects, asm_blocks = compile_file(path)
+            tokens, output, objects, asm_blocks = compile_file(path, args.target)
 
             # -----------------------------
             # Print mode
