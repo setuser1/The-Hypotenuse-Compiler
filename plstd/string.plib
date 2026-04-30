@@ -1,446 +1,428 @@
 space string_x86 {
-
+#ifdef __x86_64__
+    asm int strcmp(string a, string b) {
+        syntax x86_64_linux
+        mov rcx, rdi
+        mov rdx, rsi
+    .loop:
+        movzx eax, byte [rcx]
+        movzx r8d, byte [rdx]
+        inc rcx
+        inc rdx
+        sub eax, r8d
+        jne .done
+        test r8b, r8b
+        je .done
+        jmp .loop
+    .done:
+        ret
+    }
+    
+    asm string strcpy(string dest, string src) {
+        syntax x86_64_linux
+        mov rax, rdi
+        mov rcx, rdi
+        mov rdx, rsi
+    .loop:
+        mov r8b, [rdx]
+        mov [rcx], r8b
+        inc rcx
+        inc rdx
+        test r8b, r8b
+        jne .loop
+        ret
+    }
+    
+    asm string strcat(string dest, string src) {
+        syntax x86_64_linux
+        mov rax, rdi
+        mov rcx, rdi
+        mov rdx, rsi
+    .find_end:
+        mov r8b, [rcx]
+        inc rcx
+        test r8b, r8b
+        jne .find_end
+        dec rcx
+    .copy:
+        mov r8b, [rdx]
+        mov [rcx], r8b
+        inc rcx
+        inc rdx
+        test r8b, r8b
+        jne .copy
+        ret
+    }
+    
+    asm string strdup(string s) {
+        syntax x86_64_linux
+        mov r8, rdi
+        mov r9, rdi
+    .len_loop:
+        mov al, [r8]
+        inc r8
+        test al, al
+        jne .len_loop
+        mov rcx, r8
+        sub rcx, rdi
+        mov rdi, rcx
+        mov rsi, 1
+        mov rax, 9
+        syscall
+        cmp rax, -1
+        je .error
+        mov rcx, rax
+        mov r8, r9
+        mov r9, rcx
+    .copy_loop:
+        mov al, [r8]
+        mov [r9], al
+        inc r8
+        inc r9
+        test al, al
+        jne .copy_loop
+        ret
+    .error:
+        mov rax, 0
+        ret
+    }
+    
+    asm int strchr(string s, char c) {
+        syntax x86_64_linux
+        mov rcx, rdi
+        mov rdx, rsi
+        and rdx, 0xFF
+        mov r8, rdi
+    .loop:
+        mov al, [rcx]
+        cmp al, dl
+        je .found
+        test al, al
+        je .not_found
+        inc rcx
+        jmp .loop
+    .found:
+        mov rax, rcx
+        sub rax, r8
+        ret
+    .not_found:
+        mov rax, -1
+        ret
+    }
+    
+    asm int strstr(string haystack, string needle) {
+        syntax x86_64_linux
+        mov rcx, rdi
+        mov rdx, rsi
+        mov r8, rdi
+    .outer_loop:
+        mov r9, rcx
+        mov r10, rdx
+    .inner_loop:
+        mov al, [r9]
+        mov bl, [r10]
+        cmp al, bl
+        jne .next_start
+        test bl, bl
+        je .found
+        inc r9
+        inc r10
+        jmp .inner_loop
+    .next_start:
+        mov al, [rcx]
+        inc rcx
+        test al, al
+        jne .outer_loop
+        mov rax, -1
+        ret
+    .found:
+        mov rax, rcx
+        sub rax, r8
+        ret
+    }
+    
+    asm int strlen(string s) {
+        syntax x86_64_linux
+        mov rax, 0
+        mov rcx, rdi
+    .loop:
+        mov al, [rcx]
+        test al, al
+        je .done
+        inc rcx
+        jmp .loop
+    .done:
+        mov rax, rcx
+        sub rax, rdi
+        ret
+    }
+    
+    asm string strncpy(string dest, string src, int n) {
+        syntax x86_64_linux
+        mov rax, rdi
+        mov rcx, rdi
+        mov rdx, rsi
+        mov r8, rdi
+    .loop:
+        mov r9, rcx
+        sub r9, rdi
+        cmp r9, rdx
+        jae .done
+        mov r9b, [rdx]
+        mov [rcx], r9b
+        inc rcx
+        inc rdx
+        test r9b, r9b
+        jne .loop
+    .done:
+        ret
+    }
+    
+    asm string strncat(string dest, string src, int n) {
+        syntax x86_64_linux
+        mov rax, rdi
+        mov rcx, rdi
+        mov rdx, rsi
+        mov r8, rdi
+    .find_end:
+        mov r9b, [rcx]
+        inc rcx
+        test r9b, r9b
+        jne .find_end
+        dec rcx
+        mov r9, 0
+    .copy:
+        cmp r9, rdx
+        jae .copy_done
+        mov r10b, [r8]
+        mov [rcx], r10b
+        inc rcx
+        inc r8
+        inc r9
+        test r10b, r10b
+        jne .copy
+    .copy_done:
+        ret
+    }
+    
+    asm int strncmp(string a, string b, int n) {
+        syntax x86_64_linux
+        mov rcx, rdi
+        mov rdx, rsi
+        mov r8, rdi
+        mov r9, 0
+    .loop:
+        cmp r9, rdx
+        jae .done
+        mov al, [rcx]
+        mov bl, [rdx]
+        sub al, bl
+        jne .done
+        test bl, bl
+        je .done
+        inc rcx
+        inc rdx
+        inc r9
+        jmp .loop
+    .done:
+        movsx eax, al
+        ret
+    }
+#endif
 }
+
 space string_arm64 {
-
-}
-
 #ifdef __ARM64__
-asm int strcmp(string a, string b) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x2, x0
-    mov x3, x1
-.loop:
-    ldrb w4, [x2], #1
-    ldrb w5, [x3], #1
-    sub w4, w4, w5
-    cbnz w4, .done
-    cbz w5, .done
-    b .loop
-.done:
-    ret
-}
-#elif defined(__x86_64__)
-asm int strcmp(string a, string b) {
-    syntax x86_64_linux
-    mov rcx, rdi
-    mov rdx, rsi
-.loop:
-    movzx eax, byte [rcx]
-    movzx r8d, byte [rdx]
-    inc rcx
-    inc rdx
-    sub eax, r8d
-    jne .done
-    test r8b, r8b
-    je .done
-    jmp .loop
-.done:
-    ret
+    asm int strcmp(string a, string b) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+    .loop:
+        ldrb w4, [x2], #1
+        ldrb w5, [x3], #1
+        sub w4, w4, w5
+        cbnz w4, .done
+        cbz w5, .done
+        b .loop
+    .done:
+        ret
+    }
+    
+    asm string strcpy(string dest, string src) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+    .loop:
+        ldrb w4, [x3], #1
+        strb w4, [x2], #1
+        cbnz w4, .loop
+        ret
+    }
+    
+    asm string strcat(string dest, string src) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x0
+    .find_end:
+        ldrb w5, [x2], #1
+        cbnz w5, .find_end
+        sub x2, x2, #1
+    .copy:
+        ldrb w5, [x3], #1
+        strb w5, [x2], #1
+        cbnz w5, .copy
+        ret
+    }
+    
+    asm string strdup(string s) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x0
+    .len_loop:
+        ldrb w5, [x3], #1
+        cbnz w5, .len_loop
+        sub x3, x3, x0
+        mov x4, x3
+        mov x0, x4
+        mov x1, #1
+        mov x16, #9
+        svc #0x80
+        mov x4, x0
+        cmp x4, #-1
+        beq .error
+        mov x5, x2
+        mov x6, x4
+    .copy_loop:
+        ldrb w7, [x5], #1
+        strb w7, [x6], #1
+        cbnz w7, .copy_loop
+        mov x0, x4
+        ret
+    .error:
+        mov x0, #0
+        ret
+    }
+    
+    asm int strchr(string s, char c) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        and x3, x3, #0xFF
+        mov x4, x0
+    .loop:
+        ldrb w5, [x2], #1
+        cmp w5, w3
+        beq .found
+        cbnz w5, .loop
+        mov x0, #-1
+        ret
+    .found:
+        sub x0, x2, x4
+        sub x0, x0, #1
+        ret
+    }
+    
+    asm int strstr(string haystack, string needle) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x0
+    .outer_loop:
+        mov x5, x2
+        mov x6, x3
+    .inner_loop:
+        ldrb w7, [x5], #1
+        ldrb w8, [x6], #1
+        cmp w7, w8
+        bne .next_start
+        cbz w8, .found
+        b .inner_loop
+    .next_start:
+        ldrb w7, [x2], #1
+        cbnz w7, .outer_loop
+        mov x0, #-1
+        ret
+    .found:
+        sub x0, x2, x4
+        ret
+    }
+    
+    asm int strlen(string s) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x1, x0
+        mov x0, #0
+    .loop:
+        ldrb w2, [x1], #1
+        cbnz w2, .loop
+        sub x0, x1, x0
+        sub x0, x0, #1
+        ret
+    }
+    
+    asm string strncpy(string dest, string src, int n) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x2
+    .loop:
+        subs x5, x4, x0
+        cbz x5, .done
+        ldrb w5, [x3], #1
+        strb w5, [x2], #1
+        cbnz w5, .loop
+    .done:
+        ret
+    }
+    
+    asm string strncat(string dest, string src, int n) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x0
+    .find_end:
+        ldrb w5, [x2], #1
+        cbnz w5, .find_end
+        sub x2, x2, #1
+    .copy:
+        subs x5, x4, x1
+        cbz x5, .copy_done
+        ldrb w5, [x3], #1
+        strb w5, [x2], #1
+        cbnz w5, .copy
+    .copy_done:
+        mov x0, x4
+        ret
+    }
+    
+    asm int strncmp(string a, string b, int n) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x2
+        mov x5, x3
+        mov x6, #0
+    .loop:
+        subs x6, x6, x4
+        cbz x6, .done
+        ldrb w4, [x2], #1
+        ldrb w5, [x3], #1
+        sub w4, w4, w5
+        cbnz w4, .done
+        cbz w5, .done
+        b .loop
+    .done:
+        ret
+    }
 #endif
-
-#ifdef __ARM64__
-asm string strcpy(string dest, string src) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x2, x0
-    mov x3, x1
-.loop:
-    ldrb w4, [x3], #1
-    strb w4, [x2], #1
-    cbnz w4, .loop
-    ret
 }
-#elif defined(__x86_64__)
-asm string strcpy(string dest, string src) {
-    syntax x86_64_linux
-    mov rax, rdi
-    mov rcx, rdi
-    mov rdx, rsi
-.loop:
-    mov r8b, [rdx]
-    mov [rcx], r8b
-    inc rcx
-    inc rdx
-    test r8b, r8b
-    jne .loop
-    ret
-}
-#endif
-
-#ifdef __ARM64__
-asm string strcat(string dest, string src) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x2, x0
-    mov x3, x1
-    mov x4, x0
-.find_end:
-    ldrb w5, [x2], #1
-    cbnz w5, .find_end
-    sub x2, x2, #1
-.copy:
-    ldrb w5, [x3], #1
-    strb w5, [x2], #1
-    cbnz w5, .copy
-    ret
-}
-#elif defined(__x86_64__)
-asm string strcat(string dest, string src) {
-    syntax x86_64_linux
-    mov rax, rdi
-    mov rcx, rdi
-    mov rdx, rsi
-.find_end:
-    mov r8b, [rcx]
-    inc rcx
-    test r8b, r8b
-    jne .find_end
-    dec rcx
-.copy:
-    mov r8b, [rdx]
-    mov [rcx], r8b
-    inc rcx
-    inc rdx
-    test r8b, r8b
-    jne .copy
-    ret
-}
-#endif
-
-#ifdef __ARM64__
-asm string strdup(string s) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x2, x0
-    mov x3, x0
-.len_loop:
-    ldrb w5, [x3], #1
-    cbnz w5, .len_loop
-    sub x3, x3, x0
-    mov x4, x3
-    mov x0, x4
-    mov x1, #1
-    mov x16, #9
-    svc #0x80
-    mov x4, x0
-    cmp x4, #-1
-    beq .error
-    mov x5, x2
-    mov x6, x4
-.copy_loop:
-    ldrb w7, [x5], #1
-    strb w7, [x6], #1
-    cbnz w7, .copy_loop
-    mov x0, x4
-    ret
-.error:
-    mov x0, #0
-    ret
-}
-#elif defined(__x86_64__)
-asm string strdup(string s) {
-    syntax x86_64_linux
-    mov r8, rdi
-    mov r9, rdi
-.len_loop:
-    mov al, [r8]
-    inc r8
-    test al, al
-    jne .len_loop
-    mov rcx, r8
-    sub rcx, rdi
-    mov rdi, rcx
-    mov rsi, 1
-    mov rax, 9
-    syscall
-    cmp rax, -1
-    je .error
-    mov rcx, rax
-    mov r8, r9
-    mov r9, rcx
-.copy_loop:
-    mov al, [r8]
-    mov [r9], al
-    inc r8
-    inc r9
-    test al, al
-    jne .copy_loop
-    ret
-.error:
-    mov rax, 0
-    ret
-}
-#endif
-
-#ifdef __ARM64__
-asm int strchr(string s, char c) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x2, x0
-    mov x3, x1
-    and x3, x3, #0xFF
-    mov x4, x0
-.loop:
-    ldrb w5, [x2], #1
-    cmp w5, w3
-    beq .found
-    cbnz w5, .loop
-    mov x0, #-1
-    ret
-.found:
-    sub x0, x2, x4
-    sub x0, x0, #1
-    ret
-}
-#elif defined(__x86_64__)
-asm int strchr(string s, char c) {
-    syntax x86_64_linux
-    mov rcx, rdi
-    mov rdx, rsi
-    and rdx, 0xFF
-    mov r8, rdi
-.loop:
-    mov al, [rcx]
-    cmp al, dl
-    je .found
-    test al, al
-    je .not_found
-    inc rcx
-    jmp .loop
-.found:
-    mov rax, rcx
-    sub rax, r8
-    ret
-.not_found:
-    mov rax, -1
-    ret
-}
-#endif
-
-#ifdef __ARM64__
-asm int strstr(string haystack, string needle) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x2, x0
-    mov x3, x1
-    mov x4, x0
-.outer_loop:
-    mov x5, x2
-    mov x6, x3
-.inner_loop:
-    ldrb w7, [x5], #1
-    ldrb w8, [x6], #1
-    cmp w7, w8
-    bne .next_start
-    cbz w8, .found
-    b .inner_loop
-.next_start:
-    ldrb w7, [x2], #1
-    cbnz w7, .outer_loop
-    mov x0, #-1
-    ret
-.found:
-    sub x0, x2, x4
-    ret
-}
-#elif defined(__x86_64__)
-asm int strstr(string haystack, string needle) {
-    syntax x86_64_linux
-    mov rcx, rdi
-    mov rdx, rsi
-    mov r8, rdi
-.outer_loop:
-    mov r9, rcx
-    mov r10, rdx
-.inner_loop:
-    mov al, [r9]
-    mov bl, [r10]
-    cmp al, bl
-    jne .next_start
-    test bl, bl
-    je .found
-    inc r9
-    inc r10
-    jmp .inner_loop
-.next_start:
-    mov al, [rcx]
-    inc rcx
-    test al, al
-    jne .outer_loop
-    mov rax, -1
-    ret
-.found:
-    mov rax, rcx
-    sub rax, r8
-    ret
-}
-#endif
-
-#ifdef __ARM64__
-asm int strlen(string s) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x1, x0
-    mov x0, #0
-.loop:
-    ldrb w2, [x1], #1
-    cbnz w2, .loop
-    sub x0, x1, x0
-    sub x0, x0, #1
-    ret
-}
-#elif defined(__x86_64__)
-asm int strlen(string s) {
-    syntax x86_64_linux
-    mov rax, 0
-    mov rcx, rdi
-.loop:
-    mov al, [rcx]
-    test al, al
-    je .done
-    inc rcx
-    jmp .loop
-.done:
-    mov rax, rcx
-    sub rax, rdi
-    ret
-}
-#endif
-
-#ifdef __ARM64__
-asm string strncpy(string dest, string src, int n) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x2, x0
-    mov x3, x1
-    mov x4, x2
-.loop:
-    subs x5, x4, x0
-    cbz x5, .done
-    ldrb w5, [x3], #1
-    strb w5, [x2], #1
-    cbnz w5, .loop
-.done:
-    ret
-}
-#elif defined(__x86_64__)
-asm string strncpy(string dest, string src, int n) {
-    syntax x86_64_linux
-    mov rax, rdi
-    mov rcx, rdi
-    mov rdx, rsi
-    mov r8, rdi
-.loop:
-    mov r9, rcx
-    sub r9, rdi
-    cmp r9, rdx
-    jae .done
-    mov r9b, [rdx]
-    mov [rcx], r9b
-    inc rcx
-    inc rdx
-    test r9b, r9b
-    jne .loop
-.done:
-    ret
-}
-#endif
-
-#ifdef __ARM64__
-asm string strncat(string dest, string src, int n) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x2, x0
-    mov x3, x1
-    mov x4, x0
-.find_end:
-    ldrb w5, [x2], #1
-    cbnz w5, .find_end
-    sub x2, x2, #1
-.copy:
-    subs x5, x4, x1
-    cbz x5, .copy_done
-    ldrb w5, [x3], #1
-    strb w5, [x2], #1
-    cbnz w5, .copy
-.copy_done:
-    mov x0, x4
-    ret
-}
-#elif defined(__x86_64__)
-asm string strncat(string dest, string src, int n) {
-    syntax x86_64_linux
-    mov rax, rdi
-    mov rcx, rdi
-    mov rdx, rsi
-    mov r8, rdi
-.find_end:
-    mov r9b, [rcx]
-    inc rcx
-    test r9b, r9b
-    jne .find_end
-    dec rcx
-    mov r9, 0
-.copy:
-    cmp r9, rdx
-    jae .copy_done
-    mov r10b, [r8]
-    mov [rcx], r10b
-    inc rcx
-    inc r8
-    inc r9
-    test r10b, r10b
-    jne .copy
-.copy_done:
-    ret
-}
-#endif
-
-#ifdef __ARM64__
-asm int strncmp(string a, string b, int n) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x2, x0
-    mov x3, x1
-    mov x4, x2
-    mov x5, x3
-    mov x6, #0
-.loop:
-    subs x6, x6, x4
-    cbz x6, .done
-    ldrb w4, [x2], #1
-    ldrb w5, [x3], #1
-    sub w4, w4, w5
-    cbnz w4, .done
-    cbz w5, .done
-    b .loop
-.done:
-    ret
-}
-#elif defined(__x86_64__)
-asm int strncmp(string a, string b, int n) {
-    syntax x86_64_linux
-    mov rcx, rdi
-    mov rdx, rsi
-    mov r8, rdi
-    mov r9, 0
-.loop:
-    cmp r9, rdx
-    jae .done
-    mov al, [rcx]
-    mov bl, [rdx]
-    sub al, bl
-    jne .done
-    test bl, bl
-    je .done
-    inc rcx
-    inc rdx
-    inc r9
-    jmp .loop
-.done:
-    movsx eax, al
-    ret
-}
-#endif
