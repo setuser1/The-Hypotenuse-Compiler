@@ -76,7 +76,7 @@ space streams {
 
     string remove_file(string path) {
         if (exists(path)) {
-            sys_unlink@streams(path);
+            sys_unlink(path);
             return path;
         }
         return NULL;
