@@ -10,10 +10,10 @@ asm int sys_write(int fd, string buf, int count) {
     ret
 }
 
-void print_c(char c) { sys_write@printd(1, &c, 1); }
+void print_c(char c) { sys_write(1, &c, 1); }
 
 void print_s(string s) {
-    if (s) { sys_write@printd(1, s, len(s)); }
+    if (s) { sys_write(1, s, len(s)); }
 }
 
 void print_num(unsigned long n, int base, int upper) {

@@ -418,12 +418,6 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
             return ".section __DATA,__data"
         return stripped
 
-    def get_asm_config(asm_block):
-        """Determine architecture and format for an asm block."""
-        return get_asm_config(
-            asm_block.syntax, target_arch, output_format, is_macos, current_arch
-        )
-
     # Determine target architecture for filtering
     if target_arch:
         target_is_arm64 = (target_arch == "arm64")
@@ -436,7 +430,9 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
 
     for asm_index, asm_block in enumerate(asm_blocks):
         # Determine config for this asm block
-        is_arm64, asm_format = get_asm_config(asm_block)
+        is_arm64, asm_format = get_asm_config(
+            asm_block.syntax, target_arch, output_format, is_macos, current_arch
+        )
 
         # Skip blocks that don't match current target architecture
         if asm_block.syntax:

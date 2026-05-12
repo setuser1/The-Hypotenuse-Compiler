@@ -350,6 +350,24 @@ class Typedef(Node):
 
 
 @dataclass
+class Alloc(Node):
+    """allocate keyword for heap allocation."""
+
+    alloc_type: str  # The type being allocated (e.g., "int", "char", "string")
+    name: str  # Variable name
+    count: Optional[Node]  # Array element count (for `allocate int buf[64]`)
+    byte_size: Optional[Node]  # Byte size (for `allocate int x(200)`)
+    initializer: Optional[Node]  # Optional initializer (= val)
+
+
+@dataclass
+class Free(Node):
+    """free keyword for heap deallocation."""
+
+    expr: Node  # The pointer to free
+
+
+@dataclass
 class FieldAccess(Node):
     """Object.field access: obj.field"""
 
@@ -783,6 +801,42 @@ class Parser:
         if t[0] == "ENUM":
             return self.parse_enum_definition()
 
+        if t[0] == "ALLOCATE":
+            self.advance()
+            alloc_type = self.advance()[1]
+            while self.peek()[0] in (
+                "INT",
+                "CHAR",
+                "VOID",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+                "SIGNED",
+                "UNSIGNED",
+                "SIZE_T",
+            ):
+                alloc_type += " " + self.advance()[1]
+            while self.peek()[0] == "MULTIPLY":
+                alloc_type += "*"
+                self.advance()
+            name = self.expect("IDENTIFIER")[1]
+            count = None
+            byte_size = None
+            if self.accept("LBRACKET"):
+                if self.peek()[0] == "INT_LITERAL":
+                    count = Literal(int(self.advance()[1]))
+                self.expect("RBRACKET")
+            elif self.accept("LPAREN"):
+                if self.peek()[0] == "INT_LITERAL":
+                    byte_size = Literal(int(self.advance()[1]))
+                self.expect("RPAREN")
+            init = None
+            if self.accept("ASSIGN"):
+                init = self.parse_assignment()
+            self.expect("SEMICOLON")
+            return Alloc(alloc_type, name, count, byte_size, init)
+
         if t[0] in _TYPE_TOKENS or t[0] == "IDENTIFIER":
             if t[0] == "IDENTIFIER" and t[1] not in self._typedefs:
                 next_tok = (
@@ -1137,7 +1191,8 @@ class Parser:
         """Parse an expose statement: expose namespace or expose func@namespace."""
         self.expect("EXPOSE")
         t = self.peek()
-        if t[0] == "IDENTIFIER":
+        # Accept IDENTIFIER or keywords (like STRING) as valid targets
+        if t[0] in ("IDENTIFIER", "STRING", "PLSTD") or t[0].endswith("_KEYWORD"):
             target = self.advance()[1]
             # Check for @ syntax like expose printd@plstd or expose printd@lib
             if self.peek()[0] == "AT":
@@ -1309,13 +1364,19 @@ class Parser:
             data_lines=data_lines,
         )
 
-    def _validate_asm_sections(self, lines: List[str], syntax: Optional[str], name: Optional[str]):
+    def _validate_asm_sections(
+        self, lines: List[str], syntax: Optional[str], name: Optional[str]
+    ):
         """Require an explicit text section directive that matches the asm syntax."""
         syntax_name = (syntax or "").lower()
         normalized_lines = [line.strip().lower() for line in lines]
         compact_lines = [line.replace(" ", "") for line in normalized_lines]
-        has_arm64_macho_text = any(line == ".section__text,__text" for line in compact_lines)
-        has_generic_text = any(line in ("section .text", ".section .text") for line in normalized_lines)
+        has_arm64_macho_text = any(
+            line == ".section__text,__text" for line in compact_lines
+        )
+        has_generic_text = any(
+            line in ("section .text", ".section .text") for line in normalized_lines
+        )
 
         if "arm64" in syntax_name and "macho" in syntax_name:
             if has_arm64_macho_text:
@@ -1330,7 +1391,11 @@ class Parser:
             return
 
         block_name = name or "<asm>"
-        expected = ".section __TEXT,__text" if "arm64" in syntax_name and "macho" in syntax_name else "section .text"
+        expected = (
+            ".section __TEXT,__text"
+            if "arm64" in syntax_name and "macho" in syntax_name
+            else "section .text"
+        )
         raise SyntaxError(
             f"asm block '{block_name}' must declare an explicit text section for its syntax: {expected}"
         )
@@ -2398,6 +2463,52 @@ class Parser:
                 return decls[0]
             return self._make_decl_list(decls)
 
+        if t[0] == "ALLOCATE":
+            self.advance()  # consume allocate
+            alloc_type = self.advance()[1]
+            # Handle compound types
+            while self.peek()[0] in (
+                "INT",
+                "CHAR",
+                "VOID",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+                "SIGNED",
+                "UNSIGNED",
+                "SIZE_T",
+            ):
+                alloc_type += " " + self.advance()[1]
+            # Pointer stars
+            while self.peek()[0] == "MULTIPLY":
+                alloc_type += "*"
+                self.advance()
+            name = self.expect("IDENTIFIER")[1]
+            count = None
+            byte_size = None
+            if self.accept("LBRACKET"):
+                if self.peek()[0] == "INT_LITERAL":
+                    count = Literal(int(self.advance()[1]))
+                self.expect("RBRACKET")
+            elif self.accept("LPAREN"):
+                if self.peek()[0] == "INT_LITERAL":
+                    byte_size = Literal(int(self.advance()[1]))
+                self.expect("RPAREN")
+            init = None
+            if self.accept("ASSIGN"):
+                init = self.parse_assignment()
+            self.expect("SEMICOLON")
+            return Alloc(alloc_type, name, count, byte_size, init)
+
+        if t[0] == "FREE":
+            self.advance()
+            self.expect("LPAREN")
+            expr = self.parse_expression()
+            self.expect("RPAREN")
+            self.expect("SEMICOLON")
+            return Free(expr)
+
         # Expression statement
         expr = self.parse_expression() if self.peek()[0] != "SEMICOLON" else None
         self.expect("SEMICOLON")
@@ -2689,47 +2800,6 @@ class Parser:
                 # Convert arrow to (*expr).field for AST representation
                 deref = Unary(op="*", operand=node, prefix=True)
                 node = FieldAccess(deref, field_name)
-            elif self.peek()[0] == "AT":
-                # Namespace access: namespace@symbol or func@lib
-                # Only valid when node is a Var (identifier)
-                if not isinstance(node, Var):
-                    break
-                if "@" in node.name:
-                    # Multiple @ signs detected - raise E805
-                    tok = self.peek()
-                    line = tok[2] if len(tok) > 2 else 0
-                    col = tok[3] if len(tok) > 3 else 0
-                    raise SyntaxError(
-                        error_msgs.get_error_msg(
-                            "E805",
-                            func=node.name,
-                            line=line,
-                            col=col,
-                            fallback="Multiple @ signs not allowed. Use 'func@lib()' for library functions.",
-                        )
-                    )
-                self.advance()
-                if self.peek()[0] == "AT":
-                    # Multiple @ signs detected - raise E805 (two @ in a row)
-                    tok = self.peek()
-                    line = tok[2] if len(tok) > 2 else 0
-                    col = tok[3] if len(tok) > 3 else 0
-                    raise SyntaxError(
-                        error_msgs.get_error_msg(
-                            "E805",
-                            func=node.name,
-                            line=line,
-                            col=col,
-                            fallback="Multiple @ signs not allowed. Use 'func@lib()' for library functions.",
-                        )
-                    )
-                else:
-                    # Single @ - treat as namespace prefix
-                    if self.peek()[0] == "PLSTD":
-                        symbol = self.advance()[1]
-                    else:
-                        symbol = self.expect("IDENTIFIER")[1]
-                    node = Var(f"{node.name}@{symbol}")
             else:
                 break
         return node
@@ -2835,7 +2905,7 @@ class Parser:
         """Parse the most basic expression forms."""
         tok = self.peek()
 
-        # Handle printd@lib - namespace access (function@namespace)
+        # Handle func@lib - namespace access (function@namespace)
         if tok[0] == "IDENTIFIER":
             # Check if this is followed by @
             next_tok = (
@@ -2845,11 +2915,22 @@ class Parser:
                 # This is function@namespace pattern
                 func_name = self.advance()[1]
                 self.expect("AT")
-                # Namespace can be IDENTIFIER or PLSTD
-                if self.peek()[0] in ("IDENTIFIER", "PLSTD"):
+                # Namespace can be IDENTIFIER, PLSTD, or STRING (string type keyword)
+                if self.peek()[0] in ("IDENTIFIER", "PLSTD", "STRING"):
                     namespace = self.advance()[1]
                 else:
-                    raise SyntaxError("Expected identifier after '@'")
+                    line = self.peek()[2] if len(self.peek()) > 2 else 0
+                    col = self.peek()[3] if len(self.peek()) > 3 else 0
+                    raise SyntaxError(
+                        error_msgs.get_error_msg(
+                            "E001",
+                            found=self.peek()[0],
+                            expected="identifier",
+                            line=line,
+                            col=col,
+                            fallback=f"Expected identifier after '@' at line {line}, column {col}",
+                        )
+                    )
                 return Var(f"{func_name}@{namespace}")
 
         if tok[0] == "IDENTIFIER":

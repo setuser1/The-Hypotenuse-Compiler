@@ -42,6 +42,8 @@ from parser import (
     ArrayDesignation,
     CompoundLiteral,
     Generic,
+    Alloc,
+    Free,
 )
 
 
@@ -83,6 +85,12 @@ class CodeGen:
         self._helper_lines = []  # Store dynam helper functions
         self._dynam_declarations = {}  # Track dynam/string declarations by name -> type
         self._len_int_generated = False  # Track if len_int helper has been generated
+        self._ctri_string_helpers_generated = (
+            False  # Track if internal string helpers have been generated
+        )
+        self._ctri_allocator_helpers_generated = (
+            False  # Track if internal allocator helpers have been generated
+        )
         self._current_space = None  # Current space name when generating inside a space
         self._space_local_functions = set()  # Functions defined in current space
         self._space_prefix_map = {}  # Maps space name -> actual prefix (e.g., "math" -> "lib_math")
@@ -109,6 +117,216 @@ class CodeGen:
         )  # Direct plib compilation
         self._asm_blocks = []  # Store asm blocks for later .asm file generation
 
+    def _ensure_ctri_allocator_helpers(self):
+        if self._ctri_allocator_helpers_generated:
+            return
+        self._ctri_allocator_helpers_generated = True
+        self._helper_lines.append("")
+        self._helper_lines.append("#define __CTRI_HEAP_SIZE 4194304")
+        self._helper_lines.append("static char __ctri_heap[__CTRI_HEAP_SIZE];")
+        self._helper_lines.append("")
+        self._helper_lines.append("void* __ctri_malloc(int size) {")
+        self._helper_lines.append("    int pos = 0;")
+        self._helper_lines.append("    size = (size + 7) & ~7;")
+        self._helper_lines.append("    if (size <= 0) return (void*)0;")
+        self._helper_lines.append("    while (pos < __CTRI_HEAP_SIZE) {")
+        self._helper_lines.append(
+            "        int* block_size = (int*)(__ctri_heap + pos);"
+        )
+        self._helper_lines.append(
+            "        int* block_free = (int*)(__ctri_heap + pos + sizeof(int));"
+        )
+        self._helper_lines.append(
+            "        int* block_next = (int*)(__ctri_heap + pos + 2 * sizeof(int));"
+        )
+        self._helper_lines.append("        if (*block_size == 0) {")
+        self._helper_lines.append("            *block_size = size;")
+        self._helper_lines.append("            *block_free = 0;")
+        self._helper_lines.append("            *block_next = 0;")
+        self._helper_lines.append(
+            "            return (void*)(__ctri_heap + pos + 2 * sizeof(int));"
+        )
+        self._helper_lines.append("        }")
+        self._helper_lines.append("        if (*block_free && *block_size >= size) {")
+        self._helper_lines.append("            int remaining = *block_size - size;")
+        self._helper_lines.append(
+            "            if (remaining > (int)(3 * sizeof(int))) {"
+        )
+        self._helper_lines.append(
+            "                int next_pos = pos + 2 * sizeof(int) + size;"
+        )
+        self._helper_lines.append(
+            "                *(int*)(__ctri_heap + next_pos) = remaining - 2 * sizeof(int);"
+        )
+        self._helper_lines.append(
+            "                *(int*)(__ctri_heap + next_pos + sizeof(int)) = 1;"
+        )
+        self._helper_lines.append(
+            "                *(int*)(__ctri_heap + next_pos + 2 * sizeof(int)) = 0;"
+        )
+        self._helper_lines.append("                *block_next = next_pos;")
+        self._helper_lines.append("            }")
+        self._helper_lines.append("            *block_free = 0;")
+        self._helper_lines.append("            *block_size = size;")
+        self._helper_lines.append(
+            "            return (void*)(__ctri_heap + pos + 2 * sizeof(int));"
+        )
+        self._helper_lines.append("        }")
+        self._helper_lines.append("        if (*block_next == 0) {")
+        self._helper_lines.append(
+            "            int total = *block_size + 2 * sizeof(int) + size;"
+        )
+        self._helper_lines.append("            *(int*)(__ctri_heap + pos) = total;")
+        self._helper_lines.append(
+            "            *(int*)(__ctri_heap + pos + sizeof(int)) = 0;"
+        )
+        self._helper_lines.append(
+            "            *(int*)(__ctri_heap + pos + 2 * sizeof(int) + size) = 0;"
+        )
+        self._helper_lines.append(
+            "            *(int*)(__ctri_heap + pos + 2 * sizeof(int) + size + sizeof(int)) = 1;"
+        )
+        self._helper_lines.append(
+            "            *(int*)(__ctri_heap + pos + 2 * sizeof(int) + size + 2 * sizeof(int)) = 0;"
+        )
+        self._helper_lines.append(
+            "            *(int*)(__ctri_heap + pos) = *block_size + 2 * sizeof(int) + size;"
+        )
+        self._helper_lines.append(
+            "            *block_next = pos + 2 * sizeof(int) + size;"
+        )
+        self._helper_lines.append(
+            "            return (void*)(__ctri_heap + pos + 2 * sizeof(int));"
+        )
+        self._helper_lines.append("        }")
+        self._helper_lines.append("        pos = *block_next;")
+        self._helper_lines.append("    }")
+        self._helper_lines.append("    return (void*)0;")
+        self._helper_lines.append("}")
+        self._helper_lines.append("")
+        self._helper_lines.append("void __ctri_free(void* ptr) {")
+        self._helper_lines.append("    if (!ptr) return;")
+        self._helper_lines.append(
+            "    int pos = (int)((char*)ptr - __ctri_heap) - 2 * sizeof(int);"
+        )
+        self._helper_lines.append("    if (pos < 0 || pos >= __CTRI_HEAP_SIZE) return;")
+        self._helper_lines.append("    *(int*)(__ctri_heap + pos + sizeof(int)) = 1;")
+        self._helper_lines.append(
+            "    int* next = (int*)(__ctri_heap + pos + 2 * sizeof(int));"
+        )
+        self._helper_lines.append("    while (*next != 0) {")
+        self._helper_lines.append(
+            "        int next_free = *(int*)(__ctri_heap + *next + sizeof(int));"
+        )
+        self._helper_lines.append("        if (!next_free) break;")
+        self._helper_lines.append(
+            "        int total = *(int*)(__ctri_heap + pos) + 2 * sizeof(int) + *(int*)(__ctri_heap + *next);"
+        )
+        self._helper_lines.append("        *(int*)(__ctri_heap + pos) = total;")
+        self._helper_lines.append(
+            "        *next = *(int*)(__ctri_heap + *next + 2 * sizeof(int));"
+        )
+        self._helper_lines.append("    }")
+        self._helper_lines.append("}")
+        self._helper_lines.append("")
+        self._helper_lines.append("void* __ctri_realloc(void* ptr, int new_size) {")
+        self._helper_lines.append("    if (!ptr) return __ctri_malloc(new_size);")
+        self._helper_lines.append(
+            "    int pos = (int)((char*)ptr - __ctri_heap) - 2 * sizeof(int);"
+        )
+        self._helper_lines.append(
+            "    if (pos < 0 || pos >= __CTRI_HEAP_SIZE) return (void*)0;"
+        )
+        self._helper_lines.append("    int old_size = *(int*)(__ctri_heap + pos);")
+        self._helper_lines.append("    new_size = (new_size + 7) & ~7;")
+        self._helper_lines.append("    if (new_size <= old_size) return ptr;")
+        self._helper_lines.append(
+            "    int* next = (int*)(__ctri_heap + pos + 2 * sizeof(int));"
+        )
+        self._helper_lines.append("    if (*next != 0) {")
+        self._helper_lines.append(
+            "        int next_free = *(int*)(__ctri_heap + *next + sizeof(int));"
+        )
+        self._helper_lines.append("        if (next_free) {")
+        self._helper_lines.append(
+            "            int next_size = *(int*)(__ctri_heap + *next);"
+        )
+        self._helper_lines.append(
+            "            int combined = old_size + 2 * sizeof(int) + next_size;"
+        )
+        self._helper_lines.append("            if (combined >= new_size) {")
+        self._helper_lines.append(
+            "                int remaining = combined - new_size - 2 * sizeof(int);"
+        )
+        self._helper_lines.append(
+            "                *(int*)(__ctri_heap + pos) = new_size;"
+        )
+        self._helper_lines.append("                if (remaining > 0) {")
+        self._helper_lines.append(
+            "                    int next_pos = pos + 2 * sizeof(int) + new_size;"
+        )
+        self._helper_lines.append(
+            "                    *(int*)(__ctri_heap + next_pos) = remaining;"
+        )
+        self._helper_lines.append(
+            "                    *(int*)(__ctri_heap + next_pos + sizeof(int)) = 1;"
+        )
+        self._helper_lines.append(
+            "                    *(int*)(__ctri_heap + next_pos + 2 * sizeof(int)) = 0;"
+        )
+        self._helper_lines.append("                    *next = next_pos;")
+        self._helper_lines.append("                }")
+        self._helper_lines.append("                return ptr;")
+        self._helper_lines.append("            }")
+        self._helper_lines.append("        }")
+        self._helper_lines.append("    }")
+        self._helper_lines.append("    void* new_ptr = __ctri_malloc(new_size);")
+        self._helper_lines.append("    if (new_ptr) {")
+        self._helper_lines.append("        char* src = (char*)ptr;")
+        self._helper_lines.append("        char* dst = (char*)new_ptr;")
+        self._helper_lines.append("        int i;")
+        self._helper_lines.append(
+            "        for (i = 0; i < old_size; i++) dst[i] = src[i];"
+        )
+        self._helper_lines.append("    }")
+        self._helper_lines.append("    __ctri_free(ptr);")
+        self._helper_lines.append("    return new_ptr;")
+        self._helper_lines.append("}")
+        self._helper_lines.append("")
+
+    def _ensure_ctri_string_helpers(self):
+        if self._ctri_string_helpers_generated:
+            return
+        self._ctri_string_helpers_generated = True
+        self._ensure_ctri_allocator_helpers()
+        self._helper_lines.append("")
+        self._helper_lines.append("int __ctri_strlen(char* s) {")
+        self._helper_lines.append("    char* p = s;")
+        self._helper_lines.append("    while (*p) p++;")
+        self._helper_lines.append("    return (int)(p - s);")
+        self._helper_lines.append("}")
+        self._helper_lines.append("")
+        self._helper_lines.append("char* __ctri_strcpy(char* dest, char* src) {")
+        self._helper_lines.append("    char* d = dest;")
+        self._helper_lines.append("    while ((*d++ = *src++));")
+        self._helper_lines.append("    return dest;")
+        self._helper_lines.append("}")
+        self._helper_lines.append("")
+        self._helper_lines.append("char* __ctri_strcat(char* dest, char* src) {")
+        self._helper_lines.append("    char* d = dest;")
+        self._helper_lines.append("    while (*d) d++;")
+        self._helper_lines.append("    while ((*d++ = *src++));")
+        self._helper_lines.append("    return dest;")
+        self._helper_lines.append("}")
+        self._helper_lines.append("")
+        self._helper_lines.append("char* __ctri_strdup(char* s) {")
+        self._helper_lines.append("    int len = __ctri_strlen(s);")
+        self._helper_lines.append("    char* d = __ctri_malloc(len + 1);")
+        self._helper_lines.append("    if (d) __ctri_strcpy(d, s);")
+        self._helper_lines.append("    return d;")
+        self._helper_lines.append("}")
+        self._helper_lines.append("")
+
     def generate(self) -> str:
         """Main entry point. Returns generated C code as string."""
         self._lines = []
@@ -131,22 +349,8 @@ class CodeGen:
         # Prepend includes before any existing code
         self._lines = includes_to_emit + self._lines
 
-        # Always ensure required includes are present
-        needs_stdlib = (
-            self._len_int_generated
-            or "malloc" in "\n".join(self._lines)
-            or "free" in "\n".join(self._lines)
-            or "realloc" in "\n".join(self._lines)
-        )
-        needs_string = (
-            "strlen" in "\n".join(self._lines)
-            or "strdup" in "\n".join(self._lines)
-            or "strcpy" in "\n".join(self._lines)
-            or "strcat" in "\n".join(self._lines)
-        )
-
         # If we generated dynam helpers, prepend them after includes
-        if self._helper_lines or needs_stdlib or needs_string:
+        if self._helper_lines:
             # Separate includes from other code
             includes = []
             rest = []
@@ -159,15 +363,7 @@ class CodeGen:
                     rest.append(line)
 
             # Build new output with includes and helpers
-            new_includes = []
-            if "#include <stdlib.h>" not in "\n".join(includes) and needs_stdlib:
-                new_includes.append("#include <stdlib.h>")
-            if "#include <string.h>" not in "\n".join(includes) and needs_string:
-                new_includes.append("#include <string.h>")
-
-            new_lines = (
-                includes + new_includes + [""] + self._helper_lines + [""] + rest
-            )
+            new_lines = includes + [""] + self._helper_lines + [""] + rest
             self._lines = new_lines
 
         # Add len_int helper if needed for integer len() calls
@@ -370,9 +566,10 @@ class CodeGen:
                     # String concatenation: malloc + strcpy + strcat
                     left_expr = self._expr(node.left)
                     right_expr = self._expr(node.right)
+                    self._ensure_ctri_string_helpers()
                     return (
-                        f"({{ char* _ct = malloc(strlen({left_expr}) + strlen({right_expr}) + 1); "
-                        f"strcpy(_ct, {left_expr}); strcat(_ct, {right_expr}); _ct; }})"
+                        f"({{ char* _ct = __ctri_malloc(__ctri_strlen({left_expr}) + __ctri_strlen({right_expr}) + 1); "
+                        f"__ctri_strcpy(_ct, {left_expr}); __ctri_strcat(_ct, {right_expr}); _ct; }})"
                     )
 
             left = self._expr(node.left)
@@ -572,7 +769,8 @@ class CodeGen:
                                     struct_name = self._get_dynam_struct_name(elem_type)
                                     return f"{struct_name}_len(&{var_name})"
                                 elif dyn_type == "string":
-                                    return f"strlen({var_name})"
+                                    self._ensure_ctri_string_helpers()
+                                    return f"__ctri_strlen({var_name})"
 
                             # For regular C arrays, we'd need symbol table info
                             # For now, try to use sizeof approach: sizeof(arr)/sizeof(arr[0])
@@ -582,7 +780,8 @@ class CodeGen:
 
                         # Handle other expressions - default to strlen for strings
                         arg_expr = self._expr(arg)
-                        return f"strlen({arg_expr})"
+                        self._ensure_ctri_string_helpers()
+                        return f"__ctri_strlen({arg_expr})"
 
                 # Regular function call
                 callee = (
@@ -683,8 +882,11 @@ class CodeGen:
                 # First check if function is exposed - if so, resolve to prefixed name
                 exposed_funcs = getattr(self, "_exposed_funcs", {})
                 if base_callee in exposed_funcs:
-                    # Exposed function - resolve to the stored prefixed name
-                    callee = exposed_funcs[base_callee]
+                    # Exposed function - resolve to the wrapper name
+                    # Wrapper is: current_prefix + "_" + base_callee
+                    current_prefix = getattr(self, "_current_lib_name", None) or ".."
+                    callee = f"{current_prefix}_{base_callee}"
+                    # print(f"DEBUG: resolved {base_callee} to {callee}")
                 else:
                     # Check if function exists in any imported plib's top-level functions
                     for lib_name, funcs in getattr(
@@ -1151,6 +1353,20 @@ class CodeGen:
             # Track that this library is now exposed
             self._exposed_libs.add(exp_target)
             self._exposed_libs.add(exp_base)
+            # Add all functions from this library to _exposed_funcs
+            for lib_key in list(self._top_level_lib_functions.keys()):
+                matches = (
+                    lib_key == exp_base
+                    or lib_key.startswith(f"{exp_base}_")
+                    or lib_key.replace("_", "/") == exp_base
+                    or lib_key == exp_base.replace("/", "_")
+                )
+                if matches:
+                    for full_func_name in self._top_level_lib_functions[lib_key]:
+                        prefix_with_underscore = f"{lib_key}_"
+                        if full_func_name.startswith(prefix_with_underscore):
+                            bare_name = full_func_name[len(prefix_with_underscore) :]
+                            self._exposed_funcs[bare_name] = lib_key
 
     def _resolve_scoped_var_import(self, owner, symbol):
         """Return the generated C name for an intra-file variable import."""
@@ -1192,7 +1408,9 @@ class CodeGen:
             return f'"{value}"'
         return str(value)
 
-    def _gen_plib_code(self, lib_name: str, alias: str = None, plib_ast=None):
+    def _gen_plib_code(
+        self, lib_name: str, alias: str = None, plib_ast=None, plib_path=None
+    ):
         """Generate code from a local plib file."""
         import os
         import lexer
@@ -1202,10 +1420,12 @@ class CodeGen:
         old_generating = self._generating_plib
         old_imported_inits = list(self._imported_plib_inits)  # Save imported plib inits
         old_lib_name = self._current_lib_name
+        old_plib_dir = getattr(self, "_current_plib_dir", None)
         self._generating_plib = True
-        # Compute prefix same way as function generation (use folder name for folder imports)
+        # Compute prefix same way as function generation (use last path component)
         if "/" in lib_name:
-            self._current_lib_name = lib_name.split("/")[0]
+            parts = [p for p in lib_name.split("/") if p and p != "." and p != ".."]
+            self._current_lib_name = parts[-1] if parts else lib_name.split("/")[-1]
         else:
             self._current_lib_name = lib_name
         self._imported_plib_inits = []  # Reset for this plib's imports
@@ -1227,12 +1447,19 @@ class CodeGen:
                 current_dir = (
                     os.path.dirname(self.source_path) if self.source_path else "."
                 )
+                if not current_dir:
+                    current_dir = "."
                 search_paths = [current_dir]
                 parent = os.path.dirname(current_dir)
-            while parent and parent != current_dir:
-                search_paths.append(parent)
-                current_dir = parent
-                parent = os.path.dirname(parent)
+                while parent and parent != current_dir:
+                    search_paths.append(parent)
+                    current_dir = parent
+                    parent = os.path.dirname(parent)
+                search_paths.append(".")  # Always include CWD
+                # Also include the current plib's directory for recursive imports
+                plib_dir = getattr(self, "_current_plib_dir", None)
+                if plib_dir and plib_dir not in search_paths:
+                    search_paths.insert(0, plib_dir)
             search_paths.extend(self._get_plibs_search_dirs())
 
             # Handle path with folder: lib/func -> import first .plib in folder
@@ -1277,6 +1504,13 @@ class CodeGen:
             tokens.append(("EOF", "EOF", 0, 0))
             plib_ast = p.Parser(tokens).parse_program()
 
+        # Track current plib directory for recursive using resolution
+        self._current_plib_dir = (
+            os.path.dirname(plib_path)
+            if plib_path
+            else getattr(self, "_current_plib_dir", None)
+        )
+
         # Now plib_ast is available (either passed in or just parsed)
 
         # Collect all includes from the plib (not emit - collected for later)
@@ -1303,8 +1537,9 @@ class CodeGen:
 
         # Determine the prefix to use - always use lib_name (alias is just for call resolution)
         if "/" in lib_name:
-            # Folder import - extract folder name as prefix
-            prefix = lib_name.split("/")[0]
+            # Folder import - extract last meaningful path component as prefix
+            parts = [p for p in lib_name.split("/") if p and p != "." and p != ".."]
+            prefix = parts[-1] if parts else lib_name.split("/")[-1]
             self._exposed_libs.add(prefix)
         else:
             prefix = lib_name
@@ -1435,6 +1670,7 @@ class CodeGen:
         # Restore the flag after generating plib code
         self._generating_plib = old_generating
         self._current_lib_name = old_lib_name  # Restore library name
+        self._current_plib_dir = old_plib_dir  # Restore plib directory
         # Restore imported plib inits for parent's context
         # Accumulate: parent's inits + this plib's inits
         self._imported_plib_inits = old_imported_inits + [
@@ -1520,8 +1756,14 @@ class CodeGen:
 
         # Pre-populate _top_level_lib_functions so @ syntax works
         # Use computed prefix (same as in _gen_plib_code)
-        # For "plstd/streamer", prefix is "plstd"; for "streamer", prefix is "streamer"
-        prefix = lib_name.split("/")[0] if "/" in lib_name else lib_name
+        # For "plstd/streamer", prefix is "streamer"; for "streamer", prefix is "streamer"
+        # FIX: Use the LAST part of the path as the library name
+        if "/" in lib_name:
+            parts = lib_name.split("/")
+            clean_parts = [p for p in parts if p and p != "." and p != ".."]
+            prefix = clean_parts[-1] if clean_parts else lib_name
+        else:
+            prefix = lib_name
         for decl in plib_ast.declarations:
             if isinstance(decl, p.Function):
                 # Top-level functions get prefix_ prefix
@@ -1562,6 +1804,7 @@ class CodeGen:
                 "lib_name": lib_name,
                 "alias": alias,
                 "ast": plib_ast,
+                "plib_path": plib_path,
             }
         )
 
@@ -1605,7 +1848,10 @@ class CodeGen:
             plib_ast_copy = copy.deepcopy(plib_info["ast"])
 
             self._gen_plib_code(
-                plib_info["lib_name"], plib_info["alias"], plib_ast_copy
+                plib_info["lib_name"],
+                plib_info["alias"],
+                plib_ast_copy,
+                plib_info.get("plib_path"),
             )
 
             plib_lines.extend(self._lines)
@@ -1824,6 +2070,10 @@ class CodeGen:
                 self._gen_node(decl)
             self._current_space = old_space
             self._space_local_functions = old_local_funcs
+        elif isinstance(node, Alloc):
+            self._gen_alloc(node)
+        elif isinstance(node, Free):
+            self._gen_free(node)
         else:
             # Expression used as a statement (e.g. bare assignment at top level)
             self._emit(f"{self._expr(node)};")
@@ -1950,7 +2200,7 @@ class CodeGen:
 
                 if self._in_global_scope:
                     self._emit(f"{struct_name} {name};")
-                    init_line = f"{name}.data = malloc({init_capacity} * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = {init_capacity};"
+                    init_line = f"{name}.data = __ctri_malloc({init_capacity} * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = {init_capacity};"
                     push_lines = [
                         f"{struct_name}_push(&{name}, {v});" for v in init_vals
                     ]
@@ -1961,7 +2211,7 @@ class CodeGen:
                         self._global_dynam_inits.extend(push_lines)
                 else:
                     self._emit(
-                        f"{struct_name} {name} = {{malloc({init_capacity} * sizeof({mapped_elem})), 0, {init_capacity}}};"
+                        f"{struct_name} {name} = {{__ctri_malloc({init_capacity} * sizeof({mapped_elem})), 0, {init_capacity}}};"
                     )
                     for v in init_vals:
                         self._emit(f"{struct_name}_push(&{name}, {v});")
@@ -1970,7 +2220,7 @@ class CodeGen:
 
                 if self._in_global_scope:
                     self._emit(f"{struct_name} {name};")
-                    init_line = f"{name}.data = malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
+                    init_line = f"{name}.data = __ctri_malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
                     push_line = f"{struct_name}_push(&{name}, {init_expr});"
                     if is_plib:
                         self._plib_global_inits.append((init_line, [push_line]))
@@ -1979,20 +2229,20 @@ class CodeGen:
                         self._global_dynam_inits.append(push_line)
                 else:
                     self._emit(
-                        f"{struct_name} {name} = {{malloc(4 * sizeof({mapped_elem})), 0, 4}};"
+                        f"{struct_name} {name} = {{__ctri_malloc(4 * sizeof({mapped_elem})), 0, 4}};"
                     )
                     self._emit(f"{struct_name}_push(&{name}, {init_expr});")
             else:
                 if self._in_global_scope:
                     self._emit(f"{struct_name} {name};")
-                    init_line = f"{name}.data = malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
+                    init_line = f"{name}.data = __ctri_malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
                     if is_plib:
                         self._plib_global_inits.append((init_line, []))
                     else:
                         self._global_dynam_inits.append(init_line)
                 else:
                     self._emit(
-                        f"{struct_name} {name} = {{malloc(4 * sizeof({mapped_elem})), 0, 4}};"
+                        f"{struct_name} {name} = {{__ctri_malloc(4 * sizeof({mapped_elem})), 0, 4}};"
                     )
             return
 
@@ -2029,16 +2279,17 @@ class CodeGen:
 
                 if left_is_string and right_is_string:
                     # Generate concatenation: malloc + strcpy + strcat
+                    self._ensure_ctri_string_helpers()
                     left_expr = self._expr(left)
                     right_expr = self._expr(right)
                     var_name = node.name
 
                     # Emit the concatenation sequence
                     self._emit(
-                        f"char* _tmp = malloc(strlen({left_expr}) + strlen({right_expr}) + 1);"
+                        f"char* _tmp = __ctri_malloc(__ctri_strlen({left_expr}) + __ctri_strlen({right_expr}) + 1);"
                     )
-                    self._emit(f"strcpy(_tmp, {left_expr});")
-                    self._emit(f"strcat(_tmp, {right_expr});")
+                    self._emit(f"__ctri_strcpy(_tmp, {left_expr});")
+                    self._emit(f"__ctri_strcat(_tmp, {right_expr});")
                     self._emit(f"char* {var_name} = _tmp;")
                     return
 
@@ -2057,11 +2308,12 @@ class CodeGen:
                 # String literal: "hello"
                 init_val = node.initializer.value
                 if isinstance(init_val, str) and init_val.startswith('"'):
-                    # Generate: char* name = strdup("hello");
-                    self._emit(f"char* {name} = strdup({init_val});")
+                    self._ensure_ctri_string_helpers()
+                    self._emit(f"char* {name} = __ctri_strdup({init_val});")
                     return
             # Empty string
-            self._emit(f'char* {name} = strdup("");')
+            self._ensure_ctri_string_helpers()
+            self._emit(f'char* {name} = __ctri_strdup("");')
             return
 
         # Handle string to char array conversion: char s[] = "hello"
@@ -2221,7 +2473,7 @@ class CodeGen:
         self._helper_lines.append("    if (arr->size >= arr->capacity) {")
         self._helper_lines.append("        arr->capacity *= 2;")
         self._helper_lines.append(
-            f"        arr->data = realloc(arr->data, arr->capacity * sizeof({elem_type}));"
+            f"        arr->data = __ctri_realloc(arr->data, arr->capacity * sizeof({elem_type}));"
         )
         self._helper_lines.append("    }")
         self._helper_lines.append("    arr->data[arr->size++] = val;")
@@ -2442,10 +2694,10 @@ class CodeGen:
                             mapped_elem = self._map_type(elem_type)
 
                             # Free old data, reallocate and copy
-                            self._emit(f"free({var_name}.data);")
+                            self._emit(f"__ctri_free({var_name}.data);")
                             init_capacity = max(4, len(init_vals))
                             self._emit(
-                                f"{var_name}.data = malloc({init_capacity} * sizeof({mapped_elem}));"
+                                f"{var_name}.data = __ctri_malloc({init_capacity} * sizeof({mapped_elem}));"
                             )
                             self._emit(f"{var_name}.size = 0;")
                             self._emit(f"{var_name}.capacity = {init_capacity};")
@@ -2462,17 +2714,17 @@ class CodeGen:
                             and isinstance(value.value, str)
                             and value.value.startswith('"')
                         ):
-                            # String literal reassignment: free(s); s = strdup("new");
-                            self._emit(f"free({var_name});")
-                            self._emit(f"{var_name} = strdup({value.value});")
+                            self._ensure_ctri_string_helpers()
+                            self._emit(f"__ctri_free({var_name});")
+                            self._emit(f"{var_name} = __ctri_strdup({value.value});")
                             return
                         elif isinstance(value, Binary) and value.op == "+":
-                            # String concatenation: s = s + " World"
+                            self._ensure_ctri_string_helpers()
                             right = self._expr(value.right)
                             self._emit(
-                                f"{var_name} = realloc({var_name}, strlen({var_name}) + strlen({right}) + 1);"
+                                f"{var_name} = __ctri_realloc({var_name}, __ctri_strlen({var_name}) + __ctri_strlen({right}) + 1);"
                             )
-                            self._emit(f"strcat({var_name}, {right});")
+                            self._emit(f"__ctri_strcat({var_name}, {right});")
                             return
 
             self._emit(f"{self._expr(node.expr)};")
@@ -2557,3 +2809,34 @@ class CodeGen:
             else:
                 c_type = self._map_type(var_type)
                 self._emit(f"extern {c_type} {var_name};")
+
+    def _gen_alloc(self, node: Alloc):
+        mapped_type = self._map_type(node.alloc_type)
+        if node.count is not None:
+            self._ensure_ctri_allocator_helpers()
+            count_expr = self._expr(node.count)
+            self._emit(
+                f"{mapped_type}* {node.name} = ({mapped_type}*)__ctri_malloc({count_expr} * sizeof({mapped_type}));"
+            )
+        elif node.byte_size is not None:
+            self._ensure_ctri_allocator_helpers()
+            size_expr = self._expr(node.byte_size)
+            self._emit(
+                f"{mapped_type}* {node.name} = ({mapped_type}*)__ctri_malloc({size_expr});"
+            )
+            if node.initializer:
+                init_expr = self._expr(node.initializer)
+                self._emit(f"*{node.name} = {init_expr};")
+        else:
+            self._ensure_ctri_allocator_helpers()
+            self._emit(
+                f"{mapped_type}* {node.name} = ({mapped_type}*)__ctri_malloc(sizeof({mapped_type}));"
+            )
+            if node.initializer:
+                init_expr = self._expr(node.initializer)
+                self._emit(f"*{node.name} = {init_expr};")
+
+    def _gen_free(self, node: Free):
+        self._ensure_ctri_allocator_helpers()
+        expr = self._expr(node.expr)
+        self._emit(f"__ctri_free({expr});")

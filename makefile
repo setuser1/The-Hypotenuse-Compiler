@@ -103,6 +103,17 @@ assert ast is not None, 'parser returned None'; \
 print('top-level declarations:', len(ast.declarations))"
 	@echo "PASS: parser"
 
+	@echo "--- Test: no libc string functions in compiler-generated code ---"
+	@python3 src/main.py test/test_no_libc_strings.ctri 2>&1 | grep "#include <string.h>" > /dev/null && \
+		(echo "FAIL: <string.h> must not be included" && exit 1) || true
+	@python3 src/main.py test/test_no_libc_strings.ctri 2>&1 | grep -E '\b(strlen|strcpy|strcat|strdup)\(' > /dev/null && \
+		(echo "FAIL: bare libc string call found (expected __ctri_*)" && exit 1) || true
+	@python3 src/main.py test/test_no_libc_strings.ctri 2>&1 | grep "__ctri_strlen" > /dev/null || \
+		(echo "FAIL: expected __ctri_strlen helper" && exit 1)
+	@python3 src/main.py test/test_no_libc_strings.ctri 2>&1 | grep "__ctri_strdup" > /dev/null || \
+		(echo "FAIL: expected __ctri_strdup helper" && exit 1)
+	@echo "PASS: no libc strings"
+
 	@echo "--- Test: intra-file variable imports from asm and normal functions ---"
 	@python3 -c "\
 import sys; sys.path.insert(0,'src'); \

@@ -1,51 +1,56 @@
+using "streamer_x86"
+using "streamer_arm64"
+
 #include <stddef.h>
 
 space streams {
-    asm int sys_read(int fd, string buf, int count) {
-        syntax arm64_macho
-        .section __TEXT,__text
-        mov x16, #3
-        svc #0x80
-        ret
+#ifdef __x86_64__
+    int sys_read(int fd, string buf, int count) {
+        return sys_read@streams_impl_x86(fd, buf, count);
     }
 
-    asm int sys_write(int fd, string buf, int count) {
-        syntax arm64_macho
-        .section __TEXT,__text
-        mov x16, #4
-        svc #0x80
-        ret
+    int sys_write(int fd, string buf, int count) {
+        return sys_write@streams_impl_x86(fd, buf, count);
     }
 
-    asm int sys_open(string path, int flags, int mode) {
-        syntax arm64_macho
-        .section __TEXT,__text
-        mov x16, #5
-        svc #0x80
-        ret
+    int sys_open(string path, int flags, int mode) {
+        return sys_open@streams_impl_x86(path, flags, mode);
     }
 
-    asm int sys_close(int fd) {
-        syntax arm64_macho
-        .section __TEXT,__text
-        mov x16, #6
-        svc #0x80
-        ret
+    int sys_close(int fd) {
+        return sys_close@streams_impl_x86(fd);
     }
 
-    asm int sys_unlink(string path) {
-        syntax arm64_macho
-        .section __TEXT,__text
-        mov x16, #10
-        svc #0x80
-        ret
+    int sys_unlink(string path) {
+        return sys_unlink@streams_impl_x86(path);
     }
+#elif defined(__ARM64__)
+    int sys_read(int fd, string buf, int count) {
+        return sys_read@streams_impl_arm64(fd, buf, count);
+    }
+
+    int sys_write(int fd, string buf, int count) {
+        return sys_write@streams_impl_arm64(fd, buf, count);
+    }
+
+    int sys_open(string path, int flags, int mode) {
+        return sys_open@streams_impl_arm64(path, flags, mode);
+    }
+
+    int sys_close(int fd) {
+        return sys_close@streams_impl_arm64(fd);
+    }
+
+    int sys_unlink(string path) {
+        return sys_unlink@streams_impl_arm64(path);
+    }
+#endif
 
     string read_file(int fd) {
         dynam char buffer = [];
         char tmp[256];
         int n;
-        while ((n = sys_read@streams(fd, tmp, 256)) > 0) {
+        while ((n = sys_read(fd, tmp, 256)) > 0) {
             int i = 0;
             while (i < n) { buffer.push(tmp[i]); i = i + 1; }
         }
@@ -55,22 +60,22 @@ space streams {
     }
 
     int open_file(string path) {
-        return sys_open@streams(path, 0, 0);
+        return sys_open(path, 0, 0);
     }
 
     string write_file(string s, int fd) {
-        if (s) { sys_write@streams(fd, s, len(s)); }
+        if (s) { sys_write(fd, s, len(s)); }
         return s;
     }
 
     void close_file(int fd) {
-        sys_close@streams(fd);
+        sys_close(fd);
     }
 
     int exists(string path) {
-        int fd = open_file@streams(path);
+        int fd = open_file(path);
         if (fd < 0) { return 0; }
-        close_file@streams(fd);
+        close_file(fd);
         return 1;
     }
 
@@ -93,7 +98,7 @@ string outstream(string buffer, string path) {
 
 string instream(string path) {
     int fd = open_file@streams(path);
-    if (fd < 0 || !exists@streams(path)) { 
+    if (fd < 0 || !exists@streams(path)) {
         return "stderr: failed to read file";
         exit(1);
     }
