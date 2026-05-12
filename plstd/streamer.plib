@@ -24,7 +24,7 @@ space streams {
     int sys_unlink(string path) {
         return sys_unlink@streams_impl_x86(path);
     }
-#elif defined(__ARM64__)
+#elif defined(__aarch64__) || defined(__ARM64__)
     int sys_read(int fd, string buf, int count) {
         return sys_read@streams_impl_arm64(fd, buf, count);
     }

@@ -41,7 +41,7 @@ string strncat(string dest, string src, int n) {
 int strncmp(string a, string b, int n) {
     return __strncmp_asm@string_impl_x86(a, b, n);
 }
-#elif defined(__ARM64__)
+#elif defined(__aarch64__) || defined(__ARM64__)
 int strcmp(string a, string b) {
     return __strcmp_asm@string_impl_arm64(a, b);
 }
