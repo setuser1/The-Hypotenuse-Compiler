@@ -197,7 +197,7 @@ Typed struct PoliceDog&Dog&Animal(string name, int badge) {
 ```c
 // Heap allocation *NEW*
 allocate int arr[100];
-free arr;
+free(arr);
 
 // Auto-freed at last use *NEW*
 autoremove allocate int buf[512];
