@@ -1,8 +1,12 @@
-.PHONY: run install test lint typecheck all build binary clean full-install uninstall
+.PHONY: run install test lint typecheck all build build-x86_64-elf binary clean full-install full-install-x86_64-elf uninstall
 
 # Path to the parseable regression fixture (quoted where expanded to the shell
 # so paths containing spaces work).
 BASELINE := $(CURDIR)/test/baseline.ctri
+PYINSTALLER_NAME := hypotenuse
+X86_64_ELF_NAME := hypotenuse-x86_64-elf
+X86_64_ELF_IMAGE ?= python:3.14-slim
+X86_64_ELF_PLATFORM ?= linux/amd64
 
 # ---------------------------------------------------------------
 # install: install all Python dependencies needed to test/lint
@@ -142,7 +146,17 @@ all: install lint test
 # build: build PyInstaller executable
 # ---------------------------------------------------------------
 build: install
-	pyinstaller --onefile --name hypotenuse --add-data "src:src" src/main.py
+	pyinstaller --onefile --name $(PYINSTALLER_NAME) --add-data "src:src" src/main.py
+
+# ---------------------------------------------------------------
+# build-x86_64-elf: cross-build Linux x86_64 ELF compiler from ARM64
+# ---------------------------------------------------------------
+build-x86_64-elf:
+	docker run --rm --platform $(X86_64_ELF_PLATFORM) \
+		-v "$(CURDIR):/work" \
+		-w /work \
+		$(X86_64_ELF_IMAGE) \
+		sh -c 'apt-get update && apt-get install -y --no-install-recommends binutils && python -m pip install --quiet pyinstaller && pyinstaller --clean --onefile --name $(X86_64_ELF_NAME) --add-data "src:src" src/main.py'
 
 # ---------------------------------------------------------------
 # binary: run the compiled binary (must run 'make build' first)
@@ -174,6 +188,30 @@ full-install: build
 		cp dist/hypotenuse ~/.local/bin/hypotenuse; \
 		chmod +x ~/.local/bin/hypotenuse; \
 		echo "Installed to ~/.local/bin/hypotenuse"; \
+		mkdir -p ~/.local/lib/PLIBS/plstd; \
+		echo "Created ~/.local/lib/PLIBS/plstd"; \
+		cp -r plstd/* ~/.local/lib/PLIBS/plstd/; \
+		echo "Copied plstd contents to ~/.local/lib/PLIBS/plstd"; \
+		echo "Add ~/.local/bin to your PATH if not already present"; \
+	fi
+
+# ---------------------------------------------------------------
+# full-install-x86_64-elf: install the cross-built Linux x86_64 ELF compiler
+# ---------------------------------------------------------------
+full-install-x86_64-elf: build-x86_64-elf
+	@if [ -w /usr/local/bin ]; then \
+		cp dist/$(X86_64_ELF_NAME) /usr/local/bin/hypotenuse; \
+		chmod +x /usr/local/bin/hypotenuse; \
+		echo "Installed Linux x86_64 ELF compiler to /usr/local/bin/hypotenuse"; \
+		sudo mkdir -p /usr/lib/PLIBS/plstd; \
+		echo "Created /usr/lib/PLIBS/plstd"; \
+		sudo cp -r plstd/* /usr/lib/PLIBS/plstd/; \
+		echo "Copied plstd contents to /usr/lib/PLIBS/plstd"; \
+	else \
+		mkdir -p ~/.local/bin; \
+		cp dist/$(X86_64_ELF_NAME) ~/.local/bin/hypotenuse; \
+		chmod +x ~/.local/bin/hypotenuse; \
+		echo "Installed Linux x86_64 ELF compiler to ~/.local/bin/hypotenuse"; \
 		mkdir -p ~/.local/lib/PLIBS/plstd; \
 		echo "Created ~/.local/lib/PLIBS/plstd"; \
 		cp -r plstd/* ~/.local/lib/PLIBS/plstd/; \

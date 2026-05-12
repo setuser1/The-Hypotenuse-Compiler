@@ -26,6 +26,13 @@ cd The-Hypotenuse-Compiler
 make full-install
 ```
 
+To build the compiler as a Linux x86_64 ELF binary from an ARM64 host, install Docker and run:
+
+```bash
+make build-x86_64-elf
+make full-install-x86_64-elf
+```
+
 ---
 
 ## Documentation
