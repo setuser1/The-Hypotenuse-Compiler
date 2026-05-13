@@ -12,7 +12,7 @@ X86_64_ELF_PLATFORM ?= linux/amd64
 # install: install all Python dependencies needed to test/lint
 # ---------------------------------------------------------------
 install:
-	pip install --quiet pytest pyflakes
+	pip install --quiet pytest pyflakes pyinstaller
 
 # ---------------------------------------------------------------
 # run: compile the canonical example file and print the object graph
