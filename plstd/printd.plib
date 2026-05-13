@@ -3,6 +3,14 @@
 space printd {
 
 asm int sys_write(int fd, string buf, int count) {
+    syntax x86_64_linux
+    .section .text
+    mov rax, 1
+    syscall
+    ret
+}
+
+asm int sys_write_arm64(int fd, string buf, int count) {
     syntax arm64_macho
     .section __TEXT,__text
     mov x16, #4
@@ -10,10 +18,22 @@ asm int sys_write(int fd, string buf, int count) {
     ret
 }
 
-void print_c(char c) { sys_write(1, &c, 1); }
+void print_c(char c) { 
+    #ifdef __x86_64__
+    sys_write(1, &c, 1);
+    #elif defined(__aarch64__) || defined(__ARM64__)
+    sys_write_arm64(1, &c, 1);
+    #endif
+}
 
 void print_s(string s) {
-    if (s) { sys_write(1, s, len(s)); }
+    if (s) { 
+        #ifdef __x86_64__
+        sys_write(1, s, len(s));
+        #elif defined(__aarch64__) || defined(__ARM64__)
+        sys_write_arm64(1, s, len(s));
+        #endif
+    }
 }
 
 void print_num(unsigned long n, int base, int upper) {

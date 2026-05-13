@@ -1,7 +1,7 @@
 space streams_impl_x86 {
     asm int sys_read(int fd, string buf, int count) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, 0
         syscall
         ret
@@ -9,7 +9,7 @@ space streams_impl_x86 {
 
     asm int sys_write(int fd, string buf, int count) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, 1
         syscall
         ret
@@ -17,7 +17,7 @@ space streams_impl_x86 {
 
     asm int sys_open(string path, int flags, int mode) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, 2
         syscall
         ret
@@ -25,7 +25,7 @@ space streams_impl_x86 {
 
     asm int sys_close(int fd) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, 3
         syscall
         ret
@@ -33,7 +33,7 @@ space streams_impl_x86 {
 
     asm int sys_unlink(string path) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, 87
         syscall
         ret

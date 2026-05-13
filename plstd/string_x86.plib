@@ -1,7 +1,7 @@
 space string_impl_x86 {
     asm int __strcmp_asm(string a, string b) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rcx, rdi
         mov rdx, rsi
     .loop:
@@ -20,7 +20,7 @@ space string_impl_x86 {
 
     asm string __strcpy_asm(string dest, string src) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, rdi
         mov rcx, rdi
         mov rdx, rsi
@@ -36,7 +36,7 @@ space string_impl_x86 {
 
     asm string __strcat_asm(string dest, string src) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, rdi
         mov rcx, rdi
         mov rdx, rsi
@@ -58,7 +58,7 @@ space string_impl_x86 {
 
     asm string __strdup_asm(string s) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov r8, rdi
         mov r9, rdi
     .len_loop:
@@ -92,7 +92,7 @@ space string_impl_x86 {
 
     asm int __strchr_asm(string s, char c) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rcx, rdi
         mov rdx, rsi
         and rdx, 0xFF
@@ -116,7 +116,7 @@ space string_impl_x86 {
 
     asm int __strstr_asm(string haystack, string needle) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rcx, rdi
         mov rdx, rsi
         mov r8, rdi
@@ -148,7 +148,7 @@ space string_impl_x86 {
 
     asm int __strlen_asm(string s) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, 0
         mov rcx, rdi
     .loop:
@@ -165,7 +165,7 @@ space string_impl_x86 {
 
     asm string __strncpy_asm(string dest, string src, int n) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, rdi
         mov rcx, rdi
         mov rdx, rsi
@@ -187,7 +187,7 @@ space string_impl_x86 {
 
     asm string __strncat_asm(string dest, string src, int n) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rax, rdi
         mov rcx, rdi
         mov rdx, rsi
@@ -215,7 +215,7 @@ space string_impl_x86 {
 
     asm int __strncmp_asm(string a, string b, int n) {
         syntax x86_64_linux
-        section .text
+        .section .text
         mov rcx, rdi
         mov rdx, rsi
         mov r8, rdi
