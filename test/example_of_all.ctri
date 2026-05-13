@@ -58,7 +58,7 @@ int main() {
   
     // inline assembly block demonstrating a simple write and exit syscall on x86_64
     asm {
-        syntax_x86_64_linux
+        syntax x86_64_elf
         
         section .data
         char[20] msg = "Hello, World!\n"
