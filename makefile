@@ -107,6 +107,93 @@ assert ast is not None, 'parser returned None'; \
 print('top-level declarations:', len(ast.declarations))"
 	@echo "PASS: parser"
 
+	@echo "--- Test: local test imports resolve ---"
+	@test -f test/mylib.plib || (echo "FAIL: missing test/mylib.plib" && exit 1)
+	@test -f test/lib.plib || (echo "FAIL: missing test/lib.plib" && exit 1)
+	@test -f test/stdio.plib || (echo "FAIL: missing test/stdio.plib" && exit 1)
+	@python3 src/main.py test/test_at_match_funcname.ctri > /dev/null || \
+		(echo "FAIL: test_at_match_funcname.ctri import should resolve" && exit 1)
+	@python3 src/main.py test/test_at_long_funcname.ctri > /dev/null || \
+		(echo "FAIL: test_at_long_funcname.ctri import should resolve" && exit 1)
+	@python3 src/main.py test/test_at_rsplit.ctri > /dev/null || \
+		(echo "FAIL: test_at_rsplit.ctri import should resolve" && exit 1)
+	@echo "PASS: local test imports"
+
+	@echo "--- Test: source files cannot include themselves ---"
+	@python3 -c "\
+import os, sys, tempfile; sys.path.insert(0,'src'); \
+import main; \
+fd, path = tempfile.mkstemp(suffix='.ctri'); \
+os.close(fd); \
+open(path, 'w').write('#include \"' + path + '\"\\nint main() { return 0; }\\n'); \
+exec('try:\\n    main.compile_file(path)\\n    raise AssertionError(\"self include did not fail\")\\nexcept SyntaxError as exc:\\n    assert \"cannot include itself\" in str(exc), exc\\nfinally:\\n    os.remove(path)'); \
+print('PASS: self include rejected')"
+
+	@echo "--- Test: expose allows direct library calls and missing expose fails ---"
+	@python3 src/main.py test/expose_success.ctri 2>&1 | grep "string_strcmp(left, right)" > /dev/null || \
+		(echo "FAIL: expose string should allow direct strcmp calls" && exit 1)
+	@python3 src/main.py test/expose_required.ctri 2>&1 | grep "requires 'strcmp@string()' syntax" > /dev/null || \
+		(echo "FAIL: missing expose should require strcmp@string syntax" && exit 1)
+	@echo "PASS: expose behavior"
+
+	@echo "--- Test: allocate/free generate allocator calls ---"
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "int\\* numbers = (int\\*)__ctri_malloc(4 \\* sizeof(int));" > /dev/null || \
+		(echo "FAIL: allocate int array should call __ctri_malloc with element count" && exit 1)
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "int\\* value = (int\\*)__ctri_malloc(8);" > /dev/null || \
+		(echo "FAIL: byte-sized allocate should call __ctri_malloc with byte size" && exit 1)
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "\\*value = 42;" > /dev/null || \
+		(echo "FAIL: byte-sized allocate initializer should assign through pointer" && exit 1)
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "__ctri_free(numbers);" > /dev/null || \
+		(echo "FAIL: free(numbers) should emit __ctri_free(numbers)" && exit 1)
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "__ctri_free(value);" > /dev/null || \
+		(echo "FAIL: free(value) should emit __ctri_free(value)" && exit 1)
+	@echo "PASS: allocate/free"
+
+	@echo "--- Test: custom-sized int allocation bounds ---"
+	@python3 src/main.py test/allocate_int_custom_sizes.ctri 2>&1 | grep "int\\* tiny = (int\\*)__ctri_malloc(1);" > /dev/null || \
+		(echo "FAIL: 1-byte int allocation should compile when initializer fits" && exit 1)
+	@python3 src/main.py test/allocate_int_custom_sizes.ctri 2>&1 | grep "int\\* big = (int\\*)__ctri_malloc(100);" > /dev/null || \
+		(echo "FAIL: 100-byte int allocation should compile when initializer fits native int" && exit 1)
+	@python3 src/main.py test/allocate_int_small_overflow.ctri 2>&1 | grep "exceeds 1-byte int range" > /dev/null || \
+		(echo "FAIL: 1-byte int allocation should reject initializer above 127" && exit 1)
+	@python3 src/main.py test/allocate_int_native_overflow.ctri 2>&1 | grep "exceeds native C int range" > /dev/null || \
+		(echo "FAIL: custom-sized int allocation should reject initializer above native int max" && exit 1)
+	@echo "PASS: custom-sized int allocation bounds"
+
+	@echo "--- Test: custom-sized scalar allocation bounds ---"
+	@python3 src/main.py test/allocate_scalar_custom_sizes.ctri 2>&1 | grep "char\\* letter = (char\\*)__ctri_malloc(1);" > /dev/null || \
+		(echo "FAIL: 1-byte char allocation should compile when initializer fits" && exit 1)
+	@python3 src/main.py test/allocate_scalar_custom_sizes.ctri 2>&1 | grep "unsigned\\* byte_value = (unsigned\\*)__ctri_malloc(1);" > /dev/null || \
+		(echo "FAIL: 1-byte unsigned allocation should compile when initializer fits" && exit 1)
+	@python3 src/main.py test/allocate_scalar_custom_sizes.ctri 2>&1 | grep "float\\* ratio = (float\\*)__ctri_malloc(4);" > /dev/null || \
+		(echo "FAIL: native-sized float allocation should compile" && exit 1)
+	@python3 src/main.py test/allocate_short_small_overflow.ctri 2>&1 | grep "exceeds 1-byte short range" > /dev/null || \
+		(echo "FAIL: 1-byte short allocation should reject initializer above 127" && exit 1)
+	@python3 src/main.py test/allocate_unsigned_small_overflow.ctri 2>&1 | grep "exceeds 1-byte unsigned range" > /dev/null || \
+		(echo "FAIL: 1-byte unsigned allocation should reject initializer above 255" && exit 1)
+	@python3 src/main.py test/allocate_float_too_small.ctri 2>&1 | grep "smaller than native C float size" > /dev/null || \
+		(echo "FAIL: float allocation should reject byte sizes smaller than native float" && exit 1)
+	@echo "PASS: custom-sized scalar allocation bounds"
+
+	@echo "--- Test: base string operations ---"
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'char\* greeting = __ctri_strdup("hello");' > /dev/null || \
+		(echo "FAIL: string declaration should duplicate literal storage" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "__ctri_free(greeting);" > /dev/null || \
+		(echo "FAIL: string literal reassignment should free previous storage" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'greeting = __ctri_strdup("hi");' > /dev/null || \
+		(echo "FAIL: string literal reassignment should duplicate new literal" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "greeting = __ctri_realloc(greeting, __ctri_strlen(greeting) + __ctri_strlen(suffix) + 1);" > /dev/null || \
+		(echo "FAIL: string append should grow the destination buffer" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "__ctri_strcat(greeting, suffix);" > /dev/null || \
+		(echo "FAIL: string append should concatenate suffix" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "int greeting_len = __ctri_strlen(greeting);" > /dev/null || \
+		(echo "FAIL: len(string) should use __ctri_strlen" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_hi = (strcmp(greeting, "hi world") == 0);' > /dev/null || \
+		(echo "FAIL: string == literal should emit strcmp == 0" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_not_empty = (strcmp(greeting, "") != 0);' > /dev/null || \
+		(echo "FAIL: string != literal should emit strcmp != 0" && exit 1)
+	@echo "PASS: base string operations"
+
 	@echo "--- Test: no libc string functions in compiler-generated code ---"
 	@python3 src/main.py test/test_no_libc_strings.ctri 2>&1 | grep "#include <string.h>" > /dev/null && \
 		(echo "FAIL: <string.h> must not be included" && exit 1) || true

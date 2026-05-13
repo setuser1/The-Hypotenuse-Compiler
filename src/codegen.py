@@ -882,17 +882,15 @@ class CodeGen:
                 # First check if function is exposed - if so, resolve to prefixed name
                 exposed_funcs = getattr(self, "_exposed_funcs", {})
                 if base_callee in exposed_funcs:
-                    # Exposed function - resolve to the wrapper name
-                    # Wrapper is: current_prefix + "_" + base_callee
-                    current_prefix = getattr(self, "_current_lib_name", None) or ".."
-                    callee = f"{current_prefix}_{base_callee}"
-                    # print(f"DEBUG: resolved {base_callee} to {callee}")
+                    # Exposed function - resolve to the imported library wrapper.
+                    lib_key = exposed_funcs[base_callee]
+                    callee = f"{lib_key}_{base_callee}"
                 else:
                     # Check if function exists in any imported plib's top-level functions
                     for lib_name, funcs in getattr(
                         self, "_top_level_lib_functions", {}
                     ).items():
-                        if base_callee in funcs:
+                        if base_callee in funcs or f"{lib_name}_{base_callee}" in funcs:
                             raise SyntaxError(
                                 error_msgs.get_error_msg(
                                     "E802",
@@ -1540,7 +1538,6 @@ class CodeGen:
             # Folder import - extract last meaningful path component as prefix
             parts = [p for p in lib_name.split("/") if p and p != "." and p != ".."]
             prefix = parts[-1] if parts else lib_name.split("/")[-1]
-            self._exposed_libs.add(prefix)
         else:
             prefix = lib_name
 
@@ -2821,6 +2818,7 @@ class CodeGen:
         elif node.byte_size is not None:
             self._ensure_ctri_allocator_helpers()
             size_expr = self._expr(node.byte_size)
+            self._validate_byte_sized_initializer(node)
             self._emit(
                 f"{mapped_type}* {node.name} = ({mapped_type}*)__ctri_malloc({size_expr});"
             )
@@ -2840,3 +2838,105 @@ class CodeGen:
         self._ensure_ctri_allocator_helpers()
         expr = self._expr(node.expr)
         self._emit(f"__ctri_free({expr});")
+
+    def _validate_byte_sized_initializer(self, node: Alloc):
+        """Validate literal initializers for byte-sized scalar allocations."""
+        scalar_types = {
+            "char",
+            "short",
+            "int",
+            "long",
+            "signed",
+            "unsigned",
+            "float",
+            "double",
+        }
+        if node.alloc_type not in scalar_types or node.initializer is None:
+            return
+        if not isinstance(node.byte_size, Literal) or not isinstance(node.initializer, Literal):
+            return
+
+        try:
+            byte_size = int(node.byte_size.value)
+        except (TypeError, ValueError):
+            return
+
+        if byte_size <= 0:
+            raise SyntaxError(f"allocate {node.alloc_type} {node.name} byte size must be positive")
+
+        if node.alloc_type in ("float", "double"):
+            self._validate_float_allocation_initializer(node, byte_size)
+            return
+
+        value = self._parse_integer_initializer(node.initializer.value)
+        if value is None:
+            return
+
+        native_min, native_max = self._native_integer_range(node.alloc_type)
+        type_label = f"native C {node.alloc_type} range"
+        if value < native_min or value > native_max:
+            raise SyntaxError(
+                f"initializer {value} for allocate {node.alloc_type} {node.name} exceeds {type_label} "
+                f"({native_min}..{native_max})"
+            )
+
+        bit_count = byte_size * 8
+        if node.alloc_type == "unsigned":
+            byte_min = 0
+            byte_max = (2 ** bit_count) - 1
+        else:
+            byte_min = -(2 ** (bit_count - 1))
+            byte_max = (2 ** (bit_count - 1)) - 1
+        if value < byte_min or value > byte_max:
+            raise SyntaxError(
+                f"initializer {value} for allocate {node.alloc_type} {node.name} exceeds "
+                f"{byte_size}-byte {node.alloc_type} range "
+                f"({byte_min}..{byte_max})"
+            )
+
+    def _validate_float_allocation_initializer(self, node: Alloc, byte_size: int):
+        native_size = 4 if node.alloc_type == "float" else 8
+        if byte_size < native_size:
+            raise SyntaxError(
+                f"allocate {node.alloc_type} {node.name} byte size {byte_size} is smaller than "
+                f"native C {node.alloc_type} size {native_size}"
+            )
+
+        raw_value = str(node.initializer.value).rstrip("fFlL")
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            return
+
+        native_max = 3.4028235e38 if node.alloc_type == "float" else 1.7976931348623157e308
+        if value < -native_max or value > native_max:
+            raise SyntaxError(
+                f"initializer {node.initializer.value} for allocate {node.alloc_type} {node.name} "
+                f"exceeds native C {node.alloc_type} range ({-native_max}..{native_max})"
+            )
+
+    def _parse_integer_initializer(self, raw_value):
+        raw = str(raw_value)
+        if raw.startswith("'") and raw.endswith("'"):
+            inner = raw[1:-1]
+            if len(inner) == 1:
+                return ord(inner)
+            escapes = {"\\0": 0, "\\n": 10, "\\r": 13, "\\t": 9}
+            return escapes.get(inner)
+
+        stripped = raw.rstrip("uUlL")
+        try:
+            return int(stripped, 0)
+        except ValueError:
+            return None
+
+    def _native_integer_range(self, type_name: str):
+        ranges = {
+            "char": (-(2 ** 7), (2 ** 7) - 1),
+            "short": (-(2 ** 15), (2 ** 15) - 1),
+            "int": (-(2 ** 31), (2 ** 31) - 1),
+            "signed": (-(2 ** 31), (2 ** 31) - 1),
+            "unsigned": (0, (2 ** 32) - 1),
+            "long": (-(2 ** 63), (2 ** 63) - 1),
+        }
+        return ranges[type_name]

@@ -371,6 +371,8 @@ def compile_file(path, target_arch=None):
     with open(path, "r") as f:
         content = f.read()
 
+    validate_includes(path, content)
+
     # Preprocess source
     content = preprocess_source(content, target_arch)
     
@@ -387,6 +389,24 @@ def compile_file(path, target_arch=None):
     asm_blocks = codegen_obj._asm_blocks
 
     return tokens, output, objects, asm_blocks
+
+
+def validate_includes(source_path, source_content):
+    """Reject include directives that point back to the current source file."""
+    import os
+    import re
+
+    source_realpath = os.path.realpath(source_path)
+    source_dir = os.path.dirname(source_realpath)
+
+    for match in re.finditer(r'^\s*#\s*include\s+"([^"]+)"', source_content, re.MULTILINE):
+        include_path = match.group(1)
+        include_candidates = [
+            os.path.realpath(include_path),
+            os.path.realpath(os.path.join(source_dir, include_path)),
+        ]
+        if source_realpath in include_candidates:
+            raise SyntaxError(f"source file cannot include itself: {include_path}")
 
 
 def write_output(path, data):

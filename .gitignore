@@ -10,12 +10,10 @@
 
 .DS_Store
 
-*.ctri
+.ctri
+*.spec
+*.s
 
-# Do not ignore C source and header files
-!**/*.c
-!**/*.h
-!**/*.hpp
 !Makefile
 !makefile
 
