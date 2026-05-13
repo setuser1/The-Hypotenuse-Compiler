@@ -1,0 +1,8 @@
+// Test: @ namespace handling - multiple @ signs (E805)
+// This should produce an error: Malformed @ syntax
+using printd from "plstd"
+
+int main() {
+    printd@plstd@extra("Should fail\n");
+    return 0;
+}

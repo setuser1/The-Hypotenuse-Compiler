@@ -60,61 +60,6 @@ def emit_syscall(
         return lines
 
 
-def get_asm_config(
-    asm_block_syntax: Optional[str],
-    target_arch: Optional[str] = None,
-    output_format: Optional[str] = None,
-    is_macos: bool = False,
-    current_arch: Optional[str] = None,
-):
-    """Determine architecture and format for an asm block."""
-    is_arm64_current = False
-    format_current = "elf64"
-
-    if target_arch == "arm64":
-        is_arm64_current = True
-        format_current = "macho64" if is_macos else "elf64"
-    elif target_arch == "x86_64":
-        is_arm64_current = False
-        format_current = "macho64" if is_macos else "elf64"
-
-    if output_format == "macho":
-        is_arm64_current = True
-        format_current = "macho64"
-    elif output_format == "elf":
-        is_arm64_current = False
-        format_current = "elf64"
-
-    if asm_block_syntax:
-        syntax = asm_block_syntax.lower()
-        if "arm64" in syntax:
-            is_arm64_current = True
-            if "macho" in syntax:
-                format_current = "macho64"
-            else:
-                format_current = "elf64"
-        elif "x86_64" in syntax:
-            is_arm64_current = False
-            if "macho" in syntax:
-                format_current = "macho64"
-            else:
-                format_current = "elf64"
-
-    if not target_arch and not output_format and not asm_block_syntax:
-        if is_macos:
-            if current_arch == "arm64":
-                is_arm64_current = True
-                format_current = "macho64"
-            else:
-                is_arm64_current = False
-                format_current = "macho64"
-        else:
-            is_arm64_current = False
-            format_current = "elf64"
-
-    return is_arm64_current, format_current
-
-
 def _escape_string(value: str) -> str:
     """Escape a string for assembly."""
     return (

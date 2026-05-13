@@ -1,0 +1,7 @@
+int foo(int value) {
+    return value;
+}
+
+int long_function_name(string value) {
+    return len(value);
+}

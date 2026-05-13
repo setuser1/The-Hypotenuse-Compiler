@@ -1,0 +1,8 @@
+// Test: @ namespace handling - valid case
+// Using printd from "plstd" with @ syntax should transform to plstd_printd
+using printd from "plstd"
+
+int main() {
+    printd@plstd("Testing @ namespace syntax\n");
+    return 0;
+}

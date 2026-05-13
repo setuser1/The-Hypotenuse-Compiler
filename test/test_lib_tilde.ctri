@@ -1,0 +1,5 @@
+int test_lib_tilde() {
+    // Test lib~ syntax still works, shouldn't work. Must use @ symbol for library calls.
+    int result = lib~some_function(1, 2, 3);
+    return result;
+}

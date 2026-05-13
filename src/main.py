@@ -311,23 +311,23 @@ def _eval_preprocessor_expr(expr, defined_macros):
     if re.match(r'^\w+$', expr):
         return expr in defined_macros
     
-    # Handle ! (not)
-    if expr.startswith('!'):
-        return not _eval_preprocessor_expr(expr[1:].strip(), defined_macros)
+    # Handle || (or) - lowest precedence, check first
+    if '||' in expr:
+        parts = expr.split('||', 1)
+        left = _eval_preprocessor_expr(parts[0].strip(), defined_macros)
+        right = _eval_preprocessor_expr(parts[1].strip(), defined_macros)
+        return left or right
     
-    # Handle && (and)
+    # Handle && (and) - medium precedence
     if '&&' in expr:
         parts = expr.split('&&', 1)
         left = _eval_preprocessor_expr(parts[0].strip(), defined_macros)
         right = _eval_preprocessor_expr(parts[1].strip(), defined_macros)
         return left and right
     
-    # Handle || (or)
-    if '||' in expr:
-        parts = expr.split('||', 1)
-        left = _eval_preprocessor_expr(parts[0].strip(), defined_macros)
-        right = _eval_preprocessor_expr(parts[1].strip(), defined_macros)
-        return left or right
+    # Handle ! (not) - highest precedence, check last
+    if expr.startswith('!'):
+        return not _eval_preprocessor_expr(expr[1:].strip(), defined_macros)
     
     # Handle comparisons
     for op in ['==', '!=', '<', '>', '<=', '>=']:

@@ -9,7 +9,7 @@ using <plstd> // new library imports — high-level standard utilities (project-
 
 // struct with constructors and member function
 typed struct Example(int value) {
-    init() {
+    init {
       self.value = value; // integer member storing the example value
     }
     end {}
@@ -38,7 +38,7 @@ void function_example(tuple loop) {
 }
 
 void many(int count, auto args*) {
-    // variadic-style function accepting a tuple pointer and a count
+    // variadic-style function accepting an auto pointer and a count
     for(int i = 0; i < count; i++) {
         printf("Param %d: %k\n", i, args[i]);
     }
