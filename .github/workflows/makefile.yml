@@ -19,5 +19,11 @@ jobs:
     - name: Install dependencies
       run: make install
 
-    - name: Run check
-      run: make run
+    - name: Lint
+      run: make lint
+
+    - name: Build
+      run: make build
+
+    - name: test check
+      run: make test
