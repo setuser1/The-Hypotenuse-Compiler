@@ -88,8 +88,13 @@ python3 src/main.py [options] <file>
 | Flag              | Description                                   |
 | ----------------- | --------------------------------------------- |
 | `-t` / `--tokens` | Print lexed tokens and scope graph, then exit |
+| `-p` / `--print`  | Print structure graph instead of compiling    |
 | `-o PATH`         | Write compiled output to PATH                 |
-| `-a` / `--asm`    | Show generated assembly                       |
+| `-a` / `--asm`    | Show generated assembly (WIP)                 |
+| `-c` / `--compile` | Compile with gcc to executable               |
+| `-C` / `--cflags` | Pass extra flags to gcc                       |
+| `-i` / `--install` | Install file to PLIBS folder                 |
+| `-r` / `--remove` | Remove a .plib file from PLIBS folder        |
 
 ### Example
 
@@ -99,6 +104,15 @@ python3 src/main.py hello.ctri
 
 # Debug tokens and scope graph
 python3 src/main.py -t hello.ctri
+
+# Print structure graph
+python3 src/main.py -p hello.ctri
+
+# Compile with gcc and extra flags
+python3 src/main.py -c -C "$(sdl2-config --cflags --libs)" graphics.ctri
+
+# Install a library
+python3 src/main.py -i mylib.plib
 ```
 
 ---

@@ -46,9 +46,9 @@ int y = *ptr;       // Dereference operator *
 
 ---
 
-## _future_ C△ New Types
+## C△ New Types
 
-### `string` — First-class string (future)
+### `string` — First-class string
 
 ```c
 string greeting = "Hello, world!";
@@ -58,9 +58,11 @@ string name = "Hypotenuse";
 string full = greeting + " " + name;
 ```
 
+> `string` is implemented and supported throughout the compiler.
+
 ---
 
-### `auto` — Dynamic / Inferred Type (future)
+### `auto` — Dynamic / Inferred Type
 
 ```c
 auto x = 42;          // inferred as int
@@ -72,7 +74,7 @@ auto f = 3.14;        // inferred as double
 
 ---
 
-### `dynam` — Dynamic Array (future)
+### `dynam` — Dynamic Array
 
 ```c
 dynam int numbers = [1, 2, 3, 4, 5];
@@ -86,7 +88,7 @@ int size = len(numbers);
 
 ---
 
-### `tuple` — Heterogeneous List (future)
+### `tuple` — Heterogeneous List
 
 ```c
 tuple t = [1, "hello", 3.14, 'x'];
@@ -119,7 +121,7 @@ printd("%f", v.length());   // 5.0
 
 ---
 
-### `typed` Struct — Native Type + Inheritance (future)
+### `typed` Struct — Native Type + Inheritance
 
 Constructors, member functions, **inheritance**, becomes a native type.
 
@@ -140,7 +142,7 @@ Dog d = Dog("Rex");
 printd("%s", d.speak());   // Woof!
 ```
 
-#### Multiple Inheritance (future)
+#### Multiple Inheritance
 
 ```c
 typed struct PoliceDog&Dog&Animal(string name, int badge) {
@@ -167,3 +169,4 @@ typed struct PoliceDog&Dog&Animal(string name, int badge) {
 | `%f`      | `float` / `double`        |
 | `%s`      | `string` / `char*`        |
 | `%c`      | `char`                    |
+| `%k`      | `auto` (dynamic type)     |

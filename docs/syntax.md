@@ -131,7 +131,7 @@ int sum(auto args*) {
 
 ---
 
-## Lambdas (`lamb`) _NEW_
+## Lambdas (`lamb`)
 
 Named lambdas — return type is optional.
 
@@ -162,7 +162,7 @@ struct Point(int x, int y) {
 }
 ```
 
-### Typed Struct (Native Type + Inheritance) _NEW_
+### Typed Struct (Native Type + Inheritance)
 
 ```c
 typed struct Animal(string name) {
@@ -182,8 +182,8 @@ typed struct Dog&Animal(string name) {
     end {...}
 }
 
-// Multiple inheritance *NEW*
-Typed struct PoliceDog&Dog&Animal(string name, int badge) {
+// Multiple inheritance
+typed struct PoliceDog&Dog&Animal(string name, int badge) {
     init {...}
     // conflicts resolved via parent namespace: obj.Dog.speak()
     end {...}
@@ -195,24 +195,24 @@ Typed struct PoliceDog&Dog&Animal(string name, int badge) {
 ## Memory
 
 ```c
-// Heap allocation *NEW*
+// Heap allocation
 allocate int arr[100];
 free(arr);
 
-// Auto-freed at last use *NEW*
+// Auto-freed at last use
 autoremove allocate int buf[512];
 
 // Custom size types
 allocate int x(200) = 100000000000;
 
-// Robbery: another pointer takes ownership *NEW*
+// Robbery: another pointer takes ownership
 autoremove allocate int p[10];
 int* q = &p;   // q becomes a plain variable, p drops
 ```
 
 ---
 
-## Dynamic Arrays (`dynam`) _NEW_
+## Dynamic Arrays (`dynam`)
 
 ```c
 dynam int numbers = [1, 2, 3, 4, 5];
@@ -225,7 +225,7 @@ int count = len(numbers);
 
 ---
 
-## Tuples _NEW_
+## Tuples
 
 ```c
 tuple t = [1, "hello", 3.14];
@@ -236,7 +236,7 @@ int count = len(t);   // count = 3
 
 ---
 
-## Inline Assembly (`asm`) _NEW_
+## Inline Assembly (`asm`)
 
 ```c
 asm addInts(int a, int b) {
