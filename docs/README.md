@@ -19,6 +19,9 @@ python3 src/main.py hello.ctri
 
 # Debug: view tokens and scope graph
 python3 src/main.py -t hello.ctri
+
+# Print structure graph
+python3 src/main.py -p hello.ctri
 ```
 
 ---
@@ -29,13 +32,12 @@ python3 src/main.py -t hello.ctri
 | ---------------------------------- | ---------------------------------------------------------------- |
 | [keywords.md](keywords.md)         | Full keyword and operator reference                              |
 | [syntax.md](syntax.md)             | Complete syntax guide with examples                              |
-| [types.md](types.md)               | Type system — primitives, auto, string, dynam, tuple, structs    |
+| [types.md](types.md)               | Type system — primitives, auto, string, dynam, tuple, typed structs |
 | [memory.md](memory.md)             | Memory model — allocate, free, autoremove, robbery               |
 | [assembly.md](assembly.md)         | Inline assembly — asm blocks, syntax targets, rules              |
 | [stdlib.md](stdlib.md)             | Standard library (plstd) — printd, printfs, len, error handling  |
 | [compiler.md](compiler.md)         | Compiler architecture, pipeline stages, and CLI reference        |
 | [errors.md](errors.md)             | Error reference — all compiler and runtime errors                |
-| [contributing.md](contributing.md) | Contributing guide — workflow, style, tests, error personalities |
 
 ---
 
