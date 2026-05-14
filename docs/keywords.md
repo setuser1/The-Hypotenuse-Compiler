@@ -21,10 +21,10 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 | `long`     | Long integer                        |
 | `signed`   | Explicitly signed integer           |
 | `unsigned` | Unsigned integer                    |
-| `string`   | _future_ First-class string type    |
-| `auto`     | _future_ Dynamic / inferred type    |
-| `dynam`    | _future_ Dynamic array              |
-| `tuple`    | _future_ Dynamic heterogeneous list |
+| `string`   | First-class string type             |
+| `auto`     | Dynamic / inferred type             |
+| `dynam`    | Dynamic array                       |
+| `tuple`    | Dynamic heterogeneous list          |
 
 ---
 
@@ -33,8 +33,8 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 | Keyword   | Description                              |
 | --------- | ---------------------------------------- |
 | `struct`  | Plain struct (no inheritance)            |
-| `space`   | _NEW_ Library namespace declaration      |
-| `typed`   | _future_ Typed struct (with inheritance) |
+| `space`   | Library namespace declaration            |
+| `typed`   | Typed struct (with inheritance)          |
 | `typedef` | C11 type alias                           |
 | `union`   | C11 union                                |
 | `enum`    | C11 enumeration                          |
@@ -61,9 +61,9 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 
 | Keyword      | Description                                          |
 | ------------ | ---------------------------------------------------- |
-| `allocate`   | _NEW_ Heap allocation (`allocate type name [size]`)  |
+| `allocate`   | Heap allocation (`allocate type name [size]`)        |
 | `free`       | Manual heap deallocation                             |
-| `autoremove` | _NEW_ Heap alloc freed at last use (simulation pass) |
+| `autoremove` | Heap alloc freed at last use (simulation pass)       |
 
 ---
 
@@ -71,10 +71,10 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 
 | Keyword     | Description                               |
 | ----------- | ----------------------------------------- |
-| `using`     | _NEW_ Import a symbol from a library      |
-| `expose`    | _NEW_ Globalize a library or namespace    |
-| `@`         | _NEW_ Explicit namespace access operator  |
-| `overwrite` | overwrite base syntax with library syntax |
+| `using`     | Import a symbol from a library            |
+| `expose`    | Globalize a library or namespace          |
+| `@`         | Explicit namespace access operator        |
+| `overwrite` | Overwrite base syntax with library syntax |
 
 ---
 
@@ -82,11 +82,11 @@ This document lists all keywords in C△, their purpose, and basic usage. Keywor
 
 | Keyword    | Description                                 |
 | ---------- | ------------------------------------------- |
-| `asm`      | _NEW_ Inline assembly block                 |
-| `lamb`     | _future_ Named lambda                       |
-| `self`     | _NEW_ Optional struct self-reference        |
-| `init`     | _NEW_ Struct constructor lifecycle function |
-| `end`      | _NEW_ Struct destructor lifecycle function  |
+| `asm`      | Inline assembly block                       |
+| `lamb`     | Named lambda                                |
+| `self`     | Optional struct self-reference              |
+| `init`     | Struct constructor lifecycle function       |
+| `end`      | Struct destructor lifecycle function        |
 | `sizeof`   | C11 size operator                           |
 | `const`    | Constant qualifier                          |
 | `volatile` | Volatile qualifier                          |
