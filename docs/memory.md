@@ -40,7 +40,7 @@ allocate int x(64);  // allocates a single int with 64 bytes
 ```c
 allocate int x(8);  // 8 bytes
 x = 42;
-free x;   // manually release
+free(x);   // manually release
 ```
 
 > Forgetting to `free` heap memory is a memory leak. Use `autoremove` to avoid this.

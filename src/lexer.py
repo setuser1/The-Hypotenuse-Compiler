@@ -53,12 +53,17 @@ Tokens = [
     ("UNDERSCORE_ALIGNAS", re.compile(r"\b_Alignas\b")),
     ("UNDERSCORE_COMPLEX", re.compile(r"\b_Complex\b")),
     ("UNDERSCORE_IMAGINARY", re.compile(r"\b_Imaginary\b")),
+    # C△ MEMORY KEYWORDS
+    ("ALLOCATE", re.compile(r"\ballocate\b")),
+    ("FREE", re.compile(r"\bfree\b")),
     # C△ IMPORT KEYWORDS
     ("USING", re.compile(r"\busing\b")),
     ("FROM", re.compile(r"\bfrom\b")),
     ("EXPOSE", re.compile(r"\bexpose\b")),
     ("SPACE", re.compile(r"\bspace\b")),
     ("AS", re.compile(r"\bas\b")),
+    # ASM KEYWORD
+    ("ASM", re.compile(r"\basm\b")),
     # DATA TYPES
     ("STRING_LITERAL", re.compile(r'"(?:\\.|[^"\\])*"')),
     ("CHAR_LITERAL", re.compile(r"'(?:\\.|[^'\\])*'")),
@@ -113,7 +118,6 @@ Tokens = [
     ("RBRACKET", re.compile(r"]")),
     ("LBRACE", re.compile(r"\{")),
     ("RBRACE", re.compile(r"}")),
-    ("LIB", re.compile(r"\blib\b")),
     # IDENTIFIERS
     ("IDENTIFIER", re.compile(r"[A-Za-z_][A-Za-z0-9_]*")),
     # OTHERS

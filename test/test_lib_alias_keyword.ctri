@@ -1,0 +1,7 @@
+using printd from <plstd> as lib;
+
+int main() {
+    int lib = 7;
+    printd@lib("value: %d", lib);
+    return lib;
+}

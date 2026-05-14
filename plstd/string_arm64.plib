@@ -1,0 +1,193 @@
+space string_impl_arm64 {
+    asm int __strcmp_asm(string a, string b) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+    .loop:
+        ldrb w4, [x2], #1
+        ldrb w5, [x3], #1
+        sub w4, w4, w5
+        cbnz w4, .done
+        cbz w5, .done
+        b .loop
+    .done:
+        ret
+    }
+
+    asm string __strcpy_asm(string dest, string src) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+    .loop:
+        ldrb w4, [x3], #1
+        strb w4, [x2], #1
+        cbnz w4, .loop
+        ret
+    }
+
+    asm string __strcat_asm(string dest, string src) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x0
+    .find_end:
+        ldrb w5, [x2], #1
+        cbnz w5, .find_end
+        sub x2, x2, #1
+    .copy:
+        ldrb w5, [x3], #1
+        strb w5, [x2], #1
+        cbnz w5, .copy
+        ret
+    }
+
+    asm string __strdup_asm(string s) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x0
+    .len_loop:
+        ldrb w5, [x3], #1
+        cbnz w5, .len_loop
+        sub x3, x3, x0
+        mov x4, x3
+        mov x0, x4
+        mov x1, #1
+        mov x16, #9
+        svc #0x80
+        mov x4, x0
+        cmp x4, #-1
+        beq .error
+        mov x5, x2
+        mov x6, x4
+    .copy_loop:
+        ldrb w7, [x5], #1
+        strb w7, [x6], #1
+        cbnz w7, .copy_loop
+        mov x0, x4
+        ret
+    .error:
+        mov x0, #0
+        ret
+    }
+
+    asm int __strchr_asm(string s, char c) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        and x3, x3, #0xFF
+        mov x4, x0
+    .loop:
+        ldrb w5, [x2], #1
+        cmp w5, w3
+        beq .found
+        cbnz w5, .loop
+        mov x0, #-1
+        ret
+    .found:
+        sub x0, x2, x4
+        sub x0, x0, #1
+        ret
+    }
+
+    asm int __strstr_asm(string haystack, string needle) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x0
+    .outer_loop:
+        mov x5, x2
+        mov x6, x3
+    .inner_loop:
+        ldrb w7, [x5], #1
+        ldrb w8, [x6], #1
+        cmp w7, w8
+        bne .next_start
+        cbz w8, .found
+        b .inner_loop
+    .next_start:
+        ldrb w7, [x2], #1
+        cbnz w7, .outer_loop
+        mov x0, #-1
+        ret
+    .found:
+        sub x0, x2, x4
+        ret
+    }
+
+    asm int __strlen_asm(string s) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x1, x0
+        mov x0, #0
+    .loop:
+        ldrb w2, [x1], #1
+        cbnz w2, .loop
+        sub x0, x1, x0
+        sub x0, x0, #1
+        ret
+    }
+
+    asm string __strncpy_asm(string dest, string src, int n) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x2
+    .loop:
+        subs x5, x4, x0
+        cbz x5, .done
+        ldrb w5, [x3], #1
+        strb w5, [x2], #1
+        cbnz w5, .loop
+    .done:
+        ret
+    }
+
+    asm string __strncat_asm(string dest, string src, int n) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x0
+    .find_end:
+        ldrb w5, [x2], #1
+        cbnz w5, .find_end
+        sub x2, x2, #1
+    .copy:
+        subs x5, x4, x1
+        cbz x5, .copy_done
+        ldrb w5, [x3], #1
+        strb w5, [x2], #1
+        cbnz w5, .copy
+    .copy_done:
+        mov x0, x4
+        ret
+    }
+
+    asm int __strncmp_asm(string a, string b, int n) {
+        syntax arm64_macho
+        .section __TEXT,__text
+        mov x2, x0
+        mov x3, x1
+        mov x4, x2
+        mov x5, x3
+        mov x6, #0
+    .loop:
+        subs x6, x6, x4
+        cbz x6, .done
+        ldrb w4, [x2], #1
+        ldrb w5, [x3], #1
+        sub w4, w4, w5
+        cbnz w4, .done
+        cbz w5, .done
+        b .loop
+    .done:
+        ret
+    }
+}

@@ -14,13 +14,17 @@ C△ supports **inline assembly blocks** via the `asm` keyword. Each `asm` block
 asm functionName(params) {
     // x86_64 Linux assembly
     syntax x86_64_linux
+    section .text
 }
 ```
 
 - The **function name** is the label.
 - **Parameters** use native C△ type declarations instead of assembler directives.
 - syntax describes what syntax is being used
-- `return` replaces `ret` — implicit return defaults to `rax` on x86_64.
+- Every `asm` block must explicitly declare its text section for the selected syntax.
+  Use `section .text` for x86_64 NASM targets and `.section __TEXT,__text` for `arm64_macho`.
+- `return;` emits `ret`; `return expr;` moves the expression result to `rax` on x86_64 or `x0` on ARM64 before returning.
+- Variable declarations inside `asm` blocks may omit semicolons; newlines terminate ASM declarations and instructions.
 - Each `asm` block becomes its **own `.asm` file**.
 
 ---
@@ -30,11 +34,9 @@ asm functionName(params) {
 ```c
 asm int addInts(int a, int b) {
     syntax x86_64_linux
-    .section .text
-    mov rax, a
-    mov rbx, b
-    add rax, rbx
-    return       // returns rax
+    section .text
+    int scratch = 0
+    return a + b
 }
 ```
 
@@ -50,7 +52,8 @@ int result = addInts(3, 7);   // result = 10
 
 ```c
 asm void exitProcess(int code) {
-    .section .text
+    syntax x86_64_elf
+    section .text
     mov rax, 60    // sys_exit
     mov rdi, code
     syscall
@@ -74,8 +77,10 @@ asm void exitProcess(int code) {
 
 - `asm` blocks are **opaque** to the simulation pass — no last-use analysis inside them
 - The function name becomes the **global label** in the `.asm` file
-- Do not use assembler directives (`db`, `dw`, `section`, etc.) — use C△ declarations instead
-- Use `return` instead of `ret`
+- Do not use assembler data directives (`db`, `dw`, etc.) — use C△ declarations instead
+- Text section directives are mandatory; data storage can still be represented with C△ variable declarations
+- Use `return;` instead of `ret`, or `return expr;` for simple integer and floating-point return values
+- Variables declared in bare `asm { }` blocks are registered in the surrounding scope; variables declared in `asm` functions are registered for import access and in the function scope
 - `asm` functions are assembled with NASM and linked by GCC
 
 ---

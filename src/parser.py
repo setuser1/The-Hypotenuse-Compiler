@@ -10,8 +10,8 @@ The parser consumes tokens produced by an external lexer and builds
 a structured AST suitable for semantic analysis or code generation.
 """
 
-from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 import error_msgs
 
@@ -39,7 +39,7 @@ class UsingDecl(Node):
     """using statement for imports.
 
     item: specific item to import (None means import all)
-    source: "<lib>" for system, "\"path\"" for local, "scope&name" for scoped
+    source: "<lib>" for system, "\"path\"" for local, "owner&name" for intra-file imports
     alias: optional rename
     """
 
@@ -78,6 +78,21 @@ class Function(Node):
     name: str  # Function identifier
     params: List[Tuple[str, str]]  # (type, name) parameter list
     body: Node  # Function body (Compound)
+
+
+@dataclass
+class AsmBlock(Node):
+    """Inline assembly block."""
+
+    ret_type: Optional[str]  # None for bare asm { }
+    name: Optional[str]  # Function name or None for bare asm
+    params: List[Tuple[str, str]]  # (type, name) parameter list
+    lines: List[str]  # Raw assembly lines (excluding data)
+    return_expr: Optional[str] = None  # Optional C△ return expression
+    syntax: Optional[str] = None  # e.g., "x86_64_linux"
+    is_function: bool = True  # True for asm int func(), False for bare asm { }
+    variables: List[Dict] = field(default_factory=list)
+    data_lines: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -335,6 +350,24 @@ class Typedef(Node):
 
 
 @dataclass
+class Alloc(Node):
+    """allocate keyword for heap allocation."""
+
+    alloc_type: str  # The type being allocated (e.g., "int", "char", "string")
+    name: str  # Variable name
+    count: Optional[Node]  # Array element count (for `allocate int buf[64]`)
+    byte_size: Optional[Node]  # Byte size (for `allocate int x(200)`)
+    initializer: Optional[Node]  # Optional initializer (= val)
+
+
+@dataclass
+class Free(Node):
+    """free keyword for heap deallocation."""
+
+    expr: Node  # The pointer to free
+
+
+@dataclass
 class FieldAccess(Node):
     """Object.field access: obj.field"""
 
@@ -357,7 +390,7 @@ class ArrayDesignation(Node):
     index: Node
     value: Node
     is_range: bool = False  # True for [start...end] = val
-    end_index: Node = None  # End index for ranges
+    end_index: Optional[Node] = None  # End index for ranges
 
 
 @dataclass
@@ -514,7 +547,7 @@ class Parser:
 
     def _make_decl_list(self, decls: List[Declaration]) -> Compound:
         """Create a synthetic declaration list that is not a lexical block."""
-        node = Compound(decls)
+        node = Compound(decls)  # type: ignore[arg-type]
         setattr(node, "_is_decl_list", True)
         return node
 
@@ -691,7 +724,7 @@ class Parser:
         # Return the directive as-is to be emitted
         return Define(directive)
 
-    def parse_external(self) -> Node:
+    def parse_external(self) -> Optional[Node]:
         """
         Parse global declarations:
         - Functions
@@ -705,6 +738,10 @@ class Parser:
         # Handle namespace blocks (space)
         if t[0] == "SPACE":
             return self.parse_space()
+
+        # Handle asm blocks
+        if t[0] == "ASM":
+            return self.parse_asm_block()
 
         # Handle preprocessor directives
         if t[0] == "PREPROCESSOR":
@@ -763,6 +800,42 @@ class Parser:
 
         if t[0] == "ENUM":
             return self.parse_enum_definition()
+
+        if t[0] == "ALLOCATE":
+            self.advance()
+            alloc_type = self.advance()[1]
+            while self.peek()[0] in (
+                "INT",
+                "CHAR",
+                "VOID",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+                "SIGNED",
+                "UNSIGNED",
+                "SIZE_T",
+            ):
+                alloc_type += " " + self.advance()[1]
+            while self.peek()[0] == "MULTIPLY":
+                alloc_type += "*"
+                self.advance()
+            name = self.expect("IDENTIFIER")[1]
+            count = None
+            byte_size = None
+            if self.accept("LBRACKET"):
+                if self.peek()[0] == "INT_LITERAL":
+                    count = Literal(int(self.advance()[1]))
+                self.expect("RBRACKET")
+            elif self.accept("LPAREN"):
+                if self.peek()[0] == "INT_LITERAL":
+                    byte_size = Literal(int(self.advance()[1]))
+                self.expect("RPAREN")
+            init = None
+            if self.accept("ASSIGN"):
+                init = self.parse_assignment()
+            self.expect("SEMICOLON")
+            return Alloc(alloc_type, name, count, byte_size, init)
 
         if t[0] in _TYPE_TOKENS or t[0] == "IDENTIFIER":
             if t[0] == "IDENTIFIER" and t[1] not in self._typedefs:
@@ -826,7 +899,7 @@ class Parser:
             typ = self._consume_pointer_stars(typ)
             # Expected Identifier error handling
             # Check if next token is a literal (not a type or identifier) - this can happen after compound types
-            if self.peek()[0] in (
+            valid_initializer_start = self.peek()[0] in (
                 "INT_LITERAL",
                 "HEX_LITERAL",
                 "BINARY_LITERAL",
@@ -834,9 +907,8 @@ class Parser:
                 "CHAR_LITERAL",
                 "STRING_LITERAL",
                 "FLOAT_LITERAL",
-            ):
-                pass  # This is a valid declaration, don't raise error
-            elif self.peek()[0] != "IDENTIFIER":
+            )
+            if not valid_initializer_start and self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
                 line = bad_tok[2] if len(bad_tok) > 2 else 0
                 col = bad_tok[3] if len(bad_tok) > 3 else 0
@@ -919,7 +991,7 @@ class Parser:
                 full_dims = sizes if len(sizes) > 1 else sizes
 
             init = self.parse_assignment() if self.accept("ASSIGN") else None
-            decls = [Declaration(typ, name, init, array_size, full_dims)]
+            decls = [Declaration(typ, name, init, array_size, full_dims)]  # type: ignore[arg-type]
             while self.accept("COMMA"):
                 extra_name = self.expect("IDENTIFIER")[1]
                 # Handle multi-dimensional array in comma-separated list
@@ -948,8 +1020,12 @@ class Parser:
                 extra_full_dims = extra_sizes if extra_sizes else None
                 extra_init = self.parse_assignment() if self.accept("ASSIGN") else None
                 decls.append(
-                    Declaration(
-                        typ, extra_name, extra_init, extra_array_size, extra_full_dims
+                    Declaration(  # type: ignore[arg-type]
+                        typ,
+                        extra_name,
+                        extra_init,
+                        extra_array_size,  # type: ignore[arg-type]
+                        extra_full_dims,  # type: ignore[arg-type]
                     )
                 )
             self.expect("SEMICOLON")
@@ -958,7 +1034,7 @@ class Parser:
             # Wrap multiple declarators in a synthetic Compound so the caller
             # gets a single node (Program.declarations is a flat list, so we
             # extend it below instead).
-            return _MultiDecl(decls)
+            return _MultiDecl(decls)  # type: ignore
 
     def parse_using(self) -> UsingDecl:
         """Parse a using statement.
@@ -969,9 +1045,9 @@ class Parser:
             using X from <Y>    # import specific from system
             using X from "Y"    # import specific from local
             using X from <Y> as Z  # import with alias
-            using scope&X       # import from scoped
-            using main&X       # import from scoped (any identifier)
-            using foo&X as Y  # import from scoped with alias
+            using owner&X       # import X from owner
+            using main&X        # import X from main
+            using foo&X as Y    # import X from foo as Y
         """
         self.expect("USING")
         t = self.peek()
@@ -1111,17 +1187,18 @@ class Parser:
         # Convert to a Call node with lib~ prefix
         return Call(callee=Var(f"lib~{symbol}"), args=args)
 
-    def parse_expose(self) -> ExposeDecl:
+    def parse_expose(self) -> Optional[ExposeDecl]:
         """Parse an expose statement: expose namespace or expose func@namespace."""
         self.expect("EXPOSE")
         t = self.peek()
-        if t[0] == "IDENTIFIER":
+        # Accept IDENTIFIER or keywords (like STRING) as valid targets
+        if t[0] in ("IDENTIFIER", "STRING", "PLSTD") or t[0].endswith("_KEYWORD"):
             target = self.advance()[1]
             # Check for @ syntax like expose printd@plstd or expose printd@lib
             if self.peek()[0] == "AT":
                 self.expect("AT")
-                # Can be IDENTIFIER, PLSTD, or LIB for the namespace
-                if self.peek()[0] in ("PLSTD", "LIB"):
+                # Can be IDENTIFIER or PLSTD for the namespace
+                if self.peek()[0] == "PLSTD":
                     namespace = self.advance()[1]
                 else:
                     namespace = self.expect("IDENTIFIER")[1]
@@ -1137,7 +1214,410 @@ class Parser:
                 self.expect("SEMICOLON")
             return ExposeDecl(target="plstd")
 
+        return None  # type: ignore
+
+    def parse_asm_block(self) -> "AsmBlock":
+        """Parse an inline assembly block."""
+        self.expect("ASM")
+
+        # Check if this is a bare asm block (asm { }) or function asm block (asm int func() { })
+        ret_type = None
+        name = None
+        params = []
+        is_function = True
+
+        if self.peek()[0] == "LBRACE":
+            # Bare asm block - no return type, name, or params
+            is_function = False
+        else:
+            # Asm function - parse return type
+            ret_type = self.advance()[1]
+            if self.peek()[0] == "MULTIPLY":
+                self.advance()
+                ret_type = ret_type + "*"
+            # Parse function name
+            name = self.expect("IDENTIFIER")[1]
+            # Parse parameters
+            self.expect("LPAREN")
+            if self.peek()[0] != "RPAREN":
+                while True:
+                    param_type = self.advance()[1]
+                    if self.peek()[0] == "MULTIPLY":
+                        self.advance()
+                        param_type = param_type + "*"
+                    param_name = self.expect("IDENTIFIER")[1]
+                    params.append((param_type, param_name))
+                    if self.peek()[0] == "COMMA":
+                        self.advance()
+                    else:
+                        break
+            self.expect("RPAREN")
+
+        # Parse body
+        self.expect("LBRACE")
+        lines = []
+        variables = []
+        data_lines = []
+        return_expr = None
+        syntax = None
+
+        while self.peek()[0] != "RBRACE":
+            if self.peek()[0] == "EOF":
+                raise SyntaxError("Unclosed asm block - missing '}'")
+
+            # Skip standalone semicolons (C△ statement terminators or comments)
+            if self.peek()[0] == "SEMICOLON":
+                semicolon_line = self.peek()[2] if len(self.peek()) > 2 else 0
+                self.advance()
+                # Skip everything else on this line
+                while self.peek()[0] not in ("EOF", "RBRACE"):
+                    tok = self.peek()
+                    tok_line = tok[2] if len(tok) > 2 else 0
+                    if tok_line > semicolon_line:
+                        break  # New line started
+                    self.advance()
+                continue
+
+            # Check for syntax declaration: syntax x86_64_elf or syntax arm64_macho
+            if self.peek()[0] == "IDENTIFIER" and self.peek()[1] == "syntax":
+                self.advance()  # consume 'syntax'
+                if self.peek()[0] == "IDENTIFIER":
+                    syntax = self.advance()[1]
+                continue
+
+            # Check for C△ variable declarations. ASM blocks allow declarations
+            # anywhere; they are emitted into the generated data section.
+            if self.peek()[0] in (
+                "STRING",
+                "INT",
+                "CHAR",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+            ):
+                var_info = self._read_ctri_declaration()
+                if var_info:
+                    variables.append(var_info)
+                    data_lines.append(var_info["asm_line"])
+                continue
+
+            # Check for return statement
+            if self.peek()[0] == "RETURN":
+                self.advance()
+                # Check if there's an expression after return (optional)
+                if self.peek()[0] not in ("SEMICOLON", "RBRACE", "EOF"):
+                    # Parse the return expression until end of line or brace
+                    expr_parts = []
+                    paren_depth = 0
+                    first_expr_line = None
+                    while self.peek()[0] != "RBRACE" and self.peek()[0] != "EOF":
+                        tok = self.peek()
+                        tok_line = tok[2] if len(tok) > 2 else 0
+                        if first_expr_line is None:
+                            first_expr_line = tok_line
+                        elif tok_line > first_expr_line:
+                            break
+                        if tok[0] == "SEMICOLON" and paren_depth == 0:
+                            self.advance()
+                            break
+                        if tok[0] == "LPAREN":
+                            paren_depth += 1
+                        elif tok[0] == "RPAREN":
+                            paren_depth -= 1
+                        elif tok[0] == "LBRACKET":
+                            paren_depth += 1
+                        elif tok[0] == "RBRACKET":
+                            paren_depth -= 1
+                        expr_parts.append(tok[1])
+                        self.advance()
+                    return_expr = " ".join(expr_parts).strip()
+                else:
+                    return_expr = ""
+                    if self.peek()[0] == "SEMICOLON":
+                        self.advance()
+                continue  # don't add return to lines
+
+            # Check for C△ function call (call func(args))
+            if self.peek()[0] == "IDENTIFIER" and self.peek()[1] == "call":
+                call_lines = self._read_ctri_call()
+                lines.extend(call_lines)
+                continue
+
+            # Collect the line as-is
+            line = self._read_asm_line()
+            if line:
+                lines.append(line)
+
+        self.expect("RBRACE")
+        self._validate_asm_sections(lines, syntax, name)
+
+        return AsmBlock(
+            ret_type=ret_type,
+            name=name,
+            params=params,
+            lines=lines,
+            return_expr=return_expr,
+            syntax=syntax,
+            is_function=is_function,
+            variables=variables,
+            data_lines=data_lines,
+        )
+
+    def _validate_asm_sections(
+        self, lines: List[str], syntax: Optional[str], name: Optional[str]
+    ):
+        """Require an explicit text section directive that matches the asm syntax."""
+        syntax_name = (syntax or "").lower()
+        normalized_lines = [line.strip().lower() for line in lines]
+        compact_lines = [line.replace(" ", "") for line in normalized_lines]
+        has_arm64_macho_text = any(
+            line == ".section__text,__text" for line in compact_lines
+        )
+        has_generic_text = any(
+            line in ("section .text", ".section .text") for line in normalized_lines
+        )
+
+        if "arm64" in syntax_name and "macho" in syntax_name:
+            if has_arm64_macho_text:
+                return
+            block_name = name or "<asm>"
+            raise SyntaxError(
+                f"asm block '{block_name}' uses syntax {syntax}, so it must declare "
+                ".section __TEXT,__text"
+            )
+
+        if has_generic_text:
+            return
+
+        block_name = name or "<asm>"
+        expected = (
+            ".section __TEXT,__text"
+            if "arm64" in syntax_name and "macho" in syntax_name
+            else "section .text"
+        )
+        raise SyntaxError(
+            f"asm block '{block_name}' must declare an explicit text section for its syntax: {expected}"
+        )
+
+    def _read_asm_line(self) -> str:
+        """Read a single line of assembly (until newline or closing brace)."""
+        parts = []
+        depth = 0
+        last_tok_type = None
+        first_line = None
+        while True:
+            tok = self.peek()
+            if tok[0] == "EOF":
+                raise SyntaxError("Unclosed asm block - missing '}'")
+            if tok[0] == "RBRACE" and depth == 0:
+                break
+            if tok[0] == "SEMICOLON" and depth == 0:
+                # Skip comment text after semicolon (rest of this line)
+                semicolon_line = tok[2] if len(tok) > 2 else 0
+                self.advance()
+                while self.peek()[0] not in ("EOF", "RBRACE"):
+                    next_tok = self.peek()
+                    next_line = next_tok[2] if len(next_tok) > 2 else 0
+                    if next_line > semicolon_line:
+                        break
+                    self.advance()
+                break
+            tok_line = tok[2] if len(tok) > 2 else 0
+            if first_line is not None and tok_line > first_line:
+                break
+            if first_line is None:
+                first_line = tok_line
+            if tok[0] == "LPAREN":
+                depth += 1
+            elif tok[0] == "RPAREN":
+                depth -= 1
+
+            tok_type = tok[0]
+            tok_text = tok[1]
+
+            if tok_type == "DOT":
+                next_tok = (
+                    self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
+                )
+                if next_tok and next_tok[0] == "IDENTIFIER":
+                    combined = "." + next_tok[1]
+                    if parts and parts[-1] != ".":
+                        parts.append(" ")
+                    parts.append(combined)
+                    self.advance()
+                    self.advance()
+                    last_tok_type = "DIRECTIVE"
+                    continue
+
+            needs_space_before = (
+                tok_type
+                in ("IDENTIFIER", "INT_LITERAL", "HEX_LITERAL", "BINARY_LITERAL")
+                and parts
+                and last_tok_type
+                not in (
+                    "INT_LITERAL",
+                    "HEX_LITERAL",
+                    "BINARY_LITERAL",
+                    "LPAREN",
+                    "LBRACKET",
+                    "DOT",
+                )
+            )
+            if needs_space_before:
+                parts.append(" ")
+
+            parts.append(tok_text)
+            last_tok_type = tok_type
+            self.advance()
+        return "".join(parts).strip()
+
+    def _read_ctri_declaration(self) -> Optional[Dict]:
+        """Parse a C△ variable declaration and return info dict."""
+        tok = self.peek()
+        var_type = tok[1]
+        self.advance()
+
+        # Get variable name
+        var_name = self.expect("IDENTIFIER")[1]
+
+        # Check for array declaration: IDENTIFIER[INT_LITERAL]
+        array_size = None
+        if self.peek()[0] == "LBRACKET":
+            self.advance()  # [
+            size_tok = self.expect("INT_LITERAL")
+            self.expect("RBRACKET")  # ]
+            array_size = int(size_tok[1])
+
+        # Expect assignment
+        self.expect("ASSIGN")
+
+        # Parse value based on type
+        tok = self.peek()
+        initializer = None
+        nasm_directive = None
+
+        type_to_nasm = {
+            "char": "db",
+            "short": "dw",
+            "int": "dd",
+            "long": "dd",
+            "float": "dd",
+            "double": "dq",
+        }
+
+        if var_type == "string":
+            if tok[0] == "STRING_LITERAL":
+                value = tok[1][1:-1]  # Remove quotes
+                escape_map = {"\\n": "\n", "\\t": "\t", "\\\\": "\\", '\\"': '"'}
+                for esc, replacement in escape_map.items():
+                    value = value.replace(esc, replacement)
+                bytes_list = [str(ord(c)) for c in value]
+                bytes_str = ", ".join(bytes_list) + ", 0"
+                nasm_directive = f"db {bytes_str}"
+                initializer = value
+                self.advance()
+        elif var_type == "char":
+            if array_size:
+                # char array
+                if tok[0] == "STRING_LITERAL":
+                    value = tok[1][1:-1]
+                    bytes_list = [str(ord(c)) for c in value]
+                    nasm_directive = f"db {', '.join(bytes_list)}"
+                    initializer = value
+                    self.advance()
+                elif tok[0] == "INT_LITERAL":
+                    initializer = tok[1]
+                    nasm_directive = f"times {array_size} dup({initializer})"
+                    self.advance()
+            else:
+                # char scalar
+                if tok[0] == "CHAR_LITERAL":
+                    initializer = str(ord(tok[1][1:-1]))
+                    nasm_directive = f"db {initializer}"
+                    self.advance()
+                elif tok[0] == "INT_LITERAL":
+                    initializer = tok[1]
+                    nasm_directive = "db " + initializer
+                    self.advance()
+        elif var_type in ("int", "short", "long", "float", "double"):
+            nasm_type = type_to_nasm.get(var_type, "dd")
+            if tok[0] == "INT_LITERAL":
+                initializer = tok[1]
+                if array_size:
+                    nasm_directive = f"times {array_size} dup({initializer})"
+                else:
+                    nasm_directive = f"{nasm_type} {initializer}"
+                self.advance()
+            elif tok[0] == "FLOAT_LITERAL":
+                initializer = tok[1]
+                if array_size:
+                    nasm_directive = f"times {array_size} dup({initializer})"
+                else:
+                    nasm_directive = f"{nasm_type} {initializer}"
+                self.advance()
+
+        if nasm_directive:
+            if self.peek()[0] == "SEMICOLON":
+                self.advance()
+            return {
+                "name": var_name,
+                "type": var_type,
+                "size": array_size,
+                "initializer": initializer,
+                "nasm_directive": nasm_directive,
+                "asm_line": f"{var_name}: {nasm_directive}",
+            }
         return None
+
+    def _read_ctri_call(self) -> List[str]:
+        """Parse a C△ function call and return list of assembly lines."""
+        self.expect("IDENTIFIER")  # consume 'call'
+        func_name = self.advance()[1]
+        self.expect("LPAREN")
+
+        # Parse arguments
+        args = []
+        if self.peek()[0] != "RPAREN":
+            while True:
+                tok = self.peek()
+                if tok[0] == "INT_LITERAL":
+                    args.append(("imm", tok[1]))
+                    self.advance()
+                elif tok[0] == "IDENTIFIER":
+                    args.append(("reg", tok[1]))
+                    self.advance()
+                elif tok[0] == "CHAR_LITERAL":
+                    args.append(("imm", str(ord(tok[1][1:-1]))))
+                    self.advance()
+                else:
+                    # Just consume the token as-is
+                    args.append(("expr", tok[1]))
+                    self.advance()
+
+                if self.peek()[0] == "COMMA":
+                    self.advance()
+                else:
+                    break
+
+        self.expect("RPAREN")
+        # Don't expect semicolon - asm lines don't need them
+
+        # Generate assembly for function call
+        lines = []
+        # Register argument order for x86_64 System V ABI
+        arg_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+        for i, (arg_type, arg_val) in enumerate(args):
+            if i < len(arg_regs):
+                if arg_type == "imm":
+                    lines.append(f"    mov {arg_regs[i]}, {arg_val}")
+                elif arg_type == "reg":
+                    lines.append(f"    mov {arg_regs[i]}, {arg_val}")
+                else:
+                    lines.append(f"    mov {arg_regs[i]}, {arg_val}")
+
+        lines.append(f"    call {func_name}")
+        return lines
 
     def parse_extern_c_block(self):
         """Skip contents of extern "C" { } block (no-op in C)."""
@@ -1614,6 +2094,14 @@ class Parser:
         if t[0] == "LBRACE":
             return self.parse_compound()
 
+        # Handle asm blocks inside function bodies
+        if t[0] == "ASM":
+            return self.parse_asm_block()
+
+        # Handle using declarations inside function bodies
+        if t[0] == "USING":
+            return self.parse_using()
+
         if t[0] == "IF":
             self.advance()
             self.expect("LPAREN")
@@ -1743,7 +2231,7 @@ class Parser:
             while i < len(body.stmts):
                 stmt = body.stmts[i]
                 if hasattr(stmt, "case_label"):
-                    case_value = stmt.case_label
+                    case_value = getattr(stmt, "case_label")
                     case_body = []
                     i += 1
                     while i < len(body.stmts) and not (
@@ -1765,9 +2253,9 @@ class Parser:
             )()
             self.advance()
             case_value = self.parse_expression()
-            case_label_node.case_label = case_value
+            setattr(case_label_node, "case_label", case_value)
             self.expect("COLON")
-            return case_label_node
+            return case_label_node  # type: ignore
 
         if t[0] == "DEFAULT":
             default_label_node = type(
@@ -1775,7 +2263,7 @@ class Parser:
             )()
             self.advance()
             self.expect("COLON")
-            return default_label_node
+            return default_label_node  # type: ignore
 
         # Reject deprecated / removed keywords in statement position too.
         if t[0] in (
@@ -1910,7 +2398,7 @@ class Parser:
             typ = self._consume_pointer_stars(typ)
 
             # Allow literals after compound types (e.g., unsigned long long x = 0xFF)
-            if self.peek()[0] in (
+            valid_initializer_start = self.peek()[0] in (
                 "INT_LITERAL",
                 "HEX_LITERAL",
                 "BINARY_LITERAL",
@@ -1918,9 +2406,8 @@ class Parser:
                 "CHAR_LITERAL",
                 "STRING_LITERAL",
                 "FLOAT_LITERAL",
-            ):
-                pass  # valid - will be handled in initialization
-            elif self.peek()[0] != "IDENTIFIER":
+            )
+            if not valid_initializer_start and self.peek()[0] != "IDENTIFIER":
                 bad_tok = self.peek()
                 raise SyntaxError(
                     error_msgs.get_error_msg(
@@ -1975,6 +2462,52 @@ class Parser:
             if len(decls) == 1:
                 return decls[0]
             return self._make_decl_list(decls)
+
+        if t[0] == "ALLOCATE":
+            self.advance()  # consume allocate
+            alloc_type = self.advance()[1]
+            # Handle compound types
+            while self.peek()[0] in (
+                "INT",
+                "CHAR",
+                "VOID",
+                "FLOAT",
+                "DOUBLE",
+                "SHORT",
+                "LONG",
+                "SIGNED",
+                "UNSIGNED",
+                "SIZE_T",
+            ):
+                alloc_type += " " + self.advance()[1]
+            # Pointer stars
+            while self.peek()[0] == "MULTIPLY":
+                alloc_type += "*"
+                self.advance()
+            name = self.expect("IDENTIFIER")[1]
+            count = None
+            byte_size = None
+            if self.accept("LBRACKET"):
+                if self.peek()[0] == "INT_LITERAL":
+                    count = Literal(int(self.advance()[1]))
+                self.expect("RBRACKET")
+            elif self.accept("LPAREN"):
+                if self.peek()[0] == "INT_LITERAL":
+                    byte_size = Literal(int(self.advance()[1]))
+                self.expect("RPAREN")
+            init = None
+            if self.accept("ASSIGN"):
+                init = self.parse_assignment()
+            self.expect("SEMICOLON")
+            return Alloc(alloc_type, name, count, byte_size, init)
+
+        if t[0] == "FREE":
+            self.advance()
+            self.expect("LPAREN")
+            expr = self.parse_expression()
+            self.expect("RPAREN")
+            self.expect("SEMICOLON")
+            return Free(expr)
 
         # Expression statement
         expr = self.parse_expression() if self.peek()[0] != "SEMICOLON" else None
@@ -2048,7 +2581,7 @@ class Parser:
             field_name = self.expect("IDENTIFIER")[1]
             self.expect("ASSIGN")
             value = self.parse_assignment()
-            return DesignatedInit(field=field_name, value=value)
+            return DesignatedInit(field=field_name, value=value)  # type: ignore
         if self.peek()[0] == "LBRACKET":
             self.advance()
             start_idx = self.parse_expression()
@@ -2058,33 +2591,36 @@ class Parser:
                 self.expect("ASSIGN")
                 value = self.parse_assignment()
                 return ArrayDesignation(
-                    index=start_idx, value=value, is_range=True, end_index=end_idx
+                    index=start_idx,
+                    value=value,  # type: ignore
+                    is_range=True,
+                    end_index=end_idx,  # type: ignore
                 )
             self.expect("RBRACKET")
             self.expect("ASSIGN")
             value = self.parse_assignment()
-            return ArrayDesignation(index=start_idx, value=value)
-        return self.parse_assignment()
+            return ArrayDesignation(index=start_idx, value=value)  # type: ignore
+        return self.parse_assignment()  # type: ignore
 
     # ============================================================
     # Expressions (precedence climbing)
     # ============================================================
 
     def parse_expression(self) -> Node:
-        node = self.parse_assignment()
+        node = self.parse_assignment()  # type: ignore
         while self.accept("COMMA"):
-            right = self.parse_assignment()
+            right = self.parse_assignment()  # type: ignore
             node = right
-        return node
+        return node  # type: ignore
 
     def _parse_single_expression(self) -> Node:
         """Parse a single expression without handling top-level commas."""
-        return self.parse_assignment()
+        return self.parse_assignment()  # type: ignore
 
-    def parse_assignment(self) -> Node:
+    def parse_assignment(self) -> Optional[Node]:
         node = self.parse_conditional()
         if self.accept("ASSIGN"):
-            return Assignment(node, self.parse_assignment())
+            return Assignment(node, self.parse_assignment())  # type: ignore
         # Handle compound assignment operators (+=, -=, *=, /=, %=, etc.)
         compound_ops = {
             "PLUS_ASSIGN": "+",
@@ -2096,8 +2632,8 @@ class Parser:
         for tok_type, op_symbol in compound_ops.items():
             if self.accept(tok_type):
                 right = self.parse_assignment()
-                return Assignment(node, Binary(op_symbol, node, right))
-        return node
+                return Assignment(node, Binary(op_symbol, node, right))  # type: ignore
+        return node  # type: ignore
 
     def parse_conditional(self) -> Node:
         node = self.parse_logical_or()
@@ -2161,40 +2697,44 @@ class Parser:
         return node
 
     def parse_term(self) -> Node:
-        node = self.parse_unary()
+        node = self.parse_unary()  # type: ignore
         while self.peek()[0] in ("MULTIPLY", "DIVIDE", "MODULO"):
             op = self.advance()[1]
-            right = self.parse_unary()
-            node = Binary(op, node, right)
-        return node
+            right = self.parse_unary()  # type: ignore
+            node = Binary(op, node, right)  # type: ignore
+        return node  # type: ignore
 
-    def parse_unary(self) -> Node:
+    def parse_unary(self) -> Optional[Node]:
         """Parse unary prefix expressions (e.g. !y, ++x, --x, *ptr, &var, -x)."""
         token = self.peek()
         if token[0] == "MINUS":
             self.advance()
-            operand = self.parse_unary()
-            return Unary(op="-", operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="-", operand=operand, prefix=True)  # type: ignore
         if token[0] == "PLUS":
             self.advance()
-            operand = self.parse_unary()
-            return Unary(op="+", operand=operand, prefix=True)
-        if token[0] == "NOT" or token[0] == "BITWISE_NOT":
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="+", operand=operand, prefix=True)  # type: ignore
+        if token[0] == "NOT":
             op = self.advance()[1]
-            operand = self.parse_unary()
-            return Unary(op=op, operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op=op, operand=operand, prefix=True)  # type: ignore
+        if token[0] == "TILDE":
+            self.advance()
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="~", operand=operand, prefix=True)  # type: ignore
         if token[0] in ("INCREMENT", "DECREMENT"):
             op = self.advance()[1]
-            operand = self.parse_unary()
-            return Unary(op=op, operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op=op, operand=operand, prefix=True)  # type: ignore
         if token[0] == "MULTIPLY":
             self.advance()
-            operand = self.parse_unary()
-            return Unary(op="*", operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="*", operand=operand, prefix=True)  # type: ignore
         if token[0] == "AMPERSAND":
             self.advance()
-            operand = self.parse_unary()
-            return Unary(op="&", operand=operand, prefix=True)
+            operand = self.parse_unary()  # type: ignore
+            return Unary(op="&", operand=operand, prefix=True)  # type: ignore
         return self.parse_postfix()
 
     def _is_assignment_rhs(self) -> bool:
@@ -2260,27 +2800,6 @@ class Parser:
                 # Convert arrow to (*expr).field for AST representation
                 deref = Unary(op="*", operand=node, prefix=True)
                 node = FieldAccess(deref, field_name)
-            elif self.peek()[0] == "AT":
-                # Namespace access: namespace@symbol or func@lib
-                # Only valid when node is a Var (identifier)
-                if not isinstance(node, Var):
-                    break
-                self.advance()
-                if self.peek()[0] == "AT":
-                    # Handle @@ (two ats) for nested namespace
-                    self.advance()
-                    symbol = self.expect("IDENTIFIER")[1]
-                    node = Var(f"{node.name}@@{symbol}")
-                else:
-                    # Single @ - treat as namespace prefix
-                    # Accept IDENTIFIER or LIB as namespace
-                    if self.peek()[0] == "IDENTIFIER":
-                        symbol = self.expect("IDENTIFIER")[1]
-                    elif self.peek()[0] == "LIB":
-                        symbol = self.expect("LIB")[1]
-                    else:
-                        raise SyntaxError("Expected identifier or 'lib' after '@'")
-                    node = Var(f"{node.name}@{symbol}")
             else:
                 break
         return node
@@ -2292,7 +2811,7 @@ class Parser:
             # Handle dynam type: "dynam <element_type>"
             if type1 == "dynam":
                 elem_type = self.parse_type_expression()
-                return TypeExpr(f"dynam {elem_type.type_name}")
+                return TypeExpr(f"dynam {getattr(elem_type, 'type_name', '')}")
             # Handle string type (no element type needed)
             if type1 == "string":
                 return TypeExpr("string")
@@ -2386,7 +2905,7 @@ class Parser:
         """Parse the most basic expression forms."""
         tok = self.peek()
 
-        # Handle printd@lib - namespace access (function@namespace)
+        # Handle func@lib - namespace access (function@namespace)
         if tok[0] == "IDENTIFIER":
             # Check if this is followed by @
             next_tok = (
@@ -2396,13 +2915,22 @@ class Parser:
                 # This is function@namespace pattern
                 func_name = self.advance()[1]
                 self.expect("AT")
-                # Namespace can be IDENTIFIER or LIB
-                if self.peek()[0] == "IDENTIFIER":
-                    namespace = self.advance()[1]
-                elif self.peek()[0] == "LIB":
+                # Namespace can be IDENTIFIER, PLSTD, or STRING (string type keyword)
+                if self.peek()[0] in ("IDENTIFIER", "PLSTD", "STRING"):
                     namespace = self.advance()[1]
                 else:
-                    raise SyntaxError("Expected identifier or 'lib' after '@'")
+                    line = self.peek()[2] if len(self.peek()) > 2 else 0
+                    col = self.peek()[3] if len(self.peek()) > 3 else 0
+                    raise SyntaxError(
+                        error_msgs.get_error_msg(
+                            "E001",
+                            found=self.peek()[0],
+                            expected="identifier",
+                            line=line,
+                            col=col,
+                            fallback=f"Expected identifier after '@' at line {line}, column {col}",
+                        )
+                    )
                 return Var(f"{func_name}@{namespace}")
 
         if tok[0] == "IDENTIFIER":
@@ -2443,23 +2971,39 @@ class Parser:
                 type_node = self.parse_type_expression()
                 while self.peek()[0] == "MULTIPLY":
                     self.advance()
-                    type_node.type_name += "*"
+                    setattr(
+                        type_node,
+                        "type_name",
+                        getattr(type_node, "type_name", "") + "*",
+                    )
                 if self.peek()[0] == "LBRACKET":
                     self.advance()
                     if self.peek()[0] == "RBRACKET":
-                        type_node.type_name += "[]"
+                        setattr(
+                            type_node,
+                            "type_name",
+                            getattr(type_node, "type_name", "") + "[]",
+                        )
                     else:
                         size = self.expect("INT_LITERAL")[1]
-                        type_node.type_name += f"[{size}]"
+                        setattr(
+                            type_node,
+                            "type_name",
+                            getattr(type_node, "type_name", "") + f"[{size}]",
+                        )
                     self.expect("RBRACKET")
                 if self.peek()[0] == "LBRACE":
                     init_list = self.parse_init_list()
                     return CompoundLiteral(
-                        lit_type=type_node.type_name, elements=init_list.elements
+                        lit_type=getattr(type_node, "type_name", ""),
+                        elements=init_list.elements,
                     )
                 self.expect("RPAREN")
-                operand = self.parse_unary()
-                return Cast(cast_type=type_node.type_name, operand=operand)
+                operand = self.parse_unary()  # type: ignore
+                return Cast(  # type: ignore
+                    cast_type=getattr(type_node, "type_name", ""),
+                    operand=operand,  # type: ignore
+                )
             else:
                 # Grouping: (expr)
                 node = self.parse_expression()

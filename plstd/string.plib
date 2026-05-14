@@ -1,0 +1,84 @@
+using "string_x86"
+using "string_arm64"
+
+#ifdef __x86_64__
+int strcmp(string a, string b) {
+    return __strcmp_asm@string_impl_x86(a, b);
+}
+
+string strcpy(string dest, string src) {
+    return __strcpy_asm@string_impl_x86(dest, src);
+}
+
+string strcat(string dest, string src) {
+    return __strcat_asm@string_impl_x86(dest, src);
+}
+
+string strdup(string s) {
+    return __strdup_asm@string_impl_x86(s);
+}
+
+int strchr(string s, char c) {
+    return __strchr_asm@string_impl_x86(s, c);
+}
+
+int strstr(string haystack, string needle) {
+    return __strstr_asm@string_impl_x86(haystack, needle);
+}
+
+int strlen(string s) {
+    return __strlen_asm@string_impl_x86(s);
+}
+
+string strncpy(string dest, string src, int n) {
+    return __strncpy_asm@string_impl_x86(dest, src, n);
+}
+
+string strncat(string dest, string src, int n) {
+    return __strncat_asm@string_impl_x86(dest, src, n);
+}
+
+int strncmp(string a, string b, int n) {
+    return __strncmp_asm@string_impl_x86(a, b, n);
+}
+#elif defined(__aarch64__) || defined(__ARM64__)
+int strcmp(string a, string b) {
+    return __strcmp_asm@string_impl_arm64(a, b);
+}
+
+string strcpy(string dest, string src) {
+    return __strcpy_asm@string_impl_arm64(dest, src);
+}
+
+string strcat(string dest, string src) {
+    return __strcat_asm@string_impl_arm64(dest, src);
+}
+
+string strdup(string s) {
+    return __strdup_asm@string_impl_arm64(s);
+}
+
+int strchr(string s, char c) {
+    return __strchr_asm@string_impl_arm64(s, c);
+}
+
+int strstr(string haystack, string needle) {
+    return __strstr_asm@string_impl_arm64(haystack, needle);
+}
+
+int strlen(string s) {
+    return __strlen_asm@string_impl_arm64(s);
+}
+
+string strncpy(string dest, string src, int n) {
+    return __strncpy_asm@string_impl_arm64(dest, src, n);
+}
+
+string strncat(string dest, string src, int n) {
+    return __strncat_asm@string_impl_arm64(dest, src, n);
+}
+
+int strncmp(string a, string b, int n) {
+    return __strncmp_asm@string_impl_arm64(a, b, n);
+}
+#endif

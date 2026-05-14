@@ -1,0 +1,240 @@
+space string_impl_x86 {
+    asm int __strcmp_asm(string a, string b) {
+        syntax x86_64_linux
+        .section .text
+        mov rcx, rdi
+        mov rdx, rsi
+    .loop:
+        movzx eax, byte [rcx]
+        movzx r8d, byte [rdx]
+        inc rcx
+        inc rdx
+        sub eax, r8d
+        jne .done
+        test r8b, r8b
+        je .done
+        jmp .loop
+    .done:
+        ret
+    }
+
+    asm string __strcpy_asm(string dest, string src) {
+        syntax x86_64_linux
+        .section .text
+        mov rax, rdi
+        mov rcx, rdi
+        mov rdx, rsi
+    .loop:
+        mov r8b, [rdx]
+        mov [rcx], r8b
+        inc rcx
+        inc rdx
+        test r8b, r8b
+        jne .loop
+        ret
+    }
+
+    asm string __strcat_asm(string dest, string src) {
+        syntax x86_64_linux
+        .section .text
+        mov rax, rdi
+        mov rcx, rdi
+        mov rdx, rsi
+    .find_end:
+        mov r8b, [rcx]
+        inc rcx
+        test r8b, r8b
+        jne .find_end
+        dec rcx
+    .copy:
+        mov r8b, [rdx]
+        mov [rcx], r8b
+        inc rcx
+        inc rdx
+        test r8b, r8b
+        jne .copy
+        ret
+    }
+
+    asm string __strdup_asm(string s) {
+        syntax x86_64_linux
+        .section .text
+        mov r8, rdi
+        mov r9, rdi
+    .len_loop:
+        mov al, [r8]
+        inc r8
+        test al, al
+        jne .len_loop
+        mov rcx, r8
+        sub rcx, rdi
+        mov rdi, rcx
+        mov rsi, 1
+        mov rax, 9
+        syscall
+        cmp rax, -1
+        je .error
+        mov rcx, rax
+        mov r8, r9
+        mov r9, rcx
+    .copy_loop:
+        mov al, [r8]
+        mov [r9], al
+        inc r8
+        inc r9
+        test al, al
+        jne .copy_loop
+        ret
+    .error:
+        mov rax, 0
+        ret
+    }
+
+    asm int __strchr_asm(string s, char c) {
+        syntax x86_64_linux
+        .section .text
+        mov rcx, rdi
+        mov rdx, rsi
+        and rdx, 0xFF
+        mov r8, rdi
+    .loop:
+        mov al, [rcx]
+        cmp al, dl
+        je .found
+        test al, al
+        je .not_found
+        inc rcx
+        jmp .loop
+    .found:
+        mov rax, rcx
+        sub rax, r8
+        ret
+    .not_found:
+        mov rax, -1
+        ret
+    }
+
+    asm int __strstr_asm(string haystack, string needle) {
+        syntax x86_64_linux
+        .section .text
+        mov rcx, rdi
+        mov rdx, rsi
+        mov r8, rdi
+    .outer_loop:
+        mov r9, rcx
+        mov r10, rdx
+    .inner_loop:
+        mov al, [r9]
+        mov bl, [r10]
+        cmp al, bl
+        jne .next_start
+        test bl, bl
+        je .found
+        inc r9
+        inc r10
+        jmp .inner_loop
+    .next_start:
+        mov al, [rcx]
+        inc rcx
+        test al, al
+        jne .outer_loop
+        mov rax, -1
+        ret
+    .found:
+        mov rax, rcx
+        sub rax, r8
+        ret
+    }
+
+    asm int __strlen_asm(string s) {
+        syntax x86_64_linux
+        .section .text
+        mov rax, 0
+        mov rcx, rdi
+    .loop:
+        mov al, [rcx]
+        test al, al
+        je .done
+        inc rcx
+        jmp .loop
+    .done:
+        mov rax, rcx
+        sub rax, rdi
+        ret
+    }
+
+    asm string __strncpy_asm(string dest, string src, int n) {
+        syntax x86_64_linux
+        .section .text
+        mov rax, rdi
+        mov rcx, rdi
+        mov rdx, rsi
+        mov r8, rdi
+    .loop:
+        mov r9, rcx
+        sub r9, rdi
+        cmp r9, rdx
+        jae .done
+        mov r9b, [rdx]
+        mov [rcx], r9b
+        inc rcx
+        inc rdx
+        test r9b, r9b
+        jne .loop
+    .done:
+        ret
+    }
+
+    asm string __strncat_asm(string dest, string src, int n) {
+        syntax x86_64_linux
+        .section .text
+        mov rax, rdi
+        mov rcx, rdi
+        mov rdx, rsi
+        mov r8, rdi
+    .find_end:
+        mov r9b, [rcx]
+        inc rcx
+        test r9b, r9b
+        jne .find_end
+        dec rcx
+        mov r9, 0
+    .copy:
+        cmp r9, rdx
+        jae .copy_done
+        mov r10b, [r8]
+        mov [rcx], r10b
+        inc rcx
+        inc r8
+        inc r9
+        test r10b, r10b
+        jne .copy
+    .copy_done:
+        ret
+    }
+
+    asm int __strncmp_asm(string a, string b, int n) {
+        syntax x86_64_linux
+        .section .text
+        mov rcx, rdi
+        mov rdx, rsi
+        mov r8, rdi
+        mov r9, 0
+    .loop:
+        cmp r9, rdx
+        jae .done
+        mov al, [rcx]
+        mov bl, [rdx]
+        sub al, bl
+        jne .done
+        test bl, bl
+        je .done
+        inc rcx
+        inc rdx
+        inc r9
+        jmp .loop
+    .done:
+        movsx eax, al
+        ret
+    }
+}

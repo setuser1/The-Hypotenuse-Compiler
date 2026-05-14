@@ -15,7 +15,7 @@ Error codes are organized by category:
 
 import os
 
-_ERRORS = None
+_ERRORS: dict[str, list[str]] = {}
 _ERROR_CATEGORIES = {
     "SYNTAX": "Syntax errors (E0xx)",
     "TYPE": "Type errors (E1xx)",
@@ -260,7 +260,9 @@ ERROR_MESSAGES = {
         "Invalid alias '{alias}'. Library not imported or does not exist.",
     ],
     "E805": [
+        "Multiple @ signs not allowed in '{func}'. Use 'func@lib()' for library functions.",
         "Invalid call syntax for {func}. Use '{func}()' directly or '{func}@lib()' for library functions.",
+        "Malformed '@' syntax in '{callee}'. Expected format: function@library",
     ],
     "E806": [
         "Library not found: {lib}",
@@ -323,7 +325,7 @@ def _load_errors():
                     _ERRORS[code].append(msg.strip())
 
 
-def get_error_msg(code: str, fallback: str = None, **kwargs) -> str:
+def get_error_msg(code: str, fallback: str | None = None, **kwargs) -> str:
     """Get an error message for code, format with kwargs.
 
     Args:
@@ -345,7 +347,7 @@ def get_error_msg(code: str, fallback: str = None, **kwargs) -> str:
         return msg
 
 
-def get_random_error_msg(code: str, fallback: str = None, **kwargs) -> str:
+def get_random_error_msg(code: str, fallback: str | None = None, **kwargs) -> str:
     """Get a random error message for code, format with kwargs.
 
     Args:

@@ -1,0 +1,9 @@
+string a = "";
+string b = "  ";
+string c = "This is a very long string designed to test the limits of the string type and ensure that concatenation works correctly across multiple segments without crashing or truncating";
+string d = "one";
+string e = "two";
+string f = "three";
+string concat = d + e + f;
+int len_concat = len(concat);
+int len_empty = len(a);

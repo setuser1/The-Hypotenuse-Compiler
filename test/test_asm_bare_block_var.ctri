@@ -1,0 +1,9 @@
+int main() {
+    asm {
+        syntax arm64_macho
+        section .data
+        int asm_counter = 7
+        .section __TEXT,__text
+    }
+    return asm_counter;
+}

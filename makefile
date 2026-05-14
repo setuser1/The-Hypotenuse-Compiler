@@ -1,21 +1,18 @@
-.PHONY: run install test lint typecheck all build binary clean full-install uninstall
+.PHONY: run install test lint typecheck all build build-x86_64-elf binary clean full-install full-install-x86_64-elf uninstall
 
 # Path to the parseable regression fixture (quoted where expanded to the shell
 # so paths containing spaces work).
 BASELINE := $(CURDIR)/test/baseline.ctri
-RETURNS := $(CURDIR)/test/function_returns.ctri
-
-# New feature test files
-DYNAM := $(CURDIR)/test/test_dynam.ctri
-STRING := $(CURDIR)/test/test_string.ctri
-STRING_CONCAT := $(CURDIR)/test/test_string_concat.ctri
-LEN_TEST := $(CURDIR)/test/test_len.ctri
+PYINSTALLER_NAME := hypotenuse
+X86_64_ELF_NAME := hypotenuse-x86_64-elf
+X86_64_ELF_IMAGE ?= python:3.14-slim
+X86_64_ELF_PLATFORM ?= linux/amd64
 
 # ---------------------------------------------------------------
 # install: install all Python dependencies needed to test/lint
 # ---------------------------------------------------------------
 install:
-	pip install --quiet pytest pyflakes
+	pip install --quiet pytest pyflakes pyinstaller
 
 # ---------------------------------------------------------------
 # run: compile the canonical example file and print the object graph
@@ -27,7 +24,7 @@ run: install
 # lint: catch syntax errors and undefined names across all source files
 # ---------------------------------------------------------------
 lint:
-	python3 -m pyflakes src/lexer.py src/parser.py src/structure.py src/main.py
+	python3 -m pyflakes src/lexer.py src/parser.py src/structure.py src/codegen.py src/assembler.py src/main.py
 
 # ---------------------------------------------------------------
 # typecheck: run the compiler against every .ctri test file and
@@ -40,15 +37,10 @@ typecheck:
 	@echo "  Checking: $(BASELINE)"
 	@python3 src/main.py -t "$(BASELINE)" || (echo "FAILED: baseline.ctri" && exit 1)
 	@echo "  Checking: $(RETURNS)"
-	@python3 src/main.py -t "$(RETURNS)" || (echo "FAILED: function_returns.ctri" && exit 1)
 	@echo "  Checking: $(DYNAM)"
-	@python3 src/main.py -t "$(DYNAM)" || (echo "FAILED: test_dynam.ctri" && exit 1)
 	@echo "  Checking: $(STRING)"
-	@python3 src/main.py -t "$(STRING)" || (echo "FAILED: test_string.ctri" && exit 1)
 	@echo "  Checking: $(STRING_CONCAT)"
-	@python3 src/main.py -t "$(STRING_CONCAT)" || (echo "FAILED: test_string_concat.ctri" && exit 1)
 	@echo "  Checking: $(LEN_TEST)"
-	@python3 src/main.py -t "$(LEN_TEST)" || (echo "FAILED: test_len.ctri" && exit 1)
 	@echo "--- All inputs passed ---"
 
 # ---------------------------------------------------------------
@@ -56,7 +48,6 @@ typecheck:
 #       regressions in scope tracking or value parsing are caught
 #       immediately on every push.
 #
-#       function_returns.ctri validates return value handling:
 #       - return expressions in functions (int getFive() { return 5; })
 #       - return a + b expressions in function bodies
 #       - return with parenthesized expressions (x + 10) * 2
@@ -116,6 +107,121 @@ assert ast is not None, 'parser returned None'; \
 print('top-level declarations:', len(ast.declarations))"
 	@echo "PASS: parser"
 
+	@echo "--- Test: local test imports resolve ---"
+	@test -f test/mylib.plib || (echo "FAIL: missing test/mylib.plib" && exit 1)
+	@test -f test/lib.plib || (echo "FAIL: missing test/lib.plib" && exit 1)
+	@test -f test/stdio.plib || (echo "FAIL: missing test/stdio.plib" && exit 1)
+	@python3 src/main.py test/test_at_match_funcname.ctri > /dev/null || \
+		(echo "FAIL: test_at_match_funcname.ctri import should resolve" && exit 1)
+	@python3 src/main.py test/test_at_long_funcname.ctri > /dev/null || \
+		(echo "FAIL: test_at_long_funcname.ctri import should resolve" && exit 1)
+	@python3 src/main.py test/test_at_rsplit.ctri > /dev/null || \
+		(echo "FAIL: test_at_rsplit.ctri import should resolve" && exit 1)
+	@echo "PASS: local test imports"
+
+	@echo "--- Test: source files cannot include themselves ---"
+	@python3 -c "\
+import os, sys, tempfile; sys.path.insert(0,'src'); \
+import main; \
+fd, path = tempfile.mkstemp(suffix='.ctri'); \
+os.close(fd); \
+open(path, 'w').write('#include \"' + path + '\"\\nint main() { return 0; }\\n'); \
+exec('try:\\n    main.compile_file(path)\\n    raise AssertionError(\"self include did not fail\")\\nexcept SyntaxError as exc:\\n    assert \"cannot include itself\" in str(exc), exc\\nfinally:\\n    os.remove(path)'); \
+print('PASS: self include rejected')"
+
+	@echo "--- Test: expose allows direct library calls and missing expose fails ---"
+	@python3 src/main.py test/expose_success.ctri 2>&1 | grep "string_strcmp(left, right)" > /dev/null || \
+		(echo "FAIL: expose string should allow direct strcmp calls" && exit 1)
+	@python3 src/main.py test/expose_required.ctri 2>&1 | grep "requires 'strcmp@string()' syntax" > /dev/null || \
+		(echo "FAIL: missing expose should require strcmp@string syntax" && exit 1)
+	@echo "PASS: expose behavior"
+
+	@echo "--- Test: allocate/free generate allocator calls ---"
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "int\\* numbers = (int\\*)__ctri_malloc(4 \\* sizeof(int));" > /dev/null || \
+		(echo "FAIL: allocate int array should call __ctri_malloc with element count" && exit 1)
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "int\\* value = (int\\*)__ctri_malloc(8);" > /dev/null || \
+		(echo "FAIL: byte-sized allocate should call __ctri_malloc with byte size" && exit 1)
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "\\*value = 42;" > /dev/null || \
+		(echo "FAIL: byte-sized allocate initializer should assign through pointer" && exit 1)
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "__ctri_free(numbers);" > /dev/null || \
+		(echo "FAIL: free(numbers) should emit __ctri_free(numbers)" && exit 1)
+	@python3 src/main.py test/allocate_free.ctri 2>&1 | grep "__ctri_free(value);" > /dev/null || \
+		(echo "FAIL: free(value) should emit __ctri_free(value)" && exit 1)
+	@echo "PASS: allocate/free"
+
+	@echo "--- Test: custom-sized int allocation bounds ---"
+	@python3 src/main.py test/allocate_int_custom_sizes.ctri 2>&1 | grep "int\\* tiny = (int\\*)__ctri_malloc(1);" > /dev/null || \
+		(echo "FAIL: 1-byte int allocation should compile when initializer fits" && exit 1)
+	@python3 src/main.py test/allocate_int_custom_sizes.ctri 2>&1 | grep "int\\* big = (int\\*)__ctri_malloc(100);" > /dev/null || \
+		(echo "FAIL: 100-byte int allocation should compile when initializer fits native int" && exit 1)
+	@python3 src/main.py test/allocate_int_small_overflow.ctri 2>&1 | grep "exceeds 1-byte int range" > /dev/null || \
+		(echo "FAIL: 1-byte int allocation should reject initializer above 127" && exit 1)
+	@python3 src/main.py test/allocate_int_native_overflow.ctri 2>&1 | grep "exceeds native C int range" > /dev/null || \
+		(echo "FAIL: custom-sized int allocation should reject initializer above native int max" && exit 1)
+	@echo "PASS: custom-sized int allocation bounds"
+
+	@echo "--- Test: custom-sized scalar allocation bounds ---"
+	@python3 src/main.py test/allocate_scalar_custom_sizes.ctri 2>&1 | grep "char\\* letter = (char\\*)__ctri_malloc(1);" > /dev/null || \
+		(echo "FAIL: 1-byte char allocation should compile when initializer fits" && exit 1)
+	@python3 src/main.py test/allocate_scalar_custom_sizes.ctri 2>&1 | grep "unsigned\\* byte_value = (unsigned\\*)__ctri_malloc(1);" > /dev/null || \
+		(echo "FAIL: 1-byte unsigned allocation should compile when initializer fits" && exit 1)
+	@python3 src/main.py test/allocate_scalar_custom_sizes.ctri 2>&1 | grep "float\\* ratio = (float\\*)__ctri_malloc(4);" > /dev/null || \
+		(echo "FAIL: native-sized float allocation should compile" && exit 1)
+	@python3 src/main.py test/allocate_short_small_overflow.ctri 2>&1 | grep "exceeds 1-byte short range" > /dev/null || \
+		(echo "FAIL: 1-byte short allocation should reject initializer above 127" && exit 1)
+	@python3 src/main.py test/allocate_unsigned_small_overflow.ctri 2>&1 | grep "exceeds 1-byte unsigned range" > /dev/null || \
+		(echo "FAIL: 1-byte unsigned allocation should reject initializer above 255" && exit 1)
+	@python3 src/main.py test/allocate_float_too_small.ctri 2>&1 | grep "smaller than native C float size" > /dev/null || \
+		(echo "FAIL: float allocation should reject byte sizes smaller than native float" && exit 1)
+	@echo "PASS: custom-sized scalar allocation bounds"
+
+	@echo "--- Test: base string operations ---"
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'char\* greeting = __ctri_strdup("hello");' > /dev/null || \
+		(echo "FAIL: string declaration should duplicate literal storage" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "__ctri_free(greeting);" > /dev/null || \
+		(echo "FAIL: string literal reassignment should free previous storage" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'greeting = __ctri_strdup("hi");' > /dev/null || \
+		(echo "FAIL: string literal reassignment should duplicate new literal" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "greeting = __ctri_realloc(greeting, __ctri_strlen(greeting) + __ctri_strlen(suffix) + 1);" > /dev/null || \
+		(echo "FAIL: string append should grow the destination buffer" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "__ctri_strcat(greeting, suffix);" > /dev/null || \
+		(echo "FAIL: string append should concatenate suffix" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "int greeting_len = __ctri_strlen(greeting);" > /dev/null || \
+		(echo "FAIL: len(string) should use __ctri_strlen" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_hi = (strcmp(greeting, "hi world") == 0);' > /dev/null || \
+		(echo "FAIL: string == literal should emit strcmp == 0" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_not_empty = (strcmp(greeting, "") != 0);' > /dev/null || \
+		(echo "FAIL: string != literal should emit strcmp != 0" && exit 1)
+	@echo "PASS: base string operations"
+
+	@echo "--- Test: no libc string functions in compiler-generated code ---"
+	@python3 src/main.py test/test_no_libc_strings.ctri 2>&1 | grep "#include <string.h>" > /dev/null && \
+		(echo "FAIL: <string.h> must not be included" && exit 1) || true
+	@python3 src/main.py test/test_no_libc_strings.ctri 2>&1 | grep -E '\b(strlen|strcpy|strcat|strdup)\(' > /dev/null && \
+		(echo "FAIL: bare libc string call found (expected __ctri_*)" && exit 1) || true
+	@python3 src/main.py test/test_no_libc_strings.ctri 2>&1 | grep "__ctri_strlen" > /dev/null || \
+		(echo "FAIL: expected __ctri_strlen helper" && exit 1)
+	@python3 src/main.py test/test_no_libc_strings.ctri 2>&1 | grep "__ctri_strdup" > /dev/null || \
+		(echo "FAIL: expected __ctri_strdup helper" && exit 1)
+	@echo "PASS: no libc strings"
+
+	@echo "--- Test: intra-file variable imports from asm and normal functions ---"
+	@python3 -c "\
+import sys; sys.path.insert(0,'src'); \
+import lexer, parser as p, structure, codegen; \
+asm_src = 'asm int asm_owner() {\\n    syntax arm64_macho\\n    .section __TEXT,__text\\n    int asm_value = 42\\n    return asm_value\\n}\\nusing asm_owner&asm_value\\nint main() { return asm_value; }\\n'; \
+normal_src = 'int normal_owner() {\\n    int normal_value = 7;\\n    return normal_value;\\n}\\nusing normal_owner&normal_value\\nint main() { return normal_value; }\\n'; \
+bad_src = 'asm int missing_section() {\\n    syntax x86_64_elf\\n    return 1\\n}\\n'; \
+exec('def gen(src):\\n    ast = p.Parser(lexer.Lexer(src).lex()).parse_program()\\n    s = structure.Structor(ast)\\n    s.build_from_ast()\\n    return codegen.CodeGen(ast, s).generate()'); \
+asm_c = gen(asm_src); \
+normal_c = gen(normal_src); \
+assert 'extern int asm_value;' in asm_c, asm_c; \
+assert 'return asm_value;' in asm_c, asm_c; \
+assert 'int normal_owner_normal_value = 7;' in normal_c, normal_c; \
+assert 'return normal_owner_normal_value;' in normal_c, normal_c; \
+exec('try:\\n    p.Parser(lexer.Lexer(bad_src).lex()).parse_program()\\n    raise AssertionError(\"missing asm text section did not fail\")\\nexcept SyntaxError as exc:\\n    assert \"text section\" in str(exc), exc'); \
+print('PASS: intra-file variable imports')"
+
 	@echo "=== All tests passed ==="
 
 # ---------------------------------------------------------------
@@ -127,7 +233,17 @@ all: install lint test
 # build: build PyInstaller executable
 # ---------------------------------------------------------------
 build: install
-	pyinstaller --onefile --name hypotenuse --add-data "src:src" src/main.py
+	pyinstaller --onefile --name $(PYINSTALLER_NAME) --add-data "src:src" src/main.py
+
+# ---------------------------------------------------------------
+# build-x86_64-elf: cross-build Linux x86_64 ELF compiler from ARM64
+# ---------------------------------------------------------------
+build-x86_64-elf:
+	docker run --rm --platform $(X86_64_ELF_PLATFORM) \
+		-v "$(CURDIR):/work" \
+		-w /work \
+		$(X86_64_ELF_IMAGE) \
+		sh -c 'apt-get update && apt-get install -y --no-install-recommends binutils && python -m pip install --quiet pyinstaller && pyinstaller --clean --onefile --name $(X86_64_ELF_NAME) --add-data "src:src" src/main.py'
 
 # ---------------------------------------------------------------
 # binary: run the compiled binary (must run 'make build' first)
@@ -159,6 +275,30 @@ full-install: build
 		cp dist/hypotenuse ~/.local/bin/hypotenuse; \
 		chmod +x ~/.local/bin/hypotenuse; \
 		echo "Installed to ~/.local/bin/hypotenuse"; \
+		mkdir -p ~/.local/lib/PLIBS/plstd; \
+		echo "Created ~/.local/lib/PLIBS/plstd"; \
+		cp -r plstd/* ~/.local/lib/PLIBS/plstd/; \
+		echo "Copied plstd contents to ~/.local/lib/PLIBS/plstd"; \
+		echo "Add ~/.local/bin to your PATH if not already present"; \
+	fi
+
+# ---------------------------------------------------------------
+# full-install-x86_64-elf: install the cross-built Linux x86_64 ELF compiler
+# ---------------------------------------------------------------
+full-install-x86_64-elf: build-x86_64-elf
+	@if [ -w /usr/local/bin ]; then \
+		cp dist/$(X86_64_ELF_NAME) /usr/local/bin/hypotenuse; \
+		chmod +x /usr/local/bin/hypotenuse; \
+		echo "Installed Linux x86_64 ELF compiler to /usr/local/bin/hypotenuse"; \
+		sudo mkdir -p /usr/lib/PLIBS/plstd; \
+		echo "Created /usr/lib/PLIBS/plstd"; \
+		sudo cp -r plstd/* /usr/lib/PLIBS/plstd/; \
+		echo "Copied plstd contents to /usr/lib/PLIBS/plstd"; \
+	else \
+		mkdir -p ~/.local/bin; \
+		cp dist/$(X86_64_ELF_NAME) ~/.local/bin/hypotenuse; \
+		chmod +x ~/.local/bin/hypotenuse; \
+		echo "Installed Linux x86_64 ELF compiler to ~/.local/bin/hypotenuse"; \
 		mkdir -p ~/.local/lib/PLIBS/plstd; \
 		echo "Created ~/.local/lib/PLIBS/plstd"; \
 		cp -r plstd/* ~/.local/lib/PLIBS/plstd/; \

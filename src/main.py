@@ -5,6 +5,8 @@ import lexer
 import parser as p
 import structure
 import codegen
+import assembler
+import nasmgen
 
 
 def parse_args():
@@ -34,6 +36,24 @@ def parse_args():
 
     parser.add_argument(
         "-a", "--asm", action="store_true", help="Show generated assembly (WIP)"
+    )
+
+    parser.add_argument(
+        "-T",
+        "--target",
+        metavar="ARCH",
+        choices=["x86_64", "arm64"],
+        help="Target architecture for asm blocks: x86_64 or arm64 (default: auto-detect)",
+    )
+
+    parser.add_argument(
+        "-F",
+        "--format",
+        metavar="FORMAT",
+        choices=["macho", "elf"],
+        help="Object file format: macho (ARM64 macOS), elf (Linux). "
+        "Overrides auto-detection. Note: NASM does not support ARM64 Mach-O; "
+        "use auto-detection on Apple Silicon.",
     )
 
     parser.add_argument(
@@ -126,11 +146,236 @@ def print_objects(objects):
     print("\u2514" + "\u2500" * 54 + "\u2518")
 
 
-def compile_file(path):
+def preprocess_source(source, target_arch=None):
+    """Preprocess source code handling #define, #ifdef, #ifndef, #if, #else, #elif, #endif.
+    
+    Args:
+        source: Source code string
+        target_arch: Target architecture (x86_64, arm64) or None for auto-detect
+    
+    Returns:
+        Preprocessed source code string
+    """
+    import platform
+    import re
+    
+    # Define architecture macros
+    if target_arch is None:
+        arch = platform.machine()
+    else:
+        arch = target_arch
+    
+    defined_macros = {}
+    
+    # Add architecture defines
+    if arch in ("arm64", "aarch64"):
+        defined_macros["__ARM64__"] = "1"
+    elif arch in ("x86_64", "amd64"):
+        defined_macros["__x86_64__"] = "1"
+    
+    lines = source.split('\n')
+    output_lines = []
+    # Stack to track conditional compilation state
+    # Each element is (should_include, branch_taken)
+    # - should_include: whether the current block should be included
+    # - branch_taken: whether any branch in this #if/#elif/#else chain has already been taken
+    condition_stack = []
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        
+        if stripped.startswith('#'):
+            # Handle #define
+            if stripped.startswith('#define '):
+                match = re.match(r'#define\s+(\w+)(?:\s+(.*))?$', stripped)
+                if match:
+                    macro_name = match.group(1)
+                    macro_value = match.group(2) if match.group(2) else ""
+                    defined_macros[macro_name] = macro_value
+                i += 1
+                continue
+            
+            # Handle #undef
+            if stripped.startswith('#undef '):
+                match = re.match(r'#undef\s+(\w+)$', stripped)
+                if match:
+                    macro_name = match.group(1)
+                    defined_macros.pop(macro_name, None)
+                i += 1
+                continue
+            
+            # Handle #ifdef
+            if stripped.startswith('#ifdef '):
+                macro_name = stripped[7:].strip()
+                is_defined = macro_name in defined_macros
+                condition_stack.append((is_defined, is_defined))
+                i += 1
+                continue
+            
+            # Handle #ifndef
+            if stripped.startswith('#ifndef '):
+                macro_name = stripped[8:].strip()
+                is_defined = macro_name in defined_macros
+                condition_stack.append((not is_defined, not is_defined))
+                i += 1
+                continue
+            
+            # Handle #if
+            if stripped.startswith('#if '):
+                condition_expr = stripped[4:].strip()
+                result = _eval_preprocessor_expr(condition_expr, defined_macros)
+                condition_stack.append((result, result))
+                i += 1
+                continue
+            
+            # Handle #elif
+            if stripped.startswith('#elif '):
+                if condition_stack:
+                    should_include, branch_taken = condition_stack[-1]
+                    if not branch_taken:
+                        # Evaluate elif condition
+                        condition_expr = stripped[6:].strip()
+                        result = _eval_preprocessor_expr(condition_expr, defined_macros)
+                        condition_stack[-1] = (result, result)
+                    else:
+                        # A previous branch was already taken, skip this elif
+                        condition_stack[-1] = (False, True)
+                i += 1
+                continue
+            
+            # Handle #else
+            if stripped == '#else':
+                if condition_stack:
+                    should_include, branch_taken = condition_stack[-1]
+                    # Include else block only if no branch was taken yet
+                    condition_stack[-1] = (not branch_taken, True)
+                i += 1
+                continue
+            
+            # Handle #endif
+            if stripped == '#endif':
+                if condition_stack:
+                    condition_stack.pop()
+                i += 1
+                continue
+            
+            # Handle other directives - just pass through for now
+            i += 1
+            continue
+        
+        # Check if we should include this line based on condition stack
+        should_include = True
+        for include, _ in condition_stack:
+            if not include:
+                should_include = False
+                break
+        
+        if should_include:
+            output_lines.append(line)
+        i += 1
+    
+    return '\n'.join(output_lines)
+
+
+def _eval_preprocessor_expr(expr, defined_macros):
+    """Evaluate a preprocessor condition expression.
+    
+    Supports: defined(MACRO), &&, ||, !, comparisons
+    """
+    import re
+    
+    # Replace defined(MACRO) with 1 or 0
+    def replace_defined(match):
+        macro_name = match.group(1)
+        return "1" if macro_name in defined_macros else "0"
+    
+    expr = re.sub(r'defined\s*\(\s*(\w+)\s*\)', replace_defined, expr)
+    
+    # Simple evaluation - handle basic cases
+    expr = expr.strip()
+    
+    # Handle empty expression
+    if not expr:
+        return False
+    
+    # After defined() replacement, evaluate the resulting expression
+    # Handle simple values: 1 = True, 0 = False, or check if macro is defined
+    if expr == "1":
+        return True
+    if expr == "0":
+        return False
+    
+    # Handle simple macro name (standalone identifier)
+    if re.match(r'^\w+$', expr):
+        return expr in defined_macros
+    
+    # Handle || (or) - lowest precedence, check first
+    if '||' in expr:
+        parts = expr.split('||', 1)
+        left = _eval_preprocessor_expr(parts[0].strip(), defined_macros)
+        right = _eval_preprocessor_expr(parts[1].strip(), defined_macros)
+        return left or right
+    
+    # Handle && (and) - medium precedence
+    if '&&' in expr:
+        parts = expr.split('&&', 1)
+        left = _eval_preprocessor_expr(parts[0].strip(), defined_macros)
+        right = _eval_preprocessor_expr(parts[1].strip(), defined_macros)
+        return left and right
+    
+    # Handle ! (not) - highest precedence, check last
+    if expr.startswith('!'):
+        return not _eval_preprocessor_expr(expr[1:].strip(), defined_macros)
+    
+    # Handle comparisons
+    for op in ['==', '!=', '<', '>', '<=', '>=']:
+        if op in expr:
+            parts = expr.split(op, 1)
+            left = parts[0].strip()
+            right = parts[1].strip()
+            
+            # Get values
+            left_val = defined_macros.get(left, left)
+            right_val = defined_macros.get(right, right)
+            
+            # Convert to numbers if possible
+            try:
+                left_val = int(left_val)
+            except (ValueError, TypeError):
+                pass
+            try:
+                right_val = int(right_val)
+            except (ValueError, TypeError):
+                pass
+            
+            if op == '==':
+                return left_val == right_val
+            elif op == '!=':
+                return left_val != right_val
+            elif op == '<':
+                return left_val < right_val
+            elif op == '>':
+                return left_val > right_val
+            elif op == '<=':
+                return left_val <= right_val
+            elif op == '>=':
+                return left_val >= right_val
+    
+    return False
+
+
+def compile_file(path, target_arch=None):
     """Lex, parse, structure, and generate code for a file."""
     with open(path, "r") as f:
         content = f.read()
 
+    validate_includes(path, content)
+
+    # Preprocess source
+    content = preprocess_source(content, target_arch)
+    
     tokens = lexer.Lexer(content).lex()
     tokens.append(("EOF", "EOF", 0, 0))
 
@@ -141,76 +386,32 @@ def compile_file(path):
     # 🔥 ACTUAL COMPILATION
     codegen_obj = codegen.CodeGen(ast, structor, source_path=path)
     output = codegen_obj.generate()
+    asm_blocks = codegen_obj._asm_blocks
 
-    return tokens, output, objects
+    return tokens, output, objects, asm_blocks
+
+
+def validate_includes(source_path, source_content):
+    """Reject include directives that point back to the current source file."""
+    import os
+    import re
+
+    source_realpath = os.path.realpath(source_path)
+    source_dir = os.path.dirname(source_realpath)
+
+    for match in re.finditer(r'^\s*#\s*include\s+"([^"]+)"', source_content, re.MULTILINE):
+        include_path = match.group(1)
+        include_candidates = [
+            os.path.realpath(include_path),
+            os.path.realpath(os.path.join(source_dir, include_path)),
+        ]
+        if source_realpath in include_candidates:
+            raise SyntaxError(f"source file cannot include itself: {include_path}")
 
 
 def write_output(path, data):
     with open(path, "w") as f:
         f.write(data)
-
-
-def compile_with_gcc(c_path, output_path=None, extra_flags=None):
-    """Compile C file to executable with gcc."""
-    import subprocess
-    import shutil
-    import os
-
-    if not shutil.which("gcc"):
-        raise RuntimeError("gcc not found in PATH. Install GCC to use --compile.")
-
-    if output_path is None:
-        output_path = os.path.splitext(c_path)[0]
-    # else: output_path is already set correctly, no need for reassignment
-
-    cmd = ["gcc", c_path, "-o", output_path]
-    # Basic validation for extra_flags to prevent obvious injection attempts
-    if extra_flags:
-        # Split and filter out any empty strings or potentially dangerous flags
-        flags = [flag for flag in extra_flags.split() if flag.strip()]
-        # Additional safety: reject flags that try to change output file or perform dangerous operations
-        safe_flags = []
-        skip_next = False
-        for i, flag in enumerate(flags):
-            if skip_next:
-                skip_next = False
-                continue
-            # Skip -o and its argument as we control the output file
-            if flag == "-o":
-                skip_next = True  # Skip the next argument (output file)
-                continue
-            # Allow library/include/linker flags
-            if (
-                flag.startswith("-l")
-                or flag.startswith("-L")
-                or flag.startswith("-I")
-                or flag.startswith("-D")
-            ):
-                safe_flags.append(flag)
-            # Allow linker flags
-            elif flag.startswith("-Wl,"):
-                safe_flags.append(flag)
-            # Allow common warning/optimization/debug flags
-            elif (
-                flag in ["-Wall", "-Wextra", "-Werror", "-pedantic"]
-                or flag.startswith("-std=")
-                or flag in ["-O0", "-O1", "-O2", "-O3", "-Os", "-Ofast"]
-                or flag == "-g"
-            ):
-                safe_flags.append(flag)
-            # Allow non-flag arguments (for flexibility)
-            elif not flag.startswith("-"):
-                safe_flags.append(flag)
-            # Ignore other flags for safety
-
-        cmd.extend(safe_flags)
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-
-    if result.returncode != 0:
-        raise RuntimeError(f"gcc failed: {result.stderr}")
-
-    return output_path
 
 
 def install_to_plibs(source_path):
@@ -300,27 +501,42 @@ def main():
             print(f"Error: Only .ctri/.plib files are supported, got '{path}'")
             continue
         try:
-            tokens, output, objects = compile_file(path)
+            tokens, output, objects, asm_blocks = compile_file(path, args.target)
 
             # -----------------------------
-            # Token mode
-            # -----------------------------
-            if args.tokens:
-                print_tokens(tokens)
-                continue
-
-            # -----------------------------
-            # Structure graph mode
+            # Print mode
             # -----------------------------
             if args.print:
                 print_objects(objects)
                 continue
 
             # -----------------------------
-            # ASM mode (WIP)
+            # ASM mode
             # -----------------------------
             if args.asm:
-                print("Error: assembly output is not implemented yet (WIP)")
+                # Determine target architecture for filtering
+                target_arch = getattr(args, "target", None)
+                if target_arch:
+                    target_is_arm64 = (target_arch == "arm64")
+                else:
+                    # Auto-detect from platform
+                    import platform
+                    is_macos = platform.system() == "Darwin"
+                    current_arch = platform.machine()
+                    if is_macos:
+                        target_is_arm64 = (current_arch == "arm64")
+                    else:
+                        target_is_arm64 = False
+
+                for asm_block in asm_blocks:
+                    # Check if block matches target architecture
+                    if asm_block.syntax:
+                        block_is_arm64, _ = nasmgen.get_asm_config(asm_block.syntax)
+                        if target_is_arm64 and not block_is_arm64:
+                            continue
+                        if not target_is_arm64 and block_is_arm64:
+                            continue
+                    nasmgen.print_asm_block(asm_block, target_is_arm64)
                 continue
 
             # -----------------------------
@@ -344,7 +560,16 @@ def main():
 
             if args.compile:
                 write_output(c_path, output)
-                exe_path = compile_with_gcc(c_path, args.output, args.cflags)
+                # Generate and assemble asm blocks
+                asm_object_files = assembler.assemble_asm_blocks(
+                    asm_blocks,
+                    path,
+                    getattr(args, "target", None),
+                    getattr(args, "format", None),
+                )
+                exe_path = assembler.compile_with_gcc(
+                    c_path, args.output, args.cflags, asm_object_files
+                )
                 print(f"Compiled to: {exe_path}")
 
         except FileNotFoundError:

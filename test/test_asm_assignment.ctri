@@ -1,0 +1,10 @@
+int main() {
+    asm int addInts(int a, int b) {
+        syntax x86_64_elf
+        section .text
+        int result = 0
+        result = a + b
+        return result
+    }
+    return addInts(2, 3);
+}

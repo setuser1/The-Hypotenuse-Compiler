@@ -63,8 +63,8 @@ expose io@plstd;
 // Explicit access - function@namespace syntax
 printd@lib("value: %d\n", 42);
 
-// Intra-file immutable reference
-using scope&myVar
+// Intra-file variable import
+using functionName&myVar
 ```
 
 > The compiler auto-imports what is used — manual `using` is optional style.
@@ -197,7 +197,7 @@ typed struct PoliceDog&Dog&Animal(string name, int badge) {
 ```c
 // Heap allocation
 allocate int arr[100];
-free arr;
+free(arr);
 
 // Auto-freed at last use
 autoremove allocate int buf[512];
