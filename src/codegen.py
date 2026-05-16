@@ -815,16 +815,15 @@ class CodeGen:
                             fallback=f"Function '{base_callee}' requires '{base_callee}@{lib_name}()' syntax (library not exposed). Use 'expose {lib_name}' before calling.",
                         )
                     )
-                # If func_name is None or equals base_callee, no transformation needed
-                # The function is already named correctly (top-level function)
+                # If func_name is None, the function is a top-level plib function
+                # whose generated name is {lib_name}_{base_callee}.
+                # When called without @ syntax, resolve to the prefixed name.
                 if func_name is None or func_name == base_callee:
-                    # BUT: if user is using @ syntax (func@namespace), need to transform
-                    # e.g., printd@plstd -> plstd_printd when using "printd from <plstd>"
+                    # Handle @ syntax (func@namespace -> namespace_func)
                     if "@" in callee:
                         parts = callee.rsplit("@", 1)
                         if len(parts) == 2:
                             func_part, namespace = parts
-                            # Validate non-empty parts
                             if not func_part or not namespace:
                                 raise ValueError(
                                     error_msgs.get_error_msg(
@@ -833,20 +832,16 @@ class CodeGen:
                                         fallback=f"Malformed '@' syntax in '{callee}'. Function name and library name cannot be empty.",
                                     )
                                 )
-                            # Check if namespace is the library we imported from
-                            # Handle both direct match (plstd) and folder-style (plstd/printd)
                             if namespace == lib_name:
                                 callee = f"{lib_name}_{func_part}"
                             elif (
                                 "/" in lib_name and namespace == lib_name.split("/")[0]
                             ):
-                                # Folder-style import: plstd/printd -> plstd prefix
                                 callee = f"{namespace}_{func_part}"
                             elif namespace in self._alias_to_lib:
                                 actual_lib = self._alias_to_lib[namespace]
                                 callee = f"{actual_lib}_{func_part}"
                             else:
-                                # Invalid namespace - raise error (consistent with lines 752-787)
                                 raise SyntaxError(
                                     error_msgs.get_error_msg(
                                         "E804",
@@ -855,7 +850,6 @@ class CodeGen:
                                     )
                                 )
                         else:
-                            # Malformed @ syntax (e.g., func@@lib or func@lib@extra)
                             raise SyntaxError(
                                 error_msgs.get_error_msg(
                                     "E805",
@@ -863,6 +857,12 @@ class CodeGen:
                                     fallback=f"Malformed '@' syntax in '{callee}'. Expected format: function@library",
                                 )
                             )
+                    elif func_name is None:
+                        # Bare name call to an imported plib function - resolve to
+                        # the prefixed name {lib_name}_{base_callee}.
+                        # This handles exposed libraries where bare names should
+                        # resolve to the generated C function name.
+                        callee = f"{lib_name}_{base_callee}"
                 elif "&" in str(lib_name):
                     # Chain like a&b&c - transform
                     scope_chain = lib_name
@@ -1295,16 +1295,24 @@ class CodeGen:
                     )
                 self._exposed_libs.add(lib_name)
                 self._exposed_libs.add(actual_lib)
-                # Track exposed function: bare_name -> (lib_name, full_prefixed_name)
+                # Track exposed function: bare_name -> actual_prefix
                 # Find the actual lib key in _top_level_lib_functions
-                prefixed_lib = actual_lib  # Default
+                prefixed_lib = actual_lib  # Default prefix
                 for lib_key in self._top_level_lib_functions:
                     # Check if this is a folder plib (e.g., plstd_printd from plstd/printd)
                     if lib_key.replace("_", "/").endswith(
                         f"/{func_name}"
                     ) or lib_key.endswith(f"_{func_name}"):
-                        if func_name in self._top_level_lib_functions[lib_key]:
-                            prefixed_lib = lib_key
+                        if any(
+                            name.endswith(f"_{func_name}")
+                            for name in self._top_level_lib_functions[lib_key]
+                        ):
+                            # Extract the actual prefix from the compound key
+                            if lib_key.startswith(f"{actual_lib}_"):
+                                prefixed_lib = lib_key[len(actual_lib) + 1:]
+                            else:
+                                prefixed_lib = lib_key
+                            self._exposed_libs.add(prefixed_lib)
                             break
                 self._exposed_funcs[func_name] = prefixed_lib
                 continue
@@ -1360,11 +1368,19 @@ class CodeGen:
                     or lib_key == exp_base.replace("/", "_")
                 )
                 if matches:
+                    # Determine the actual prefix used for function names
+                    if lib_key == exp_base:
+                        actual_prefix = lib_key
+                    elif lib_key.startswith(f"{exp_base}_"):
+                        actual_prefix = lib_key[len(exp_base) + 1:]
+                    else:
+                        actual_prefix = lib_key
+                    self._exposed_libs.add(actual_prefix)
                     for full_func_name in self._top_level_lib_functions[lib_key]:
-                        prefix_with_underscore = f"{lib_key}_"
-                        if full_func_name.startswith(prefix_with_underscore):
-                            bare_name = full_func_name[len(prefix_with_underscore) :]
-                            self._exposed_funcs[bare_name] = lib_key
+                        expected_prefix = f"{actual_prefix}_"
+                        if full_func_name.startswith(expected_prefix):
+                            bare_name = full_func_name[len(expected_prefix) :]
+                            self._exposed_funcs[bare_name] = actual_prefix
 
     def _resolve_scoped_var_import(self, owner, symbol):
         """Return the generated C name for an intra-file variable import."""
@@ -1910,12 +1926,22 @@ class CodeGen:
                     tokens.append(("EOF", "EOF", 0, 0))
                     plib_ast = p.Parser(tokens).parse_program()
 
-                    # Collect top-level functions
+                    # Collect top-level functions (prefixed with plib_name)
                     if full_lib_name not in self._top_level_lib_functions:
                         self._top_level_lib_functions[full_lib_name] = set()
                     for decl in plib_ast.declarations:
                         if isinstance(decl, p.Function):
-                            self._top_level_lib_functions[full_lib_name].add(decl.name)
+                            self._top_level_lib_functions[full_lib_name].add(
+                                f"{plib_name}_{decl.name}"
+                            )
+                        elif (
+                            isinstance(decl, p.AsmBlock)
+                            and decl.is_function
+                            and decl.name
+                        ):
+                            self._top_level_lib_functions[full_lib_name].add(
+                                f"{plib_name}_{decl.name}"
+                            )
                 except Exception:
                     continue
 
