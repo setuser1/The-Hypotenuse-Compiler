@@ -699,19 +699,25 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
 
 
 def compile_with_gcc(c_path, output_path=None, extra_flags=None, asm_objects=None):
-    """Compile C file to executable with gcc."""
+    """Compile C file to executable with gcc or the compiler named by CC."""
     import subprocess
     import shutil
     import os
+    import shlex
 
-    if not shutil.which("gcc"):
-        raise RuntimeError("gcc not found in PATH. Install GCC to use --compile.")
+    compiler = os.environ.get("CC", "gcc")
+    compiler_cmd = shlex.split(compiler)
+    if not compiler_cmd:
+        raise RuntimeError("C compiler command is empty. Set CC or install GCC to use --compile.")
+
+    if not shutil.which(compiler_cmd[0]):
+        raise RuntimeError(f"{compiler_cmd[0]} not found in PATH. Set CC or install GCC to use --compile.")
 
     if output_path is None:
         output_path = os.path.splitext(c_path)[0]
     # else: output_path is already set correctly, no need for reassignment
 
-    cmd = ["gcc", c_path, "-o", output_path]
+    cmd = compiler_cmd + [c_path, "-o", output_path]
     # Add asm object files
     if asm_objects:
         cmd.extend(asm_objects)
@@ -744,6 +750,10 @@ def compile_with_gcc(c_path, output_path=None, extra_flags=None, asm_objects=Non
             # Allow common warning/optimization/debug flags
             elif (
                 flag in ["-Wall", "-Wextra", "-Werror", "-pedantic"]
+                or flag in ["-m32", "-m64"]
+                or flag.startswith("-march=")
+                or flag.startswith("-mcpu=")
+                or flag.startswith("-mtune=")
                 or flag.startswith("-std=")
                 or flag in ["-O0", "-O1", "-O2", "-O3", "-Os", "-Ofast"]
                 or flag == "-g"
@@ -756,6 +766,6 @@ def compile_with_gcc(c_path, output_path=None, extra_flags=None, asm_objects=Non
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
-        raise RuntimeError(f"gcc failed: {result.stderr}")
+        raise RuntimeError(f"{compiler_cmd[0]} failed: {result.stderr}")
 
     return output_path

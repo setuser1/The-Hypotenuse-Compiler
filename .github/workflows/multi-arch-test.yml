@@ -60,9 +60,8 @@ jobs:
           if [ -f "$test_file" ]; then
             base_name=$(basename "$test_file" .ctri)
             echo "Building: $base_name"
-            if python3 src/main.py "$test_file" -c -C "-m64" 2>/dev/null; then
-              if [ -f "$base_name" ]; then
-                mv "$base_name" "build/x86_64/${base_name}"
+            if python3 src/main.py "$test_file" -c -o "build/x86_64/${base_name}" -C=-m64 2>/dev/null; then
+              if [ -f "build/x86_64/${base_name}" ]; then
                 count=$((count + 1))
               fi
             fi
@@ -101,7 +100,10 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: elf-binaries-x86_64
-        path: build/x86_64/
+        path: |
+          build/x86_64/**
+          !build/x86_64/*.c
+        if-no-files-found: ignore
         retention-days: 5
 
   test-arm64:
@@ -143,6 +145,8 @@ jobs:
         echo "ARM64 compilation results: $pass passed, $fail with warnings"
 
     - name: Cross-compile to ARM64 ELF binaries
+      env:
+        CC: aarch64-linux-gnu-gcc
       run: |
         echo "Cross-compiling to ARM64 ELF binaries..."
         mkdir -p build/arm64
@@ -151,9 +155,8 @@ jobs:
           if [ -f "$test_file" ]; then
             base_name=$(basename "$test_file" .ctri)
             echo "Cross-compiling: $base_name"
-            if python3 src/main.py "$test_file" -c -C "-march=armv8-a" 2>/dev/null; then
-              if [ -f "$base_name" ]; then
-                mv "$base_name" "build/arm64/${base_name}"
+            if python3 src/main.py "$test_file" -c -T arm64 -F elf -o "build/arm64/${base_name}" -C=-march=armv8-a 2>/dev/null; then
+              if [ -f "build/arm64/${base_name}" ]; then
                 count=$((count + 1))
               fi
             fi
@@ -167,7 +170,7 @@ jobs:
         count=0
         for elf in build/arm64/*; do
           if [ -f "$elf" ]; then
-            if aarch64-linux-gnu-file "$elf" 2>/dev/null | grep -q "ELF 64-bit ARM"; then
+            if file "$elf" 2>/dev/null | grep -q "ELF 64-bit.*ARM aarch64"; then
               echo "✓ $(basename $elf) is valid ARM64 ELF"
               count=$((count + 1))
             fi
@@ -203,7 +206,10 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: elf-binaries-arm64
-        path: build/arm64/
+        path: |
+          build/arm64/**
+          !build/arm64/*.c
+        if-no-files-found: ignore
         retention-days: 5
 
   alignment-analysis:
