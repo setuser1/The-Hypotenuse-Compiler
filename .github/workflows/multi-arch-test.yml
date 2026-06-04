@@ -60,10 +60,12 @@ jobs:
           if [ -f "$test_file" ]; then
             base_name=$(basename "$test_file" .ctri)
             echo "Building: $base_name"
-            if python3 src/main.py "$test_file" -c -o "build/x86_64/${base_name}" -C=-m64 2>/dev/null; then
+            if python3 src/main.py "$test_file" -c -o "build/x86_64/${base_name}" -C=-m64 > /dev/null 2>&1; then
               if [ -f "build/x86_64/${base_name}" ]; then
                 count=$((count + 1))
               fi
+            else
+              echo "  Skipped: not buildable as an x86_64 ELF executable"
             fi
           fi
         done
@@ -155,10 +157,12 @@ jobs:
           if [ -f "$test_file" ]; then
             base_name=$(basename "$test_file" .ctri)
             echo "Cross-compiling: $base_name"
-            if python3 src/main.py "$test_file" -c -T arm64 -F elf -o "build/arm64/${base_name}" -C=-march=armv8-a 2>/dev/null; then
+            if python3 src/main.py "$test_file" -c -T arm64 -F elf -o "build/arm64/${base_name}" -C=-march=armv8-a > /dev/null 2>&1; then
               if [ -f "build/arm64/${base_name}" ]; then
                 count=$((count + 1))
               fi
+            else
+              echo "  Skipped: not buildable as an ARM64 ELF executable"
             fi
           fi
         done

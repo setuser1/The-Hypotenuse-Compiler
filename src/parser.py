@@ -2741,6 +2741,25 @@ class Parser:
     def parse_unary(self) -> Optional[Node]:
         """Parse unary prefix expressions (e.g. !y, ++x, --x, *ptr, &var, -x)."""
         token = self.peek()
+        if token[0] == "SIZEOF":
+            self.advance()
+            if self.peek()[0] == "LPAREN":
+                self.advance()
+                is_typedef = (
+                    self.peek()[0] == "IDENTIFIER" and self.peek()[1] in self._typedefs
+                )
+                if (
+                    self.peek()[0] in _BASE_TYPE_TOKENS
+                    or self.peek()[0] in ("STRUCT", "UNION", "ENUM")
+                    or is_typedef
+                ):
+                    operand = self.parse_type_expression()
+                else:
+                    operand = self.parse_expression()
+                self.expect("RPAREN")
+            else:
+                operand = self.parse_unary()  # type: ignore
+            return Unary(op="sizeof", operand=operand, prefix=True)  # type: ignore
         if token[0] == "MINUS":
             self.advance()
             operand = self.parse_unary()  # type: ignore

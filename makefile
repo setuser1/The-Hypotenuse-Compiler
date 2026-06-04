@@ -3,6 +3,8 @@
 # Path to the parseable regression fixture (quoted where expanded to the shell
 # so paths containing spaces work).
 BASELINE := $(CURDIR)/test/baseline.ctri
+C11_FEATURES := $(CURDIR)/test/c11_features.ctri
+FULL_C11 := $(CURDIR)/test/full_c11.ctri
 PYINSTALLER_NAME := hypotenuse
 X86_64_ELF_NAME := hypotenuse-x86_64-elf
 X86_64_ELF_IMAGE ?= python:3.14-slim
@@ -36,6 +38,10 @@ typecheck:
 	@echo "--- Running compiler over parseable test inputs ---"
 	@echo "  Checking: $(BASELINE)"
 	@python3 src/main.py -t "$(BASELINE)" || (echo "FAILED: baseline.ctri" && exit 1)
+	@echo "  Checking: $(C11_FEATURES)"
+	@python3 src/main.py "$(C11_FEATURES)" > /dev/null || (echo "FAILED: c11_features.ctri" && exit 1)
+	@echo "  Checking: $(FULL_C11)"
+	@python3 src/main.py "$(FULL_C11)" > /dev/null || (echo "FAILED: full_c11.ctri" && exit 1)
 	@echo "  Checking: $(RETURNS)"
 	@echo "  Checking: $(DYNAM)"
 	@echo "  Checking: $(STRING)"
