@@ -15,7 +15,7 @@ jobs:
     name: Test x86_64 (ELF)
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Setup x86_64 environment
       run: |
@@ -98,7 +98,7 @@ jobs:
 
     - name: Upload x86_64 artifacts
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v7
       with:
         name: elf-binaries-x86_64
         path: build/x86_64/
@@ -109,7 +109,7 @@ jobs:
     name: Test ARM64 (Cross-compile)
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Setup ARM64 cross-compilation environment
       run: |
@@ -200,7 +200,7 @@ jobs:
 
     - name: Upload ARM64 artifacts
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v7
       with:
         name: elf-binaries-arm64
         path: build/arm64/
@@ -211,7 +211,7 @@ jobs:
     name: Alignment & Architecture Analysis
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install dependencies
       run: make install
