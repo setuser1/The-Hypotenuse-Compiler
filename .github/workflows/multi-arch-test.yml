@@ -42,10 +42,10 @@ jobs:
             base_name=$(basename "$test_file" .ctri)
             echo "Compiling: $base_name"
             if python3 src/main.py "$test_file" > /dev/null 2>&1; then
-              ((pass++))
+              pass=$((pass + 1))
             else
               echo "  Warning: compilation had issues"
-              ((fail++))
+              fail=$((fail + 1))
             fi
           fi
         done
@@ -63,7 +63,7 @@ jobs:
             if python3 src/main.py "$test_file" -c -C "-m64" 2>/dev/null; then
               if [ -f "$base_name" ]; then
                 mv "$base_name" "build/x86_64/${base_name}"
-                ((count++))
+                count=$((count + 1))
               fi
             fi
           fi
@@ -77,7 +77,7 @@ jobs:
         for elf in build/x86_64/*; do
           if [ -f "$elf" ] && file "$elf" | grep -q "ELF 64-bit"; then
             echo "✓ $(basename $elf) is valid x86_64 ELF"
-            ((count++))
+            count=$((count + 1))
           fi
         done
         echo "Verified $count x86_64 ELF binaries"
@@ -133,10 +133,10 @@ jobs:
             base_name=$(basename "$test_file" .ctri)
             echo "Compiling: $base_name (ARM64)"
             if python3 src/main.py "$test_file" > /dev/null 2>&1; then
-              ((pass++))
+              pass=$((pass + 1))
             else
               echo "  Warning: compilation had issues"
-              ((fail++))
+              fail=$((fail + 1))
             fi
           fi
         done
@@ -154,7 +154,7 @@ jobs:
             if python3 src/main.py "$test_file" -c -C "-march=armv8-a" 2>/dev/null; then
               if [ -f "$base_name" ]; then
                 mv "$base_name" "build/arm64/${base_name}"
-                ((count++))
+                count=$((count + 1))
               fi
             fi
           fi
@@ -169,7 +169,7 @@ jobs:
           if [ -f "$elf" ]; then
             if aarch64-linux-gnu-file "$elf" 2>/dev/null | grep -q "ELF 64-bit ARM"; then
               echo "✓ $(basename $elf) is valid ARM64 ELF"
-              ((count++))
+              count=$((count + 1))
             fi
           fi
         done
@@ -185,11 +185,11 @@ jobs:
             base_name=$(basename "$test_file" .ctri)
             elf="build/arm64/${base_name}"
             if [ -f "$elf" ]; then
-              ((tested++))
+              tested=$((tested + 1))
               echo "Running $base_name under QEMU..."
               if timeout 5 qemu-aarch64-static "$elf" > /dev/null 2>&1; then
                 echo "✓ $base_name executed successfully"
-                ((passed++))
+                passed=$((passed + 1))
               else
                 echo "⚠ $base_name execution (expected for some tests)"
               fi
