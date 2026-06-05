@@ -134,7 +134,7 @@ class CodeGen:
         self._ctri_allocator_helpers_generated = True
         self._helper_lines.append("")
         self._helper_lines.append("#define __CTRI_HEAP_SIZE 4194304")
-        self._helper_lines.append("#define __CTRI_HEADER_SIZE (3 * sizeof(int))")
+        self._helper_lines.append("#ifdef __aarch64__\n#define __CTRI_HEADER_SIZE 16\n#else\n#define __CTRI_HEADER_SIZE 12\n#endif\n")
         self._helper_lines.append("void* __ctri_malloc(int size);")
         self._helper_lines.append("void __ctri_free(void* ptr);")
         self._helper_lines.append("void* __ctri_realloc(void* ptr, int new_size);")
