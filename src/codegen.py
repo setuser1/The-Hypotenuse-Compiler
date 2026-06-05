@@ -3130,11 +3130,3 @@ class CodeGen:
             "long": (-(2**63), (2**63) - 1),
         }
         return ranges[type_name]
-#-------------------------------
-#Test function, filter
-#-------------------------------
-
-def emit_library_functions(lib_functions, used_functions):
-    for func in lib_functions:
-        if func.name in used_functions:
-            emit_function(func)
