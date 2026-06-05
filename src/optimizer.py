@@ -566,7 +566,30 @@ class Optimizer:
             getattr(parent, attr).pop(index)
             return True
         return False
-
+        
+def find_used_functions(ast):
+    used = set()
+    called = set()
+    
+    # Find all function calls
+    for node in ast.walk():
+        if isinstance(node, FunctionCall):
+            called.add(node.function_name)
+    
+    # Recursively find called functions
+    changed = True
+    while changed:
+        changed = False
+        for func_name in called.copy():
+            func_def = find_function_definition(ast, func_name)
+            if func_def:
+                new_calls = find_function_calls(func_def.body)
+                for call in new_calls:
+                    if call not in called:
+                        called.add(call)
+                        changed = True
+    
+    return called
 
 @dataclass
 class Node:
