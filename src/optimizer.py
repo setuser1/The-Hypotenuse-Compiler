@@ -566,7 +566,9 @@ class Optimizer:
             getattr(parent, attr).pop(index)
             return True
         return False
-        
+
+#--------------
+#Test function, find used functions       
 def find_used_functions(ast):
     used = set()
     called = set()
@@ -590,6 +592,7 @@ def find_used_functions(ast):
                         changed = True
     
     return called
+#-------------------
 
 @dataclass
 class Node:
