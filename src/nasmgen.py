@@ -491,7 +491,13 @@ def emit_and_assemble(asm_block, output_path: str, syntax: str) -> str:
     is_arm64, format_str = get_asm_config(syntax)
     obj_path = output_path.replace(".s", ".o")
     return assemble_with_nasm(output_path, obj_path, format_str)
-
+    
+#test function
+def should_emit_as_assembly(node):
+    if isinstance(node, VaStart) or isinstance(node, VaArg):
+        return False 
+    return True
+#-----
 
 def print_asm_block(asm_block, is_arm64: bool = False):
     """Print an asm block in a readable format."""
