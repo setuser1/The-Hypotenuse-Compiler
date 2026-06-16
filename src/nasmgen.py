@@ -19,6 +19,20 @@ X86_INT_REGS = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
 X86_FLOAT_REGS = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"]
 
 
+def _normalize_directive_to_nasm(directive: str) -> str:   #changed
+    """Convert GAS-style directives to NASM syntax.
+    
+    Converts:
+        .section .text -> section .text
+        .section .data -> section .data
+        Other directives are returned as-is
+    """
+    directive = directive.strip()
+    if directive.startswith(".section "):
+        return directive[1:]  # Remove leading dot
+    return directive
+
+
 def emit_syscall(
     syscall_num: int,
     args: Optional[List[str]] = None,
@@ -334,7 +348,8 @@ def _generate_x86_asm(asm_block, output_path: str, is_macos: bool = False):
 
         for d in directives:
             if ".data" not in d.lower():
-                f.write(f"{d}\n")
+                normalized = _normalize_directive_to_nasm(d) #changed
+                f.write(f"{normalized}\n")
 
         if asm_block.is_function and asm_block.name:
             symbol_prefix = "_" if is_macos else ""
