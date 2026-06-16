@@ -124,6 +124,20 @@ def _escape_string(value: str) -> str:
     )
 
 
+def _normalize_directive_to_nasm(directive: str) -> str: #changed
+    """Convert GAS-style directives to NASM syntax.
+    
+    Converts:
+        .section .text -> section .text
+        .section .data -> section .data
+        Other directives are returned as-is
+    """
+    directive = directive.strip()
+    if directive.startswith(".section "):
+        return directive[1:]  
+    return directive
+
+
 def _expand_write_call(instr: str, is_arm64: bool) -> List[str]:
     """Replace _write calls with pure syscalls."""
     stripped = instr.strip()
@@ -643,7 +657,8 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                 # Write section directives (skip data, we already handled it)
                 for directive in directives:
                     if ".data" not in directive:
-                        f.write(f"{directive}\n")
+                        normalized = _normalize_directive_to_nasm(directive) #changed
+                        f.write(f"{normalized}\n")
                 # Ensure we have a text section
                 has_text_section = any(
                     ".text" in d or ".section" in d for d in directives
