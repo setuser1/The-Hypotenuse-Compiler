@@ -1044,13 +1044,13 @@ class CodeGen:
                             fallback=f"Malformed '@' syntax in '{callee}'. Expected format: function@library",
                         )
                     )
-            # Track this function call for tree-shaking plibs
-            # Only track external calls, not internal plib calls
-            if not getattr(self, "_generating_plib", False):
-                self._used_functions.add(base_callee)
-                # Also track prefixed name when @ alias was used (function generated as lib_func)
-                if callee != base_callee:
-                    self._used_functions.add(callee)
+            # Track this function call for tree-shaking plibs.
+            # This also applies while generating plib code so helper functions
+            # referenced by an emitted public function remain available.
+            self._used_functions.add(base_callee)
+            # Also track prefixed name when @ alias was used (function generated as lib_func)
+            if callee != base_callee:
+                self._used_functions.add(callee)
 
             # On macOS, asm functions need _ prefix for C linkage
             # This must happen AFTER @ resolution
@@ -1455,6 +1455,72 @@ class CodeGen:
                         if lib_key in exposed_keys:
                             break
 
+    def _should_emit_plib_function(
+        self,
+        lib_key: str,
+        original_name: str,
+        generated_name: str,
+        is_exposed: bool = False,
+    ) -> bool:
+        """Return True when a plib function should be emitted for the current build."""
+        if is_exposed:
+            return True
+
+        bare_name = original_name
+        if generated_name.startswith(f"{lib_key}_"):
+            bare_name = generated_name[len(lib_key) + 1 :]
+        elif original_name.startswith(f"{lib_key}_"):
+            bare_name = original_name[len(lib_key) + 1 :]
+
+        return (
+            bare_name in self._used_functions
+            or generated_name in self._used_functions
+            or original_name in self._used_functions
+        )
+
+    def _scan_plib_function_dependencies(self, node, current_space=None):
+        """Walk a function body and mark any called library functions as used."""
+        if node is None:
+            return
+
+        seen = set()
+        old_space = self._current_space
+        old_local_funcs = self._space_local_functions.copy()
+        if current_space is not None:
+            self._current_space = current_space
+            self._space_local_functions = set()
+
+        def visit(value):
+            if value is None or id(value) in seen:
+                return
+            seen.add(id(value))
+
+            if isinstance(value, Call):
+                self._expr(value)
+                return
+
+            if isinstance(value, list):
+                for item in value:
+                    visit(item)
+                return
+
+            if isinstance(value, tuple):
+                for item in value:
+                    visit(item)
+                return
+
+            if not hasattr(value, "__dict__"):
+                return
+
+            for item in vars(value).values():
+                if isinstance(item, (str, int, float, bool, type(None))):
+                    continue
+                visit(item)
+
+        visit(node)
+        self._current_space = old_space
+        self._space_local_functions = old_local_funcs
+
     def _resolve_scoped_var_import(self, owner, symbol):
         """Return the generated C name for an intra-file variable import."""
         if self.structor is None:
@@ -1649,15 +1715,61 @@ class CodeGen:
         else:
             prefix = lib_name
 
+        # Build a dependency closure for plib functions before emission.
+        # This keeps helpers called by a used public function while pruning truly
+        # unused helpers when no entry point reaches them.
+        while True:
+            changed = False
+            for decl in plib_ast.declarations:
+                if isinstance(decl, p.SpaceDecl):
+                    actual_prefix = (
+                        prefix if prefix == decl.name else f"{prefix}_{decl.name}"
+                    )
+                    self._space_local_functions = {
+                        nested.name
+                        for nested in decl.declarations
+                        if isinstance(nested, p.Function)
+                    }
+                    self._current_space = actual_prefix
+                    for nested_decl in decl.declarations:
+                        if isinstance(nested_decl, p.Function):
+                            generated_name = f"{actual_prefix}_{nested_decl.name}"
+                            if self._should_emit_plib_function(
+                                prefix,
+                                nested_decl.name,
+                                generated_name,
+                            ):
+                                before = len(self._used_functions)
+                                self._scan_plib_function_dependencies(
+                                    nested_decl.body,
+                                    current_space=actual_prefix,
+                                )
+                                if len(self._used_functions) > before:
+                                    changed = True
+                    self._current_space = None
+                    self._space_local_functions = set()
+                elif isinstance(decl, p.Function):
+                    generated_name = f"{prefix}_{decl.name}"
+                    if self._should_emit_plib_function(prefix, decl.name, generated_name):
+                        before = len(self._used_functions)
+                        self._scan_plib_function_dependencies(decl.body)
+                        if len(self._used_functions) > before:
+                            changed = True
+            if not changed:
+                break
+
         for decl in plib_ast.declarations:
             # Skip includes/defines - already handled above
             if isinstance(decl, (p.Include, p.Define)):
                 continue
 
             # Apply prefix to top-level declarations
+            original_name = None
             if isinstance(decl, p.Function):
+                original_name = decl.name
                 decl.name = f"{prefix}_{decl.name}"
             elif isinstance(decl, p.Declaration):
+                original_name = decl.name
                 decl.name = f"{prefix}_{decl.name}"
 
             # Handle SpaceDecl - generate with prefix + namespace prefix
@@ -1683,6 +1795,12 @@ class CodeGen:
                     if isinstance(nested_decl, p.Function):
                         original_name = nested_decl.name
                         generated_name = f"{actual_prefix}_{nested_decl.name}"
+                        if not self._should_emit_plib_function(
+                            prefix,
+                            original_name,
+                            generated_name,
+                        ):
+                            continue
                         # Track ORIGINAL name for space-local function call prefixing
                         self._space_local_functions.add(original_name)
                         # Update mapping: func -> (lib, lib_func)
@@ -1699,6 +1817,12 @@ class CodeGen:
                         if nested_decl.is_function and nested_decl.name:
                             original_name = nested_decl.name
                             generated_name = f"{actual_prefix}_{nested_decl.name}"
+                            if not self._should_emit_plib_function(
+                                prefix,
+                                original_name,
+                                generated_name,
+                            ):
+                                continue
                             self._space_local_functions.add(original_name)
                             nested_decl.name = generated_name
                     self._gen_node(nested_decl)
@@ -1739,18 +1863,12 @@ class CodeGen:
                 lib_key = prefix  # Use the computed prefix
                 is_exposed = lib_key in self._exposed_libs
                 if isinstance(decl, p.Function) and not is_exposed:
-                    # Get the bare function name (original before prefixing)
-                    # The function name is already prefixed as "prefix_funcname"
-                    if decl.name.startswith(f"{lib_key}_"):
-                        bare_name = decl.name[len(lib_key) + 1 :]
-                    else:
-                        bare_name = decl.name
-                    # Check if function is used: any form of the name
-                    if (
-                        bare_name not in self._used_functions
-                        and decl.name not in self._used_functions
+                    if not self._should_emit_plib_function(
+                        prefix,
+                        original_name or decl.name,
+                        decl.name,
                     ):
-                        continue  # Skip unused function
+                        continue
 
                 self._gen_node(decl)
 
