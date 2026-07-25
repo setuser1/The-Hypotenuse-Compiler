@@ -200,10 +200,10 @@ print('PASS: self include rejected')"
 		(echo "FAIL: string literal reassignment should free previous storage" && exit 1)
 	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'greeting = __ctri_strdup("hi");' > /dev/null || \
 		(echo "FAIL: string literal reassignment should duplicate new literal" && exit 1)
-	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "greeting = __ctri_realloc(greeting, __ctri_strlen(greeting) + __ctri_strlen(suffix) + 1);" > /dev/null || \
-		(echo "FAIL: string append should grow the destination buffer" && exit 1)
-	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "__ctri_strcat(greeting, suffix);" > /dev/null || \
-		(echo "FAIL: string append should concatenate suffix" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "char\* _new = __ctri_malloc(__ctri_strlen(greeting) + __ctri_strlen(suffix) + 1);" > /dev/null || \
+		(echo "FAIL: string append should allocate new buffer for concatenation" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "__ctri_free(greeting);" > /dev/null || \
+		(echo "FAIL: string append should free old buffer" && exit 1)
 	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "int greeting_len = __ctri_strlen(greeting);" > /dev/null || \
 		(echo "FAIL: len(string) should use __ctri_strlen" && exit 1)
 	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_hi = (__ctri_strcmp(greeting, "hi world") == 0);' > /dev/null || \

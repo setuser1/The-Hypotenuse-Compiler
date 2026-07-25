@@ -61,6 +61,8 @@ TYPE_MAP = {
     "unsigned": "unsigned",
 }
 
+DEFAULT_DYNAM_CAPACITY = 4
+
 
 class CodeGen:
     def __init__(self, ast, structor, layouts=None, source_path=None, target_arch=None):
@@ -475,9 +477,7 @@ class CodeGen:
             if isinstance(obj_var, Var):
                 struct_type = self._var_struct_types.get(obj_var.name)
                 if struct_type and struct_type in self._struct_field_types:
-                    field_type = self._struct_field_types[struct_type].get(node.field_name)
-                    if field_type:
-                        return field_type
+                    return self._struct_field_types[struct_type].get(node.field_name)
             # If the object itself is a field access (nested), recurse
             if isinstance(obj_var, FieldAccess):
                 parent_type = self._resolve_member_dynam_type(obj_var)
@@ -520,7 +520,7 @@ class CodeGen:
         if isinstance(init_node, InitList):
             init_vals = [self._expr(e) for e in init_node.elements]
             init_count = len(init_vals)
-            init_capacity = max(4, init_count)
+            init_capacity = max(DEFAULT_DYNAM_CAPACITY, init_count)
             self._emit(f"{target_expr}.data = __ctri_malloc({init_capacity} * sizeof({mapped_elem}));")
             self._emit(f"{target_expr}.size = 0;")
             self._emit(f"{target_expr}.capacity = {init_capacity};")
@@ -528,30 +528,33 @@ class CodeGen:
                 self._emit(f"{struct_name}_push(&{target_expr}, {v});")
         elif init_node and isinstance(init_node, Call):
             init_expr = self._expr(init_node)
-            self._emit(f"{target_expr}.data = __ctri_malloc(4 * sizeof({mapped_elem}));")
+            self._emit(f"{target_expr}.data = __ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem}));")
             self._emit(f"{target_expr}.size = 0;")
-            self._emit(f"{target_expr}.capacity = 4;")
+            self._emit(f"{target_expr}.capacity = {DEFAULT_DYNAM_CAPACITY};")
             self._emit(f"{struct_name}_push(&{target_expr}, {init_expr});")
         else:
-            self._emit(f"{target_expr}.data = __ctri_malloc(4 * sizeof({mapped_elem}));")
+            self._emit(f"{target_expr}.data = __ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem}));")
             self._emit(f"{target_expr}.size = 0;")
-            self._emit(f"{target_expr}.capacity = 4;")
+            self._emit(f"{target_expr}.capacity = {DEFAULT_DYNAM_CAPACITY};")
 
         return True
 
-    def _emit_field_string_init(self, target_node, init_node):
+    def _emit_field_string_init(self, target_node, init_node, is_reassign=False):
         """Emit initialization code for a string field on a struct member."""
         field_type = self._resolve_member_dynam_type(target_node)
         if field_type != "string":
             return False
 
         target_expr = self._expr(target_node)
+        self._ensure_ctri_string_helpers()
+
+        # Free existing memory on reassignment to prevent leaks
+        if is_reassign:
+            self._emit(f"__ctri_free({target_expr});")
 
         if isinstance(init_node, Literal) and isinstance(init_node.value, str) and init_node.value.startswith('"'):
-            self._ensure_ctri_string_helpers()
             self._emit(f"{target_expr} = __ctri_strdup({init_node.value});")
         elif isinstance(init_node, Binary) and init_node.op == "+":
-            self._ensure_ctri_string_helpers()
             left_expr = self._expr(init_node.left)
             right_expr = self._expr(init_node.right)
             self._emit(f"{{ char* _ct = __ctri_malloc(__ctri_strlen({left_expr}) + __ctri_strlen({right_expr}) + 1); "
@@ -2612,7 +2615,7 @@ class CodeGen:
                 # Array initializer: [1, 2, 3]
                 init_vals = [self._expr(e) for e in node.initializer.elements]
                 init_count = len(init_vals)
-                init_capacity = max(4, init_count)
+                init_capacity = max(DEFAULT_DYNAM_CAPACITY, init_count)
 
                 if self._in_global_scope:
                     self._emit(f"{struct_name} {name};")
@@ -2636,7 +2639,7 @@ class CodeGen:
 
                 if self._in_global_scope:
                     self._emit(f"{struct_name} {name};")
-                    init_line = f"{name}.data = __ctri_malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
+                    init_line = f"{name}.data = __ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = {DEFAULT_DYNAM_CAPACITY};"
                     push_line = f"{struct_name}_push(&{name}, {init_expr});"
                     if is_plib:
                         self._plib_global_inits.append((init_line, [push_line]))
@@ -2645,20 +2648,20 @@ class CodeGen:
                         self._global_dynam_inits.append(push_line)
                 else:
                     self._emit(
-                        f"{struct_name} {name} = {{__ctri_malloc(4 * sizeof({mapped_elem})), 0, 4}};"
+                        f"{struct_name} {name} = {{__ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem})), 0, {DEFAULT_DYNAM_CAPACITY}}};"
                     )
                     self._emit(f"{struct_name}_push(&{name}, {init_expr});")
             else:
                 if self._in_global_scope:
                     self._emit(f"{struct_name} {name};")
-                    init_line = f"{name}.data = __ctri_malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
+                    init_line = f"{name}.data = __ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = {DEFAULT_DYNAM_CAPACITY};"
                     if is_plib:
                         self._plib_global_inits.append((init_line, []))
                     else:
                         self._global_dynam_inits.append(init_line)
                 else:
                     self._emit(
-                        f"{struct_name} {name} = {{__ctri_malloc(4 * sizeof({mapped_elem})), 0, 4}};"
+                        f"{struct_name} {name} = {{__ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem})), 0, {DEFAULT_DYNAM_CAPACITY}}};"
                     )
             return
 
@@ -3135,7 +3138,7 @@ class CodeGen:
 
                         # Free old data, reallocate and copy
                         self._emit(f"__ctri_free({target_name}.data);")
-                        init_capacity = max(4, len(init_vals))
+                        init_capacity = max(DEFAULT_DYNAM_CAPACITY, len(init_vals))
                         self._emit(
                             f"{target_name}.data = __ctri_malloc({init_capacity} * sizeof({mapped_elem}));"
                         )
@@ -3150,22 +3153,21 @@ class CodeGen:
                 if dynam_type == "string":
                     # This is a reassignment to a string (Var or FieldAccess)
                     target_name = self._expr(target)
+                    self._ensure_ctri_string_helpers()
                     if (
                         isinstance(value, Literal)
                         and isinstance(value.value, str)
                         and value.value.startswith('"')
                     ):
-                        self._ensure_ctri_string_helpers()
                         self._emit(f"__ctri_free({target_name});")
                         self._emit(f"{target_name} = __ctri_strdup({value.value});")
                         return
                     elif isinstance(value, Binary) and value.op == "+":
-                        self._ensure_ctri_string_helpers()
-                        right = self._expr(value.right)
-                        self._emit(
-                            f"{target_name} = __ctri_realloc({target_name}, __ctri_strlen({target_name}) + __ctri_strlen({right}) + 1);"
-                        )
-                        self._emit(f"__ctri_strcat({target_name}, {right});")
+                        left_expr = self._expr(value.left)
+                        right_expr = self._expr(value.right)
+                        self._emit(f"{{ char* _new = __ctri_malloc(__ctri_strlen({left_expr}) + __ctri_strlen({right_expr}) + 1); "
+                                   f"__ctri_strcpy(_new, {left_expr}); __ctri_strcat(_new, {right_expr}); "
+                                   f"__ctri_free({target_name}); {target_name} = _new; }}")
                         return
 
             self._emit(f"{self._expr(node.expr)};")
