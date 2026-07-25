@@ -144,8 +144,14 @@ print('PASS: self include rejected')"
 	@echo "--- Test: expose allows direct library calls and missing expose fails ---"
 	@python3 src/main.py test/expose_success.ctri 2>&1 | grep "string_strcmp(left, right)" > /dev/null || \
 		(echo "FAIL: expose string should allow direct strcmp calls" && exit 1)
-	@python3 src/main.py test/expose_required.ctri 2>&1 | grep "requires 'strcmp@string()' syntax" > /dev/null || \
-		(echo "FAIL: missing expose should require strcmp@string syntax" && exit 1)
+	@python3 src/main.py test/expose_required.ctri 2>&1 | grep "expose" > /dev/null || \
+		(echo "FAIL: missing expose should suggest expose options" && exit 1)
+	@python3 src/main.py test/test_expose_error_msg.ctri 2>&1 | grep "expose the entire library" > /dev/null || \
+		(echo "FAIL: error message should mention expose library option" && exit 1)
+	@python3 src/main.py test/test_expose_error_msg.ctri 2>&1 | grep "expose.*@.*string" > /dev/null || \
+		(echo "FAIL: error message should mention expose func@lib option" && exit 1)
+	@python3 src/main.py test/test_expose_full_lib.ctri 2>&1 | grep "string_strcmp(a, b)" > /dev/null || \
+		(echo "FAIL: expose entire library should allow direct calls" && exit 1)
 	@echo "PASS: expose behavior"
 
 	@echo "--- Test: allocate/free generate allocator calls ---"
@@ -200,10 +206,10 @@ print('PASS: self include rejected')"
 		(echo "FAIL: string append should concatenate suffix" && exit 1)
 	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "int greeting_len = __ctri_strlen(greeting);" > /dev/null || \
 		(echo "FAIL: len(string) should use __ctri_strlen" && exit 1)
-	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_hi = (strcmp(greeting, "hi world") == 0);' > /dev/null || \
-		(echo "FAIL: string == literal should emit strcmp == 0" && exit 1)
-	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_not_empty = (strcmp(greeting, "") != 0);' > /dev/null || \
-		(echo "FAIL: string != literal should emit strcmp != 0" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_hi = (__ctri_strcmp(greeting, "hi world") == 0);' > /dev/null || \
+		(echo "FAIL: string == literal should emit __ctri_strcmp == 0" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_not_empty = (__ctri_strcmp(greeting, "") != 0);' > /dev/null || \
+		(echo "FAIL: string != literal should emit __ctri_strcmp != 0" && exit 1)
 	@echo "PASS: base string operations"
 
 	@echo "--- Test: no libc string functions in compiler-generated code ---"

@@ -4,17 +4,17 @@ space printd {
 
 asm int sys_write(int fd, string buf, int count) {
     syntax x86_64_linux
-    .section .text
+    section .text
     mov rax, 1
     syscall
     ret
 }
 
 asm int sys_write_arm64(int fd, string buf, int count) {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x16, #4
-    svc #0x80
+    syntax arm64_linux
+    section .text
+    mov x8, #64
+    svc #0
     ret
 }
 
