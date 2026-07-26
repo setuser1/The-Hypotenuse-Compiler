@@ -1,267 +1,150 @@
-# AGENTS.md – Repository Guide for the Hypotenuse Compiler
+# AGENTS.md – Repository Guide
+
+> **Source of truth**: https://hypotenuse.mintlify.app supersedes this file for language features, CLI flags, and stdlib reference. When this file conflicts with Mintlify, Mintlify wins.
+>
+> **⚠ macOS support is being dropped.** The ARM64 macOS (Mach-O) backend is deprecated and will be removed in a future release. All future development targets Linux x86_64 only.
 
 ---
 
-## 1️⃣ Build / Lint / Test Commands
+## Build / Lint / Test Commands
 
-| Action                           | Command                                   | Description                                                                                                                            |
-| -------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Install dependencies             | `make install`                            | Installs the minimal Python packages (`pytest`, `pyflakes`).                                                                           |
-| Run baseline                     | `make run`                                | Compiles `test/baseline.ctri` and prints the object graph.                                                                             |
-| Run with gcc compilation       | `python3 src/main.py -c -C "FLAGS" file.ctri` | Compile `.ctri` to executable via gcc (requires gcc installed). Use `-C` for extra cflags (e.g., SDL2 libs).                              |
-| Lint                             | `make lint`                               | Runs **pyflakes** against all source files (`src/*.py`).                                                                               |
-| Type‑check / regression          | `make typecheck`                          | Executes the compiler on every `.ctri` test file (currently only `baseline.ctri`). Fails on non‑zero exit.                             |
-| Full test suite                  | `make test`                               | Installs deps → lint → type‑check → runs regression checks (scope tracking, value parsing, caller info, lexer/parser stability, etc.). |
-| Run a single test file           | `python3 src/main.py -t test/<file>.ctri` | Use the CLI directly; replace `<file>` with any `.ctri` fixture under `test/`.                                                         |
-| Run pytest (future Python tests) | `pytest -q test/`                         | Available if pure‑Python tests are added.                                                                                              |
-| Clean CI build                   | `make all`                                | Alias for `install → lint → test`; used by GitHub CI.                                                                                  |
-| Build binary                     | `make build`                              | Build PyInstaller executable (`dist/hypotenuse`).                                                                                     |
-| Install binary                   | `make full-install`                       | Install binary to `/usr/local/bin` or `~/.local/bin`.                                                                                 |
-
----
-
-### 2️⃣ Code‑Style Guidelines
-
-#### 📦 Project Layout
-
-- **src/** – Python source (`lexer.py`, `parser.py`, `structure.py`, `codegen.py`, `optimizer.py`, `struct_layout.py`, `error_msgs.py`, `main.py`).
-- **test/** – `.ctri` fixtures and integration checks.
-- **docs/** – Markdown documentation.
-- **Makefile** – Orchestrates build, lint, and test steps.
-
-#### 🧩 Imports
-
-- Use **absolute imports** inside `src` (e.g., `import lexer`).
-- Do **not** use relative imports (`from . import …`).
-- For one‑off scripts in the Makefile, prepend `src` to `sys.path` **only** in that script.
-- Avoid wildcard imports (`from module import *`).
-
-#### 🎨 Formatting
-
-- Indentation: 4 spaces, no tabs.
-- Maximum line length: 120 characters.
-- No trailing whitespace.
-- Blank lines: two before top‑level definitions, one between class methods.
-- End every file with a newline.
-
-#### 🏷️ Naming Conventions
-
-| Element             | Convention                                                    |
-| ------------------- | ------------------------------------------------------------- |
-| Modules / files     | `snake_case.py`                                               |
-| Classes             | `PascalCase`                                                  |
-| Functions / methods | `snake_case`                                                  |
-| Constants           | `UPPER_SNAKE_CASE`                                            |
-| Variables           | `snake_case` (short names like `i`, `t` allowed when obvious) |
-| Private helpers     | Prefix with a single underscore (`_helper`).                  |
-
-#### 📚 Types & Type Hints
-
-- Keep type hints minimal but use **PEP 484** style where they improve clarity.
-- Example:
-
-  ```python
-  def lex(self, source: str) -> List[Tuple[str, str]]:
-      ...
-  ```
-
-- Avoid `Any` unless absolutely necessary.
-
-#### ⚙️ Error Handling
-
-- The CLI catches exceptions, prints a concise message to `stderr`, and exits with a non‑zero status.
-- Prefer specific exception catches; avoid bare `except:`.
-- Error messages are loaded from `src/errors.txt` and embedded in `src/error_msgs.py`.
-- Use `error_msgs.get_error(code)` to retrieve error messages (see `src/error_msgs.py`).
-
-#### 🧪 Testing Philosophy
-
-- Current harness is shell‑based via the Makefile; new pure‑Python tests can be added under `test/` and run with `pytest`.
-- Tests must be **idempotent** and must not rely on mutable global state.
-- Use explicit `assert` statements with helpful messages.
-- When checking compiler output, assert on stable substrings rather than exact formatting.
-
-#### 🛠️ Linting & Static Analysis
-
-- Run `make lint` before committing.
-- The lint step uses **pyflakes**; it flags undefined names, unused imports, and syntax errors.
-- Additional linters (Black, Flake8) may be added later but should not be enforced without consensus.
-
-#### 📦 Packaging & Distribution
-
-- The repository is not a pip‑installable package; it is invoked via `src/main.py`.
-- If a library distribution becomes necessary, introduce a `setup.py` using the terminal.
+| Action                      | Command                                          | Description                                                   |
+| --------------------------- | ------------------------------------------------ | ------------------------------------------------------------- |
+| Install dependencies        | `make install`                                   | Installs `pytest`, `pyflakes`.                                |
+| Run baseline (generates C)  | `make run`                                       | Compiles `test/baseline.ctri`, prints generated C to stdout.  |
+| Compile with GCC            | `python3 src/main.py -c -C "FLAGS" file.ctri`   | Compile `.ctri` to executable. Use `-C` for extra cflags.     |
+| Print tokens (debug)        | `python3 src/main.py -t test/<file>.ctri`        | Lexes the file and prints the token stream.                   |
+| Print structure graph       | `python3 src/main.py -p test/<file>.ctri`        | Prints the Callee/Caller/Scope graph.                         |
+| Show generated assembly     | `python3 src/main.py -a test/<file>.ctri`        | Shows `.asm` output for `asm` blocks.                         |
+| Lint                        | `make lint`                                      | Runs **pyflakes** against `src/*.py`.                         |
+| Type-check / regression     | `make typecheck`                                 | Executes the compiler on every `.ctri` test file.             |
+| Full test suite             | `make test`                                      | Lint → type-check → regression checks.                        |
+| Run a single test           | `python3 src/main.py test/<file>.ctri`           | Compile one `.ctri` fixture directly.                         |
+| Clean CI build              | `make all`                                       | `install → lint → test`; used by GitHub CI.                   |
+| Build binary                | `make build`                                     | Build PyInstaller executable (`dist/hypotenuse`).             |
+| Install binary              | `make full-install`                              | Install to `/usr/local/bin` or `~/.local/bin`.                |
 
 ---
 
-### 3️⃣ Repository‑Specific Rules & Files
+## Code-Style Guidelines
 
-- **Cursor rules** – No `.cursor/` or `.cursorrules` directories were found; agents can skip cursor handling.
-- **Copilot instructions** – No `.github/copilot‑instructions.md`; default Copilot behavior applies.
-- **Labeler configuration** (`.github/labeler.yml`):
-
-```yaml
-documentation:
-  - "**/*.md"
-  - "**/*.txt"
-
-enhancement:
-  - "**/*.py"
-  - "**/*.ctri"
-  - "Makefile"
-
-update/addition:
-  - "**/*.py"
-  - "**/*.txt"
-  - "**/*.ctri"
-  - "Makefile"
-  - ".gitignore"
-  - ".gitattributes"
-  - ".github/workflows/**/*.yml"
-```
-
-- Used by GitHub automation to apply appropriate labels.
+- **Imports**: absolute only inside `src` (`import lexer`). No relative imports. No wildcard imports.
+- **Formatting**: 4 spaces, no tabs. Max 120 chars. No trailing whitespace. Two blank lines before top-level defs. End every file with a newline.
+- **Naming**: `snake_case` for modules/functions/variables. `PascalCase` for classes. `UPPER_SNAKE_CASE` for constants. `_prefix` for private helpers.
+- **Type hints**: PEP 484 style, minimal. Avoid `Any`.
+- **Error handling**: Specific exception catches (no bare `except`). Error messages from `src/error_msgs.py`.
+- **Testing**: Idempotent, no mutable global state. Assert on stable substrings.
+- **Lint**: Run `make lint` (pyflakes) before committing.
 
 ---
 
-### 4️⃣ CI / GitHub‑Actions Overview
+## Project Layout
 
-There are five github actions. The main one used here is build CI where it automates building and compiling a test file.
+- **src/** — `lexer.py`, `parser.py`, `structure.py`, `codegen.py`, `optimizer.py`, `struct_layout.py`, `error_msgs.py`, `nasmgen.py`, `assembler.py`, `main.py`
+- **plstd/** — Standard library `.plib` files (self-contained, no headers)
+- **test/** — `.ctri` fixtures and integration checks
+- **docs/** — Markdown documentation
+- **Makefile** — Orchestrates build, lint, and test steps
 
 ---
 
-## 5️⃣ C△ (C Triangle) Language Documentation
+## CI / GitHub Actions
 
-### The Language: C△ (C Triangle)
+- **`makefile.yml`** — Runs `make all` on every push/PR (install, lint, full test suite)
+- **`summary.yml`** — Aggregates job results, posts a PR comment
+- **`label.yml`** — Auto-adds labels based on `labeler.yml`
 
-C△ source files use the `.ctri` extension. Library files use `.plib`.
+---
 
-### Type System
+## Language Quick Reference
 
-#### C11 primitive types (inherited)
+> Full reference: https://hypotenuse.mintlify.app
 
-`int`, `char`, `void`, `float`, `double`, `short`, `long`, `signed`, `unsigned`, `struct`, `union`, `enum`, `typedef`
+### Types
 
-#### C△-specific types (new)
+**C11 primitives** (sizes on x86_64/Linux LP64): `int` (4B), `unsigned int` (4B), `short` (2B), `long` (8B), `char` (1B), `float` (4B), `double` (8B), `void`.
 
-- `string` — first‑class string type; supports `+` concatenation at the moment
-- `auto` — dynamic/inferred type; resolved at runtime via the simulation pass; format specifier `%k`
-- `dynam` — dynamic array; methods: `.push()`, `.pop()`, `.remove(index)`, `len()`; can be initialized: `dynam int x = [1, 2, 3];`
-- `tuple` — heterogeneous list declared with `[]`; e.g. `tuple t = [1, "hello", 3.14];`
-- `typed` — typed struct keyword; adds native‑type status and inheritance to a struct
+**C△-specific**: `string` (first-class, auto-managed), `auto` (inferred, `%k` specifier), `dynam` (dynamic array: `.push()`, `.pop()`, `.remove()`, `len()`).
+
+**Not yet implemented**: `tuple`, `typed struct` inheritance, `lamb`, `autoremove`, `Robbery`.
 
 ### Structs
-
-**Plain struct** — constructors and member functions; no inheritance; not a native type:
 
 ```ctri
 struct Point(int x, int y) {
     init { self.x = x; self.y = y; }
-    end { }
     int distanceTo(Point other) { ... }
+    end { }
 }
 ```
 
-**Typed struct** — native type, supports single and multiple inheritance via `&`:
+> `init`/`end`, member functions, and `typed struct` inheritance are not yet implemented. Plain C-style structs work via C11 baseline.
 
-```ctri
-typed struct Animal(string name) {
-    init { ... }
-    string speak() { return "..."; }
-    end { ... }
-}
-typed struct Dog&Animal(string name) { ... }
-typed struct PoliceDog&Dog&Animal(string name, int badge) { ... }
-// Conflict resolution: obj.Dog.speak(), obj.Animal.speak()
-```
+### Keywords
 
-## Keywords
+**Control flow**: `if`, `else`, `while`, `for`, `do`, `switch`, `case`, `default`, `break`, `continue`, `return`, `goto`
 
-### Control flow
+**Storage**: `const`, `volatile`, `static`, `extern`, `inline`, `register`, `sizeof`
 
-`if`, `else`, `while`, `for`, `do`, `switch`, `case`, `default`, `break`, `continue`, `return`, `goto`
+**C△-specific**: `using`, `expose`, `space`, `allocate`, `free`, `asm`, `self`, `init`, `end`, `auto`, `len()`
 
-### Storage modifiers
+**Deprecated** (SyntaxError): `restrict`, `_Bool`, `_Complex`, `_Imaginary`, `_Alignof`, `_Alignas`
 
-`const`, `volatile`, `static`, `extern`, `inline`, `register`, `sizeof`
+### Memory Model
 
-### C△-specific keywords
+- **Stack**: normal declarations, freed on scope exit
+- **Heap**: `allocate int buf[64]` (array) or `allocate int x(64)` (byte-sized). Must `free()` manually.
+- `autoremove` and Robbery are not yet implemented.
 
-- `using` — import: `using random from <math>`, `using helper from "utils"`, `using functionName&myVar`, `using "random/randint"`, `using <all>`
-- `expose` — globalize a library/namespace: `expose plstd`
-- `space` — namespace declaration (in `.plib` files)
-- `allocate` — heap allocation: `allocate int buf[256]`, `allocate int x(200) = val`
-- `free` — manual heap deallocation
-- `autoremove` — heap allocation freed automatically at last use via the simulation pass
-- `asm` — inline assembly block or function (see Assembly section)
-- `lamb` — named lambda, expression form: `lamb double(int num) = num * 2;`
-- `self` — optional self‑reference in struct member functions
-- `init` — struct constructor lifecycle
-- `end` — struct destructor lifecycle
-- `auto` — dynamic/inferred type (repurposed from C11)
-- `len()` - calculates the character length of strings or the digits/decimal places of an integer.
-
-#### Deprecated keywords (raise SyntaxError immediately)
-
-`restrict`, `_Bool`, `_Complex`, `_Imaginary`, `_Alignof`, `_Alignas`, `_Generic`
-
-## Memory Model
-
-- **Stack**: normal variable declaration; freed on scope exit
-- **Heap**: 
-  - Array allocation: `allocate int buf[64]` - allocates array of 64 `int` elements
-  - Byte-sized allocation: `allocate int x(64)` - allocates ONE variable with 64-byte size
-  - Must be freed manually via `free()` or automatically via `autoremove`
-- **`autoremove`**: simulation pass inserts `free` at last use — compile‑time, zero runtime cost
-- **Robbery**: if another pointer takes the address of an `autoremove` variable before it drops (`int* q = &p`), ownership transfers; the new pointer becomes a plain heap variable; no `free` needed; validated by the simulation pass
-
-## Inline Assembly (`asm` blocks)
+### Inline Assembly
 
 ```ctri
 asm int addInts(int a, int b) {
     syntax x86_64_linux
-    .section .text
+    section .text
     mov rax, a
     mov rbx, b
     add rax, rbx
-    return       // replaces ret; implicit return value is rax; explicit can be anything.
+    return
 }
 ```
 
-- Each `asm` block compiles to a separate `.asm` file, assembled by NASM, linked by GCC
-- `syntax x86_64_linux` declares the target inside the block
-- Use C△ type declarations for parameters — not assembler directives
-- `return` replaces `ret`; implicit return value is `rax`
+- Each `asm` block → separate `.asm` file → NASM → GCC linker
+- `syntax`: `x86_64_linux`, `arm64_macho` (deprecated)
+- `return` = `ret`; implicit return is `rax` (x86) / `x0` (ARM64). Required for non-`void`.
 - `asm` blocks are opaque to the simulation pass
+- Text section mandatory: `section .text` (x86), `.section __TEXT,__text` (ARM64)
 
-## Standard Library (plstd)
+### Standard Library (plstd)
 
-Written in C△ itself with `asm` blocks for syscalls. Located at `/usr/lib/PLIBS/` (system) and `~/.local/lib/PLIBS/` (user).
+Located at `/usr/lib/PLIBS/` (system) and `~/.local/lib/PLIBS/` (user). Each `.plib` is self-contained.
 
-Key functions:
+- `printd(value)` — type-aware print
+- `printfs(format, ...)` — formatted print with `{expr}` interpolation and `%` specifiers
+- String library — comparison, copy, concat, search (x86_64 and ARM64)
 
-- `printd(value)` — type‑aware print; auto‑detects type at runtime
-- `printfs(format, ...)` — formatted print with `{expr}` f‑string interpolation and `%`‑style specifiers
+### Compiler Pipeline
+
+```
+.ctri → Lexer → Parser → Structurer → Simulation Pass → Code Gen → GCC + NASM → binary
+```
 
 ---
 
-### 5️⃣ 🤖 AI Agent Guidelines
+## AI Agent Guidelines
 
-- **`.github/workflows/makefile.yml`** – Executes `make all` on every push/PR (install, lint, full test suite).
-- **`.github/workflows/summary.yml`** – Aggregates job results and posts a PR comment.
-- **`.github/workflows/label.yml`** – Auto‑adds labels based on `labeler.yml`.
-- **Tool‑first mindset**: always use the provided `read`, `glob`, `grep`, `edit`, `write`, `bash`, and `todo` tools to explore or modify the repository. Never edit a file without first reading it.
-- **Commit policy**: create a git commit only when the user explicitly asks. Run `make lint` and the relevant tests (`make test` or the single‑test command) before committing to keep the repo green.
-- **No destructive git actions**: never run `git reset --hard`, `git checkout --`, or force‑push unless the user explicitly authorises it.
-- **Parallelism**: when multiple independent reads or searches are needed, issue them in parallel using the multi‑tool call pattern to minimise latency.
-- **Clarify ambiguities**: if a request is underspecified (missing file name, unclear behaviour, etc.), ask a concise clarification question before proceeding.
-- **Todo lists for multi‑step work**: for any task requiring three or more distinct actions, create a `todo` list, mark the current step `in_progress`, and update it as you go. Only one item should be `in_progress` at any time.
-- **Respect the style guide**: any new code must follow the naming, import, formatting, typing, and error‑handling conventions described above.
-- **Run lint & tests after changes**: automatically execute `make lint` and `make test` (or the appropriate single‑test command) after modifications to catch regressions early.
-- **Report findings before fixing**: when reviewing code, first enumerate bugs or risks with file/line references, then propose a fix. Apply the fix only after the user approves or when the issue is unambiguous.
-- **Do not touch unrelated files**: modify only files relevant to the current task; never delete code unless explicitly requested.
-- **Documentation updates**: if you add or change functionality, update the relevant `docs/*.md` files to keep the language reference consistent.
-- **Feedback loop**: after each substantial change, provide a concise summary of what was done, why, and any remaining open questions.
+- **Never edit without reading first.** Use `read`, `glob`, `grep`, `edit`, `write`, `bash`, `todo` tools.
+- **Commit only when asked.** Run `make lint` and `make test` before committing.
+- **No destructive git actions** without explicit authorization (`git reset --hard`, force-push, etc.).
+- **Parallelize** independent reads/searches using multi-tool calls.
+- **Clarify** underspecified requests before proceeding.
+- **Todo lists** for 3+ step tasks. One `in_progress` at a time.
+- **Respect the style guide.** Follow naming, imports, formatting, and error-handling conventions.
+- **Run lint & tests after changes.** Catch regressions early.
+- **Report before fixing.** Enumerate bugs/risks with file:line references first. Fix only after approval.
+- **Don't touch unrelated files.** Never delete code unless explicitly requested.
+- **Update docs.** If you change functionality, update `docs/*.md` and/or the Mintlify docs.
+- **Summarize.** After each change: what was done, why, remaining questions.
 
 ---
 
