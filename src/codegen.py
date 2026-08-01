@@ -2913,7 +2913,7 @@ class CodeGen:
             + " val) {"
         )
         self._helper_lines.append("    if (arr->size >= arr->capacity) {")
-        self._helper_lines.append("        arr->capacity *= 2;")
+        self._helper_lines.append("        arr->capacity = arr->capacity ? arr->capacity * 2 : 1;")
         self._helper_lines.append(
             f"        arr->data = __ctri_realloc(arr->data, arr->capacity * sizeof({elem_type}));"
         )

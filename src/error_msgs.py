@@ -15,7 +15,7 @@ Error codes are organized by category:
 
 import os
 
-_ERRORS: dict[str, list[str]] = {}
+_ERRORS: dict[str, list[str]] | None = None
 _ERROR_CATEGORIES = {
     "SYNTAX": "Syntax errors (E0xx)",
     "TYPE": "Type errors (E1xx)",

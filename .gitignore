@@ -7,7 +7,7 @@
 
 .ai-stuff/
 .ruff_cache/
-
+.opencode/
 .DS_Store
 
 .ctri

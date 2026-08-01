@@ -549,7 +549,7 @@ def assemble_asm_blocks(asm_blocks, source_path, target_arch=None, output_format
                 if asm_block.is_function:
                     # On macOS, C compiler adds underscore to all symbols
                     # So _add becomes __add in the final binary
-                    global_name = f"__{asm_block.name}"
+                    global_name = f"_{asm_block.name}"
                     f.write(f".global {global_name}\n")
                     f.write(f"{global_name}:\n")
                     num_params = len(asm_block.params)

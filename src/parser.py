@@ -13,6 +13,8 @@ a structured AST suitable for semantic analysis or code generation.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+import re
+
 import error_msgs
 
 # ============================================================
@@ -401,6 +403,14 @@ class Generic(Node):
     associations: List[Tuple[str, Node]]  # (type, value) pairs
 
 
+@dataclass
+class Comma(Node):
+    """Comma expression node."""
+
+    left: Node
+    right: Node
+
+
 # ============================================================
 # Recursive-Descent Parser
 # ============================================================
@@ -707,6 +717,7 @@ class Parser:
     def _parse_preprocessor(self, directive: str) -> Optional[Node]:
         """Parse a preprocessor directive."""
         stripped = directive.strip()
+        stripped = re.sub(r'^#\s+', '#', stripped)
         if stripped.startswith("#include"):
             rest = stripped[len("#include") :].strip()
             if rest.startswith("<") and ">" in rest:
@@ -752,10 +763,10 @@ class Parser:
                 return result
             return self.parse_external()
 
-        # Skip comments
-        if t[0] in ("COMMENT_MULTI", "COMMENT_LINE"):
+        # Skip comments iteratively to avoid stack overflow
+        while t[0] in ("COMMENT_MULTI", "COMMENT_LINE"):
             self.advance()
-            return self.parse_external()
+            t = self.peek()
 
         # Reject deprecated / removed keywords immediately.
         if t[0] in (
@@ -788,7 +799,11 @@ class Parser:
             return self.parse_space()
 
         if t[0] == "EXTERN":
-            return self.parse_extern_c_block()
+            next_idx = self.i + 1
+            if (next_idx < len(self.tokens)
+                and self.tokens[next_idx][0] == "STRING_LITERAL"
+                and self.tokens[next_idx][1].strip('"') in ("C", "c")):
+                return self.parse_extern_c_block()
 
         if t[0] == "TYPEDEF":
             return self.parse_typedef()
@@ -1682,7 +1697,7 @@ class Parser:
             elif tok[0] == "IDENTIFIER":
                 # Check if this is the alias (next token is SEMICOLON)
                 # In that case, don't consume it as part of the type
-                if self.tokens[self.i + 1][0] == "SEMICOLON":
+                if self.i + 1 < len(self.tokens) and self.tokens[self.i + 1][0] == "SEMICOLON":
                     break
                 actual_type += self.advance()[1] + " "
             elif tok[0] == "STRUCT":
@@ -2051,10 +2066,10 @@ class Parser:
         """Parse a single statement."""
         t = self.peek()
 
-        # Skip preprocessor directives and comments inside function bodies too
-        if t[0] in ("PREPROCESSOR", "COMMENT_MULTI", "COMMENT_LINE"):
+        # Skip preprocessor directives and comments iteratively
+        while t[0] in ("PREPROCESSOR", "COMMENT_MULTI", "COMMENT_LINE"):
             self.advance()
-            return self.parse_statement()
+            t = self.peek()
 
         # Handle type declarations (including size_t and system types like mode_t, uid_t, etc.)
         if t[0] in _BASE_TYPE_TOKENS:
@@ -2644,7 +2659,7 @@ class Parser:
         node = self.parse_assignment()  # type: ignore
         while self.accept("COMMA"):
             right = self.parse_assignment()  # type: ignore
-            node = right
+            node = Comma(node, right)
         return node  # type: ignore
 
     def _parse_single_expression(self) -> Node:
@@ -2701,22 +2716,40 @@ class Parser:
         return node
 
     def parse_relational(self) -> Node:
-        node = self.parse_bitwise()
+        node = self.parse_bitwise_or()
         while self.peek()[0] in ("LT", "GT", "LE", "GE"):
             op = self.advance()[1]
-            right = self.parse_bitwise()
+            right = self.parse_bitwise_or()
             node = Binary(op, node, right)
         return node
 
-    def parse_bitwise(self) -> Node:
+    def parse_bitwise_or(self) -> Node:
+        node = self.parse_bitwise_xor()
+        while self.peek()[0] == "BITWISE_OR":
+            op = self.advance()[1]
+            right = self.parse_bitwise_xor()
+            node = Binary(op, node, right)
+        return node
+
+    def parse_bitwise_xor(self) -> Node:
+        node = self.parse_bitwise_and()
+        while self.peek()[0] == "BITWISE_XOR":
+            op = self.advance()[1]
+            right = self.parse_bitwise_and()
+            node = Binary(op, node, right)
+        return node
+
+    def parse_bitwise_and(self) -> Node:
+        node = self.parse_shift()
+        while self.peek()[0] == "AMPERSAND":
+            op = self.advance()[1]
+            right = self.parse_shift()
+            node = Binary(op, node, right)
+        return node
+
+    def parse_shift(self) -> Node:
         node = self.parse_add()
-        while self.peek()[0] in (
-            "BITWISE_OR",
-            "BITWISE_XOR",
-            "AMPERSAND",
-            "LSHIFT",
-            "RSHIFT",
-        ):
+        while self.peek()[0] in ("LSHIFT", "RSHIFT"):
             op = self.advance()[1]
             right = self.parse_add()
             node = Binary(op, node, right)

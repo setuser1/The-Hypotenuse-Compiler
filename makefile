@@ -270,6 +270,100 @@ binary: build
 	./dist/hypotenuse
 
 # ---------------------------------------------------------------
+# container-build: build the compiler using Apple's container CLI (macOS Apple Silicon)
+# ---------------------------------------------------------------
+container-build:
+	@if command -v container >/dev/null 2>&1; then \
+		@echo "Building compiler with Apple's container CLI..."; \
+		container build --platform linux/amd64 \
+			-t "hypotenuse-container" \
+			-f "$(CURDIR)/Containerfile" \
+			"$(CURDIR)"; \
+	else if command -v docker >/dev/null 2>&1; then \
+		@echo "Using Docker as fallback (Apple container CLI not found). Consider installing https://github.com/apple/container for native Apple Silicon support."; \
+		docker build \
+			--platform linux/amd64 \
+			-t "hypotenuse-container" \
+			--file "$(CURDIR)/Containerfile" \
+			"$(CURDIR)"; \
+	else \
+		echo "Error: Neither 'container' CLI (Apple Silicon) nor 'docker' found."; \
+		echo "Install the Apple container tool from https://github.com/apple/container"; \
+		exit 1; \
+	fi
+
+# ---------------------------------------------------------------
+# container-run: run the containerized compiler
+# ---------------------------------------------------------------
+container-run:
+	@if command -v container >/dev/null 2>&1; then \
+		container run --platform linux/amd64 \
+			--rm \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container "$@"; \
+	else if command -v docker >/dev/null 2>&1; then \
+		docker run --rm \
+			--platform linux/amd64 \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container "$@"; \
+	else \
+		echo "Error: Neither 'container' CLI nor 'docker' found"; \
+		exit 1; \
+	fi
+
+# ---------------------------------------------------------------
+# container-test: run the test suite inside the container
+# ---------------------------------------------------------------
+container-test: container-build
+	@if command -v container >/dev/null 2>&1; then \
+		@echo "Running tests with Apple's container CLI..."; \
+		container run --platform linux/amd64 \
+			--rm \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container \
+			sh -c "cd /work && python3 src/main.py test/baseline.ctri && python3 src/main.py -p test/baseline.ctri"; \
+	else if command -v docker >/dev/null 2>&1; then \
+		@echo "Using Docker as fallback..."; \
+		docker run --rm \
+			--platform linux/amd64 \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container \
+			sh -c "cd /work && python3 src/main.py test/baseline.ctri && python3 src/main.py -p test/baseline.ctri"; \
+	else \
+		echo "Error: Neither 'container' CLI nor 'docker' found"; \
+		exit 1; \
+	fi
+
+# ---------------------------------------------------------------
+# container-lint: run linting inside the container
+# ---------------------------------------------------------------
+container-lint: container-build
+	@if command -v container >/dev/null 2>&1; then \
+		@echo "Running linting with Apple's container CLI..."; \
+		container run --platform linux/amd64 \
+			--rm \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container \
+			sh -c "python3 -m pyflakes src/lexer.py src/parser.py src/structure.py src/codegen.py src/assembler.py src/main.py"; \
+	else if command -v docker >/dev/null 2>&1; then \
+		@echo "Using Docker as fallback..."; \
+		docker run --rm \
+			--platform linux/amd64 \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container \
+			sh -c "python3 -m pyflakes src/lexer.py src/parser.py src/structure.py src/codegen.py src/assembler.py src/main.py"; \
+	else \
+		echo "Error: Neither 'container' CLI nor 'docker' found"; \
+		exit 1; \
+	fi
+
+# ---------------------------------------------------------------
 # clean: remove build artifacts
 # ---------------------------------------------------------------
 clean:

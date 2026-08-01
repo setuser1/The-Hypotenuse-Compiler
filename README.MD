@@ -53,6 +53,58 @@ make build-x86_64-elf
 make full-install-x86_64-elf
 ```
 
+### Using Apple's `container` CLI on macOS (ARM64)
+
+For macOS users with Apple Silicon, you can use Apple's native `container` CLI instead of Docker to build and run the C△ compiler. The `container` tool is optimized for Apple Silicon and provides native virtualization.
+
+#### Installation
+
+Install the `container` CLI by downloading the latest signed installer package from the [GitHub release page](https://github.com/apple/container/releases). After installation, start the system service:
+
+```bash
+container system start
+```
+
+#### Building the Compiler
+
+Use `make container-build` to build the compiler using Apple's `container` CLI:
+
+```bash
+make container-build
+```
+
+This will create `hypotenuse-container` in the `dist/` directory.
+
+#### Running the Compiler
+
+Use `make container-run` to run the compiler inside the container:
+
+```bash
+make container-run test/baseline.ctri
+```
+
+Or run a specific test file:
+
+```bash
+make container-run test/baseline.ctri -p
+```
+
+#### Running Tests
+
+Use `make container-test` to run the full test suite inside the container:
+
+```bash
+make container-test
+```
+
+#### Linting
+
+Use `make container-lint` to run linting checks inside the container:
+
+```bash
+make container-lint
+```
+
 ---
 
 ## Documentation
