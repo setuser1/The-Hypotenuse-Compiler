@@ -12,6 +12,7 @@ from parser import (
     ArrayDesignation,
     Assignment,
     Binary,
+    Comma,
     Break,
     Call,
     Cast,
@@ -594,6 +595,10 @@ class CodeGen:
             return self._contains_assignment(node.left) or self._contains_assignment(
                 node.right
             )
+        if isinstance(node, Comma):
+            return self._contains_assignment(node.left) or self._contains_assignment(
+                node.right
+            )
         if isinstance(node, Unary):
             return self._contains_assignment(node.operand)
         if isinstance(node, Call):
@@ -789,6 +794,11 @@ class CodeGen:
             target = self._expr(node.target)
             value = self._expr(node.value)
             return f"{target} = {value}"
+
+        if isinstance(node, Comma):
+            left = self._expr(node.left)
+            right = self._expr(node.right)
+            return f"({left}, {right})"
 
         if isinstance(node, Call):
             callee = ""
@@ -1269,13 +1279,7 @@ class CodeGen:
     # ------------------------------------------------------------------
 
     def _gen_program_code(self, node):
-        # Now emit collected includes at the very beginning (prepend)
-        includes_to_emit = []
-        for inc in sorted(self._collected_includes):
-            includes_to_emit.append(inc)
-        # Prepend includes before any existing code
-        self._lines = includes_to_emit + self._lines
-        # Now generate rest of code (plib functions included via _gen_plib_code)
+        # Generate rest of code (plib functions included via _gen_plib_code)
         for line in self._scoped_var_globals:
             self._emit(line)
         if self._scoped_var_globals:
