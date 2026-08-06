@@ -14,7 +14,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Build macOS binary
         run: make build
@@ -29,7 +29,7 @@ jobs:
           zip -r ../hypotenuse-macos.zip makefile plstd hypotenuse
 
       - name: Upload macOS package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hypotenuse-macos
           path: release/hypotenuse-macos.zip
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Build x86_64 binary
         run: make build
@@ -54,7 +54,7 @@ jobs:
           zip -r ../hypotenuse-x86_64.zip makefile plstd hypotenuse
 
       - name: Upload x86_64 package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hypotenuse-x86_64
           path: release/hypotenuse-x86_64.zip
@@ -65,16 +65,16 @@ jobs:
     needs: [build-macos, build-x86_64]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download macOS package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: hypotenuse-macos
           path: release
 
       - name: Download x86_64 package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: hypotenuse-x86_64
           path: release
@@ -87,7 +87,7 @@ jobs:
 
       - name: Create GitHub prerelease
         id: create_release
-        uses: actions/create-release@v1
+        uses: actions/create-release@v1.1.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -101,7 +101,7 @@ jobs:
           prerelease: true
 
       - name: Upload macOS package
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -111,7 +111,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload x86_64 package
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
