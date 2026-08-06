@@ -64,7 +64,6 @@ TYPE_MAP = {
 
 DEFAULT_DYNAM_CAPACITY = 4
 
-
 class CodeGen:
     def __init__(self, ast, structor, layouts=None, source_path=None, target_arch=None):
         self.ast = ast
