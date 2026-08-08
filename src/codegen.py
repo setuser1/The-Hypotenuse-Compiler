@@ -1206,8 +1206,6 @@ class CodeGen:
             self._used_functions.add(callee)
 
             # This must happen AFTER @ resolution
-            if platform.system() == "Darwin" and callee in self._asm_function_names:
-                callee = f"_{callee}"
 
             args = ", ".join(self._expr(a) for a in node.args)
             return f"{callee}({args})"
@@ -3248,7 +3246,6 @@ class CodeGen:
         """Generate C declaration stub for asm block and store for .asm file generation."""
         if node.is_function:
             self._asm_blocks.append(node)
-            self._asm_function_names.add(node.name)
             ret_type = self._map_type(node.ret_type)
             params = []
             for ptype, pname in node.params:
@@ -3269,7 +3266,6 @@ class CodeGen:
             var_name = var_info["name"]
             var_type = var_info["type"]
             var_size = var_info.get("size")
-            self._asm_function_names.add(var_name)
             if var_type == "string":
                 initializer = var_info.get("initializer", "")
                 str_size = len(initializer) + 1 if isinstance(initializer, str) else 0
