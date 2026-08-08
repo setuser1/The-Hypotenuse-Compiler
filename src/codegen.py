@@ -105,7 +105,6 @@ class CodeGen:
         self._namespace_imported_libs = set()  # Track libs imported as full namespaces
         self._used_functions = set()  # Track used function names for tree-shaking
         self._pending_plibs = []  # Store pending plib ASTs for tree-shaking
-        self._asm_function_names = set()  # Track asm function names for macOS _ prefix
         self._global_dynam_inits = []  # Track global dynam initialization code for main()
         self._plib_global_inits = []  # Track global dynam inits for plib init function
         self._plib_init_funcs = []  # Track plib init function names to auto-call
@@ -1206,7 +1205,6 @@ class CodeGen:
             # emission even when they are never called.
             self._used_functions.add(callee)
 
-            # On macOS, asm functions need _ prefix for C linkage
             # This must happen AFTER @ resolution
             if platform.system() == "Darwin" and callee in self._asm_function_names:
                 callee = f"_{callee}"
@@ -2017,8 +2015,6 @@ class CodeGen:
                     if lib_key not in self._top_level_lib_functions:
                         self._top_level_lib_functions[lib_key] = set()
                     self._top_level_lib_functions[lib_key].add(decl.name)
-                    # Track for macOS _ prefix resolution
-                    self._asm_function_names.add(decl.name)
                 self._gen_asm_block(decl)
             elif isinstance(
                 decl, (p.Function, p.Declaration, p.StructDef, p.Typedef, p.EnumDef)
@@ -2184,8 +2180,6 @@ class CodeGen:
                 if prefix not in self._top_level_lib_functions:
                     self._top_level_lib_functions[prefix] = set()
                 self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
-                # Track for macOS _ prefix resolution
-                self._asm_function_names.add(f"{prefix}_{decl.name}")
             elif isinstance(decl, p.SpaceDecl):
                 # Functions inside a space get prefix_space_ prefix
                 if prefix not in self._top_level_lib_functions:
@@ -3261,9 +3255,6 @@ class CodeGen:
                 mapped_type = self._map_type(ptype)
                 params.append(f"{mapped_type} {pname}")
             param_str = ", ".join(params) if params else "void"
-            # On macOS, asm functions need _ prefix for C linkage
-            is_macos = platform.system() == "Darwin"
-            func_name = f"_{node.name}" if is_macos else node.name
             self._emit(f"{ret_type} {func_name}({param_str});")
             self._gen_asm_variable_externs(node)
         else:
