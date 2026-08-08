@@ -1,7 +1,6 @@
 """C11 code generator for C△ compiler."""
 
 import os
-import platform
 import sys
 from typing import Optional
 
@@ -3252,7 +3251,7 @@ class CodeGen:
                 mapped_type = self._map_type(ptype)
                 params.append(f"{mapped_type} {pname}")
             param_str = ", ".join(params) if params else "void"
-            self._emit(f"{ret_type} {func_name}({param_str});")
+            self._emit(f"{ret_type} {node.name}({param_str});")
             self._gen_asm_variable_externs(node)
         else:
             self._asm_blocks.append(node)

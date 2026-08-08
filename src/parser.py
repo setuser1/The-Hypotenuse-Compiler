@@ -2659,6 +2659,9 @@ class Parser:
         node = self.parse_assignment()  # type: ignore
         while self.accept("COMMA"):
             right = self.parse_assignment()  # type: ignore
+            if node is None or right is None:
+                raise SyntaxError("Expected expression after ','")
+            assert node is not None and right is not None
             node = Comma(node, right)
         return node  # type: ignore
 
