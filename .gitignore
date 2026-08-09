@@ -530,7 +530,6 @@ FodyWeavers.xsd
 *.dll
 *.so
 *.so.*
-*.dylib
 
 # Executables
 *.exe
