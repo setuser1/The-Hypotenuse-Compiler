@@ -1,9 +1,9 @@
 int main() {
     asm {
-        syntax arm64_macho
+        syntax x86_64_linux
         section .data
         int asm_counter = 7
-        .section __TEXT,__text
+        section .text
     }
     return asm_counter;
 }

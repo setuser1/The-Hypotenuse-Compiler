@@ -1,4 +1,4 @@
-using printd from <plstd> as lib;
+using printd from <printd>;
 
 int main() {
     int lib = 7;

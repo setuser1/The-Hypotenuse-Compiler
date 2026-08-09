@@ -620,11 +620,13 @@ def _extract_literal(expr, scope=None):
                     return 8
                 elif type_name in ("void",):
                     return 0
+                elif type_name == "unsigned char":
+                    return 1
+                elif type_name == "unsigned long":
+                    return 8
                 elif type_name in (
                     "unsigned",
                     "unsigned int",
-                    "unsigned char",
-                    "unsigned long",
                     "unsigned short",
                     "signed",
                 ):
@@ -933,11 +935,13 @@ class Structor:
                         return 8
                     elif type_name in ("void",):
                         return 0
+                    elif type_name == "unsigned char":
+                        return 1
+                    elif type_name == "unsigned long":
+                        return 8
                     elif type_name in (
                         "unsigned",
                         "unsigned int",
-                        "unsigned char",
-                        "unsigned long",
                         "unsigned short",
                         "signed",
                     ):

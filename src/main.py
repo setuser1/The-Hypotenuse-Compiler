@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 
 import lexer
@@ -506,6 +507,7 @@ def main():
         remove_from_plibs(args.remove)
         return
 
+    had_errors = False
     for path in args.files:
         if not path.endswith((".ctri", ".plib")):
             print(f"Error: Only .ctri/.plib files are supported, got '{path}'")
@@ -583,17 +585,24 @@ def main():
                 print(f"Compiled to: {exe_path}")
 
         except FileNotFoundError:
-            print(f"Error: file not found {path}")
+            print(f"Error: file not found {path}", file=sys.stderr)
+            had_errors = True
         except OSError as error:
-            print(f"Error reading file: {error}")
+            print(f"Error reading file: {error}", file=sys.stderr)
+            had_errors = True
         except SyntaxError as error:
-            print(f"Syntax error: {error}")
+            print(f"Syntax error: {error}", file=sys.stderr)
+            had_errors = True
         except RuntimeError as error:
-            print(f"Compilation error: {error}")
+            print(f"Compilation error: {error}", file=sys.stderr)
+            had_errors = True
         except Exception as error:
-            # Re-raise unexpected exceptions for debugging while still providing user feedback
-            print(f"Unexpected error: {error}")
+            print(f"Unexpected error: {error}", file=sys.stderr)
+            had_errors = True
             raise
+
+    if had_errors:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

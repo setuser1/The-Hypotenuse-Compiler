@@ -7,7 +7,7 @@
 
 .ai-stuff/
 .ruff_cache/
-
+.opencode/
 .DS_Store
 
 .ctri
@@ -530,7 +530,6 @@ FodyWeavers.xsd
 *.dll
 *.so
 *.so.*
-*.dylib
 
 # Executables
 *.exe

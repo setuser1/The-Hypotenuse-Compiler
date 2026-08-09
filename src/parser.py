@@ -13,6 +13,8 @@ a structured AST suitable for semantic analysis or code generation.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+import re
+
 import error_msgs
 
 # ============================================================
@@ -57,7 +59,7 @@ class ExposeDecl(Node):
 
 @dataclass
 class LibAccess(Node):
-    """lib:symbol - explicit plstd access."""
+    """lib:symbol - explicit library access."""
 
     symbol: str
 
@@ -401,6 +403,14 @@ class Generic(Node):
     associations: List[Tuple[str, Node]]  # (type, value) pairs
 
 
+@dataclass
+class Comma(Node):
+    """Comma expression node."""
+
+    left: Node
+    right: Node
+
+
 # ============================================================
 # Recursive-Descent Parser
 # ============================================================
@@ -707,6 +717,7 @@ class Parser:
     def _parse_preprocessor(self, directive: str) -> Optional[Node]:
         """Parse a preprocessor directive."""
         stripped = directive.strip()
+        stripped = re.sub(r'^#\s+', '#', stripped)
         if stripped.startswith("#include"):
             rest = stripped[len("#include") :].strip()
             if rest.startswith("<") and ">" in rest:
@@ -752,10 +763,10 @@ class Parser:
                 return result
             return self.parse_external()
 
-        # Skip comments
-        if t[0] in ("COMMENT_MULTI", "COMMENT_LINE"):
+        # Skip comments iteratively to avoid stack overflow
+        while t[0] in ("COMMENT_MULTI", "COMMENT_LINE"):
             self.advance()
-            return self.parse_external()
+            t = self.peek()
 
         # Reject deprecated / removed keywords immediately.
         if t[0] in (
@@ -788,7 +799,11 @@ class Parser:
             return self.parse_space()
 
         if t[0] == "EXTERN":
-            return self.parse_extern_c_block()
+            next_idx = self.i + 1
+            if (next_idx < len(self.tokens)
+                and self.tokens[next_idx][0] == "STRING_LITERAL"
+                and self.tokens[next_idx][1].strip('"') in ("C", "c")):
+                return self.parse_extern_c_block()
 
         if t[0] == "TYPEDEF":
             return self.parse_typedef()
@@ -1137,17 +1152,17 @@ class Parser:
         t = self.peek()
         if t[0] == "LT":
             self.expect("LT")
-            # Handle both IDENTIFIER and PLSTD (plstd is a reserved keyword)
-            if self.peek()[0] == "PLSTD":
-                lib_name = self.expect("PLSTD")[1]
+            # Handle identifiers and keyword-like library filenames such as string.plib.
+            if self.peek()[0] in _TYPE_TOKENS:
+                lib_name = self.advance()[1]
             else:
                 lib_name = self.expect("IDENTIFIER")[1]
 
-            # Handle path-like imports: <plstd/printd>
+            # Handle path-like imports: <folder/file>
             while self.peek()[0] == "DIVIDE":
                 self.expect("DIVIDE")
-                if self.peek()[0] == "PLSTD":
-                    lib_name += "/" + self.expect("PLSTD")[1]
+                if self.peek()[0] in _TYPE_TOKENS:
+                    lib_name += "/" + self.advance()[1]
                 else:
                     lib_name += "/" + self.expect("IDENTIFIER")[1]
 
@@ -1191,27 +1206,17 @@ class Parser:
         self.expect("EXPOSE")
         t = self.peek()
         # Accept IDENTIFIER or keywords (like STRING) as valid targets
-        if t[0] in ("IDENTIFIER", "STRING", "PLSTD") or t[0].endswith("_KEYWORD"):
+        if t[0] in ("IDENTIFIER", "STRING") or t[0].endswith("_KEYWORD"):
             target = self.advance()[1]
-            # Check for @ syntax like expose printd@plstd or expose printd@lib
+            # Check for @ syntax like expose printd@lib
             if self.peek()[0] == "AT":
                 self.expect("AT")
-                # Can be IDENTIFIER or PLSTD for the namespace
-                if self.peek()[0] == "PLSTD":
-                    namespace = self.advance()[1]
-                else:
-                    namespace = self.expect("IDENTIFIER")[1]
+                namespace = self.expect("IDENTIFIER")[1]
                 target = f"{target}@{namespace}"
             # Semicolon is optional for expose statements
             if self.peek()[0] == "SEMICOLON":
                 self.expect("SEMICOLON")
             return ExposeDecl(target=target)
-        elif t[0] == "PLSTD":
-            self.advance()
-            # Semicolon is optional for expose statements
-            if self.peek()[0] == "SEMICOLON":
-                self.expect("SEMICOLON")
-            return ExposeDecl(target="plstd")
 
         return None  # type: ignore
 
@@ -1642,7 +1647,7 @@ class Parser:
         """Parse a namespace block declaration."""
         self.expect("SPACE")
         t = self.peek()
-        if t[0] == "IDENTIFIER" or t[0] == "PLSTD":
+        if t[0] == "IDENTIFIER":
             name = self.advance()[1]
             self.expect("LBRACE")
             declarations = []
@@ -1682,7 +1687,7 @@ class Parser:
             elif tok[0] == "IDENTIFIER":
                 # Check if this is the alias (next token is SEMICOLON)
                 # In that case, don't consume it as part of the type
-                if self.tokens[self.i + 1][0] == "SEMICOLON":
+                if self.i + 1 < len(self.tokens) and self.tokens[self.i + 1][0] == "SEMICOLON":
                     break
                 actual_type += self.advance()[1] + " "
             elif tok[0] == "STRUCT":
@@ -2051,10 +2056,10 @@ class Parser:
         """Parse a single statement."""
         t = self.peek()
 
-        # Skip preprocessor directives and comments inside function bodies too
-        if t[0] in ("PREPROCESSOR", "COMMENT_MULTI", "COMMENT_LINE"):
+        # Skip preprocessor directives and comments iteratively
+        while t[0] in ("PREPROCESSOR", "COMMENT_MULTI", "COMMENT_LINE"):
             self.advance()
-            return self.parse_statement()
+            t = self.peek()
 
         # Handle type declarations (including size_t and system types like mode_t, uid_t, etc.)
         if t[0] in _BASE_TYPE_TOKENS:
@@ -2644,7 +2649,10 @@ class Parser:
         node = self.parse_assignment()  # type: ignore
         while self.accept("COMMA"):
             right = self.parse_assignment()  # type: ignore
-            node = right
+            if node is None or right is None:
+                raise SyntaxError("Expected expression after ','")
+            assert node is not None and right is not None
+            node = Comma(node, right)
         return node  # type: ignore
 
     def _parse_single_expression(self) -> Node:
@@ -2701,22 +2709,40 @@ class Parser:
         return node
 
     def parse_relational(self) -> Node:
-        node = self.parse_bitwise()
+        node = self.parse_bitwise_or()
         while self.peek()[0] in ("LT", "GT", "LE", "GE"):
             op = self.advance()[1]
-            right = self.parse_bitwise()
+            right = self.parse_bitwise_or()
             node = Binary(op, node, right)
         return node
 
-    def parse_bitwise(self) -> Node:
+    def parse_bitwise_or(self) -> Node:
+        node = self.parse_bitwise_xor()
+        while self.peek()[0] == "BITWISE_OR":
+            op = self.advance()[1]
+            right = self.parse_bitwise_xor()
+            node = Binary(op, node, right)
+        return node
+
+    def parse_bitwise_xor(self) -> Node:
+        node = self.parse_bitwise_and()
+        while self.peek()[0] == "BITWISE_XOR":
+            op = self.advance()[1]
+            right = self.parse_bitwise_and()
+            node = Binary(op, node, right)
+        return node
+
+    def parse_bitwise_and(self) -> Node:
+        node = self.parse_shift()
+        while self.peek()[0] == "AMPERSAND":
+            op = self.advance()[1]
+            right = self.parse_shift()
+            node = Binary(op, node, right)
+        return node
+
+    def parse_shift(self) -> Node:
         node = self.parse_add()
-        while self.peek()[0] in (
-            "BITWISE_OR",
-            "BITWISE_XOR",
-            "AMPERSAND",
-            "LSHIFT",
-            "RSHIFT",
-        ):
+        while self.peek()[0] in ("LSHIFT", "RSHIFT"):
             op = self.advance()[1]
             right = self.parse_add()
             node = Binary(op, node, right)
@@ -2968,8 +2994,8 @@ class Parser:
                 # This is function@namespace pattern
                 func_name = self.advance()[1]
                 self.expect("AT")
-                # Namespace can be IDENTIFIER, PLSTD, or STRING (string type keyword)
-                if self.peek()[0] in ("IDENTIFIER", "PLSTD", "STRING"):
+                # Namespace can be IDENTIFIER or STRING (string type keyword)
+                if self.peek()[0] in ("IDENTIFIER", "STRING"):
                     namespace = self.advance()[1]
                 else:
                     line = self.peek()[2] if len(self.peek()) > 2 else 0

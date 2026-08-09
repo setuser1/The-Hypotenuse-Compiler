@@ -213,6 +213,8 @@ class Optimizer:
         if op == "/":
             if right == 0:
                 raise ZeroDivisionError
+            if isinstance(left, int) and isinstance(right, int):
+                return int(left / right)
             return left / right
         if op == "%":
             if right == 0:
@@ -315,10 +317,11 @@ class Optimizer:
 
     def _remove_trailing_stmts(self, node) -> bool:
         """Remove trailing statements after control flow. Returns True if removed."""
-        if isinstance(node, Compound) and node.stmts:
-            if self._ends_with_control(node.stmts[-1]):
-                node.stmts.pop()
-                return True
+        if isinstance(node, Compound) and len(node.stmts) > 1:
+            for i in range(len(node.stmts) - 2, -1, -1):
+                if self._ends_with_control(node.stmts[i]):
+                    del node.stmts[i + 1:]
+                    return True
         return False
 
     def _simplify_constant_conditions(self) -> int:
@@ -513,8 +516,8 @@ class Optimizer:
             for arg in getattr(node, "args", []):
                 yield from self._walk_ast(arg)
         elif isinstance(node, Assignment):
-            yield from self._walk_ast(getattr(node, "left", None))
-            yield from self._walk_ast(getattr(node, "right", None))
+            yield from self._walk_ast(getattr(node, "target", None))
+            yield from self._walk_ast(getattr(node, "value", None))
         elif hasattr(node, "node_type") and node.node_type == "ASM":
             pass
         elif isinstance(node, Switch):
@@ -534,7 +537,7 @@ class Optimizer:
     def _find_node_location(self, target):
         """Find parent of target node. Yields (parent, attr, index) tuples."""
         for node in self._walk_ast(self.ast):
-            for attr in ["declarations", "stmts", "params", "args", "cases"]:
+            for attr in ["declarations", "stmts", "params", "args", "cases", "target", "value"]:
                 if hasattr(node, attr):
                     value = getattr(node, attr)
                     if isinstance(value, list):
@@ -567,32 +570,7 @@ class Optimizer:
             return True
         return False
 
-#--------------
-#Test function, find used functions       
-def find_used_functions(ast):
-    used = set()
-    called = set()
-    
-    # Find all function calls
-    for node in ast.walk():
-        if isinstance(node, FunctionCall):
-            called.add(node.function_name)
-    
-    # Recursively find called functions
-    changed = True
-    while changed:
-        changed = False
-        for func_name in called.copy():
-            func_def = find_function_definition(ast, func_name)
-            if func_def:
-                new_calls = find_function_calls(func_def.body)
-                for call in new_calls:
-                    if call not in called:
-                        called.add(call)
-                        changed = True
-    
-    return called
-#-------------------
+
 
 @dataclass
 class Node:

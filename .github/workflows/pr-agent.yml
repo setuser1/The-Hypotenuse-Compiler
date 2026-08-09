@@ -1,0 +1,23 @@
+name: PR Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  pr_agent_job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: The PR Agent
+        uses: The-PR-Agent/pr-agent@v0.41.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI__KEY: ${{ secrets.OLLAMA_CLOUD_SECRET }}
+          OPENAI__API_BASE: https://ollama.com/v1
+          CONFIG__MODEL: ollama-cloud/minimax-m3
+          CONFIG__FALLBACK_MODELS: ollama-cloud/minimax-m3
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: 128000

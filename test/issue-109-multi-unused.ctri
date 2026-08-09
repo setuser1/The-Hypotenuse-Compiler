@@ -1,5 +1,5 @@
-using printd from <plstd>;
-using string from <plstd>;
+using printd from <printd>;
+using strlen from <string>;
 
 int main() {
     printd(42);

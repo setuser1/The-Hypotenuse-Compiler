@@ -1,7 +1,17 @@
 """Struct layout computation with C11 padding analysis and cache optimization."""
 
+import platform
+import sys
 from dataclasses import dataclass
 from typing import Dict, List, Optional
+
+
+def _long_double_info():
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        return (8, 8)
+    return (16, 16)
+
+_LONG_DOUBLE_SIZE, _LONG_DOUBLE_ALIGN = _long_double_info()
 
 
 TYPE_INFO = {
@@ -12,7 +22,7 @@ TYPE_INFO = {
     "long long": (8, 8),
     "float": (4, 4),
     "double": (8, 8),
-    "long double": (16, 16),
+    "long double": (_LONG_DOUBLE_SIZE, _LONG_DOUBLE_ALIGN),
     "void*": (8, 8),
     "_Bool": (1, 1),
 }
@@ -63,7 +73,7 @@ def alignment_of(type_str: str) -> int:
         return 4
     if type_str.startswith("double"):
         if "long double" in type_str:
-            return 16
+            return _LONG_DOUBLE_ALIGN
         return 8
     if type_str.startswith("void*"):
         return 8

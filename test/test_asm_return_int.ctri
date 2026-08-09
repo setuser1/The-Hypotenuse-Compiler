@@ -1,7 +1,8 @@
 asm int ret42() {
-    syntax arm64_macho
-    .section __TEXT,__text
-    return 42
+    syntax x86_64_linux
+    section .text
+    mov rax, 42
+    return
 }
 
 int main() {

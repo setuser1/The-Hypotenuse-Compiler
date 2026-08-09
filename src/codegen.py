@@ -1,7 +1,6 @@
 """C11 code generator for C△ compiler."""
 
 import os
-import platform
 import sys
 from typing import Optional
 
@@ -12,6 +11,7 @@ from parser import (
     ArrayDesignation,
     Assignment,
     Binary,
+    Comma,
     Break,
     Call,
     Cast,
@@ -61,6 +61,7 @@ TYPE_MAP = {
     "unsigned": "unsigned",
 }
 
+DEFAULT_DYNAM_CAPACITY = 4
 
 class CodeGen:
     def __init__(self, ast, structor, layouts=None, source_path=None, target_arch=None):
@@ -101,9 +102,9 @@ class CodeGen:
         self._exposed_funcs = {}  # Maps bare_name -> lib_name for exposed functions
         self._folder_libs = {}  # Maps folder alias -> list of plib names (e.g., "lib" -> ["plstd/streamer", "plstd/other"])
         self._namespace_imported_libs = set()  # Track libs imported as full namespaces
+        self._standard_libs = set()  # Plib filenames loaded from the standard library folder
         self._used_functions = set()  # Track used function names for tree-shaking
         self._pending_plibs = []  # Store pending plib ASTs for tree-shaking
-        self._asm_function_names = set()  # Track asm function names for macOS _ prefix
         self._global_dynam_inits = []  # Track global dynam initialization code for main()
         self._plib_global_inits = []  # Track global dynam inits for plib init function
         self._plib_init_funcs = []  # Track plib init function names to auto-call
@@ -119,6 +120,10 @@ class CodeGen:
             ".plib"
         )  # Direct plib compilation
         self._asm_blocks = []  # Store asm blocks for later .asm file generation
+        # Struct field type tracking: struct_name -> {field_name: field_type}
+        self._struct_field_types = {}
+        # Variable -> struct type mapping: var_name -> struct_type_name
+        self._var_struct_types = {}
 
     def _preprocess_plib_content(self, content: str) -> str:
         """Apply the same preprocessor pass to imported plibs as source files."""
@@ -334,6 +339,11 @@ class CodeGen:
         self._helper_lines.append("    return dest;")
         self._helper_lines.append("}")
         self._helper_lines.append("")
+        self._helper_lines.append("int __ctri_strcmp(char* a, char* b) {")
+        self._helper_lines.append("    while (*a && *a == *b) { a++; b++; }")
+        self._helper_lines.append("    return (unsigned char)*a - (unsigned char)*b;")
+        self._helper_lines.append("}")
+        self._helper_lines.append("")
         self._helper_lines.append("char* __ctri_strdup(char* s) {")
         self._helper_lines.append("    int len = __ctri_strlen(s);")
         self._helper_lines.append("    char* d = __ctri_malloc(len + 1);")
@@ -450,6 +460,110 @@ class CodeGen:
         """Get the type of a variable if it's dynam or string."""
         return self._dynam_declarations.get(var_name)
 
+    def _resolve_member_dynam_type(self, node) -> Optional[str]:
+        """Resolve the dynam/string type of a FieldAccess or Var node.
+
+        For FieldAccess (obj.field), looks up the struct type and field type.
+        For Var, delegates to _dynam_declarations.
+        Returns the dynam/string type string, or None.
+        """
+        if isinstance(node, Var):
+            return self._dynam_declarations.get(node.name)
+
+        if isinstance(node, FieldAccess):
+            # Resolve the object's struct type
+            obj_var = node.obj
+            if isinstance(obj_var, Var):
+                struct_type = self._var_struct_types.get(obj_var.name)
+                if struct_type and struct_type in self._struct_field_types:
+                    return self._struct_field_types[struct_type].get(node.field_name)
+            # If the object itself is a field access (nested), recurse
+            if isinstance(obj_var, FieldAccess):
+                parent_type = self._resolve_member_dynam_type(obj_var)
+                if parent_type and parent_type in self._struct_field_types:
+                    return self._struct_field_types[parent_type].get(node.field_name)
+
+        return None
+
+    def _get_field_struct_name(self, node) -> Optional[str]:
+        """For a FieldAccess to a dynam field, return the dynam struct name.
+
+        e.g., c.items where items is dynam int -> returns 'dynam_int'
+        """
+        field_type = self._resolve_member_dynam_type(node)
+        if field_type and field_type.startswith("dynam "):
+            elem_type = field_type[6:]
+            return self._get_dynam_struct_name(elem_type)
+        return None
+
+    def _emit_field_dynam_init(self, target_node, init_node):
+        """Emit initialization code for a dynam field on a struct member.
+
+        target_node: FieldAccess node (e.g., c.items)
+        init_node: InitList or other initializer node
+        """
+        field_type = self._resolve_member_dynam_type(target_node)
+        if not field_type or not field_type.startswith("dynam "):
+            return False
+
+        elem_type = field_type[6:]
+        mapped_elem = self._map_type(elem_type)
+        struct_name = self._get_dynam_struct_name(elem_type)
+        target_expr = self._expr(target_node)
+
+        # Ensure helpers are generated
+        if struct_name not in self._generated_dynam_structs:
+            self._generated_dynam_structs.add(struct_name)
+            self._gen_dynam_helper_functions(struct_name, mapped_elem, elem_type)
+
+        if isinstance(init_node, InitList):
+            init_vals = [self._expr(e) for e in init_node.elements]
+            init_count = len(init_vals)
+            init_capacity = max(DEFAULT_DYNAM_CAPACITY, init_count)
+            self._emit(f"{target_expr}.data = __ctri_malloc({init_capacity} * sizeof({mapped_elem}));")
+            self._emit(f"{target_expr}.size = 0;")
+            self._emit(f"{target_expr}.capacity = {init_capacity};")
+            for v in init_vals:
+                self._emit(f"{struct_name}_push(&{target_expr}, {v});")
+        elif init_node and isinstance(init_node, Call):
+            init_expr = self._expr(init_node)
+            self._emit(f"{target_expr}.data = __ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem}));")
+            self._emit(f"{target_expr}.size = 0;")
+            self._emit(f"{target_expr}.capacity = {DEFAULT_DYNAM_CAPACITY};")
+            self._emit(f"{struct_name}_push(&{target_expr}, {init_expr});")
+        else:
+            self._emit(f"{target_expr}.data = __ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem}));")
+            self._emit(f"{target_expr}.size = 0;")
+            self._emit(f"{target_expr}.capacity = {DEFAULT_DYNAM_CAPACITY};")
+
+        return True
+
+    def _emit_field_string_init(self, target_node, init_node, is_reassign=False):
+        """Emit initialization code for a string field on a struct member."""
+        field_type = self._resolve_member_dynam_type(target_node)
+        if field_type != "string":
+            return False
+
+        target_expr = self._expr(target_node)
+        self._ensure_ctri_string_helpers()
+
+        # Free existing memory on reassignment to prevent leaks
+        if is_reassign:
+            self._emit(f"__ctri_free({target_expr});")
+
+        if isinstance(init_node, Literal) and isinstance(init_node.value, str) and init_node.value.startswith('"'):
+            self._emit(f"{target_expr} = __ctri_strdup({init_node.value});")
+        elif isinstance(init_node, Binary) and init_node.op == "+":
+            left_expr = self._expr(init_node.left)
+            right_expr = self._expr(init_node.right)
+            self._emit(f"{{ char* _ct = __ctri_malloc(__ctri_strlen({left_expr}) + __ctri_strlen({right_expr}) + 1); "
+                        f"__ctri_strcpy(_ct, {left_expr}); __ctri_strcat(_ct, {right_expr}); {target_expr} = _ct; }}")
+        else:
+            init_expr = self._expr(init_node)
+            self._emit(f"{target_expr} = {init_expr};")
+
+        return True
+
     def _get_expression_type(self, node) -> str:
         """Determine the type of an expression for codegen purposes."""
         if isinstance(node, Literal):
@@ -462,6 +576,10 @@ class CodeGen:
             # Variables get their type from declaration tracking
             return self._get_dynam_type(node.name) or ""
 
+        if isinstance(node, FieldAccess):
+            # Resolve member type through struct field tracking
+            return self._resolve_member_dynam_type(node) or ""
+
         # For other expressions, we could do more analysis but for now keep it simple
         return ""
 
@@ -472,6 +590,10 @@ class CodeGen:
         if isinstance(node, Assignment):
             return True
         if isinstance(node, Binary):
+            return self._contains_assignment(node.left) or self._contains_assignment(
+                node.right
+            )
+        if isinstance(node, Comma):
             return self._contains_assignment(node.left) or self._contains_assignment(
                 node.right
             )
@@ -595,7 +717,7 @@ class CodeGen:
                 left_type = self._get_expression_type(node.left)
                 right_type = self._get_expression_type(node.right)
 
-                # If comparing strings, we need to use strcmp
+                # If comparing strings, we need to use __ctri_strcmp
                 if (
                     left_type == "string"
                     or (
@@ -611,35 +733,36 @@ class CodeGen:
                         and node.right.value.startswith('"')
                     )
                 ):
-                    # Handle string literal comparison: s == "hello" -> strcmp(s, "hello") == 0
+                    self._ensure_ctri_string_helpers()
+                    # Handle string literal comparison: s == "hello" -> __ctri_strcmp(s, "hello") == 0
                     if (
                         isinstance(node.left, Literal)
                         and isinstance(node.left.value, str)
                         and node.left.value.startswith('"')
                     ):
-                        # "hello" == s -> strcmp(s, "hello") == 0
+                        # "hello" == s -> __ctri_strcmp(s, "hello") == 0
                         return (
-                            f"(strcmp({right}, {left}) == 0)"
+                            f"(__ctri_strcmp({right}, {left}) == 0)"
                             if node.op == "=="
-                            else f"(strcmp({right}, {left}) != 0)"
+                            else f"(__ctri_strcmp({right}, {left}) != 0)"
                         )
                     elif (
                         isinstance(node.right, Literal)
                         and isinstance(node.right.value, str)
                         and node.right.value.startswith('"')
                     ):
-                        # s == "hello" -> strcmp(s, "hello") == 0
+                        # s == "hello" -> __ctri_strcmp(s, "hello") == 0
                         return (
-                            f"(strcmp({left}, {right}) == 0)"
+                            f"(__ctri_strcmp({left}, {right}) == 0)"
                             if node.op == "=="
-                            else f"(strcmp({left}, {right}) != 0)"
+                            else f"(__ctri_strcmp({left}, {right}) != 0)"
                         )
                     else:
-                        # s1 == s2 -> strcmp(s1, s2) == 0
+                        # s1 == s2 -> __ctri_strcmp(s1, s2) == 0
                         return (
-                            f"(strcmp({left}, {right}) == 0)"
+                            f"(__ctri_strcmp({left}, {right}) == 0)"
                             if node.op == "=="
-                            else f"(strcmp({left}, {right}) != 0)"
+                            else f"(__ctri_strcmp({left}, {right}) != 0)"
                         )
 
             # Comparison operators don't need extra parens (avoid gcc warnings)
@@ -652,11 +775,13 @@ class CodeGen:
             if node.op == "sizeof":
                 operand = self._expr(node.operand)
                 return f"sizeof({operand})"
-            # Handle string pointer dereferencing: *s for string s
-            if node.op == "*" and isinstance(node.operand, Var):
-                var_name = node.operand.name
-                if self._get_dynam_type(var_name) == "string":
-                    # For string types, *s should generate *(s) which is correct
+            # Handle string pointer dereferencing: *s for string s (Var or FieldAccess)
+            if node.op == "*" and isinstance(node.operand, (Var, FieldAccess)):
+                if isinstance(node.operand, Var):
+                    is_string = self._get_dynam_type(node.operand.name) == "string"
+                else:
+                    is_string = self._resolve_member_dynam_type(node.operand) == "string"
+                if is_string:
                     return f"*({self._expr(node.operand)})"
             operand = self._expr(node.operand)
             if node.prefix:
@@ -668,6 +793,11 @@ class CodeGen:
             value = self._expr(node.value)
             return f"{target} = {value}"
 
+        if isinstance(node, Comma):
+            left = self._expr(node.left)
+            right = self._expr(node.right)
+            return f"({left}, {right})"
+
         if isinstance(node, Call):
             callee = ""
             if isinstance(node.callee, FieldAccess):
@@ -675,51 +805,34 @@ class CodeGen:
 
                 # Check if this is a dynam array method: push, pop, len
                 if method_name in ("push", "pop", "len"):
-                    # For now, we'll assume any variable accessed with these methods is a dynam array
-                    # In a full implementation, we'd check the symbol table for the variable type
-                    # Generate helper function call: dynam_<type>_<method>(&obj, args)
-                    # We don't have type info here, so we'll use a placeholder approach
-                    # Better would be to pass type information through the codegen process
+                    # Resolve the type of the object being accessed (handles both
+                    # plain vars and FieldAccess like obj.field)
+                    dyn_type = self._resolve_member_dynam_type(node.callee.obj)
+                    if not dyn_type and isinstance(node.callee.obj, Var):
+                        dyn_type = self._dynam_declarations.get(node.callee.obj.name)
 
-                    # Since we don't have the element type, we'll need to infer it or use a generic approach
-                    # For now, let's assume we can determine the type from context or use a generic name
-                    # This is a limitation - in a real compiler we'd have symbol table info
-
-                    # Try to get the variable name from the object expression
-                    # If obj_expr is a simple variable name, use it
-                    struct_name = ""
-                    if isinstance(node.callee.obj, Var):
-                        var_name = node.callee.obj.name
-                        # Look up the variable's type in our tracking dict
-                        if var_name in self._dynam_declarations:
-                            dyn_type = self._dynam_declarations[var_name]
-                            if dyn_type.startswith("dynam "):
-                                elem_type = dyn_type[6:]  # Remove "dynam " prefix
-                                struct_name = self._get_dynam_struct_name(elem_type)
-                            elif dyn_type == "string":
-                                # For string, we need to treat as dynam char for push/pop/len
-                                elem_type = "char"
-                                struct_name = self._get_dynam_struct_name(elem_type)
-                        else:
-                            # Fallback to int if not found (shouldn't happen in valid code)
-                            elem_type = "int"
+                    if dyn_type:
+                        if dyn_type.startswith("dynam "):
+                            elem_type = dyn_type[6:]
                             struct_name = self._get_dynam_struct_name(elem_type)
+                        elif dyn_type == "string":
+                            elem_type = "char"
+                            struct_name = self._get_dynam_struct_name(elem_type)
+                        else:
+                            struct_name = ""
 
-                        if method_name == "push":
-                            # arr.push(val) -> dynam_int_push(&arr, val)
-                            args_str = ", ".join(self._expr(a) for a in node.args)
-                            return f"{struct_name}_push(&{var_name}, {args_str})"
-                        elif method_name == "pop":
-                            # arr.pop() -> dynam_int_pop(&arr)
-                            args_str = ", ".join(self._expr(a) for a in node.args)
-                            return f"{struct_name}_pop(&{var_name}){'' if not node.args else f'({args_str})'}"
-                        elif method_name == "len":
-                            # arr.len() -> dynam_int_len(&arr)
-                            args_str = ", ".join(self._expr(a) for a in node.args)
-                            return f"{struct_name}_len(&{var_name}){'' if not node.args else f'({args_str})'}"
-                    else:
-                        # Complex object expression, fall back to regular handling
-                        callee = self._expr(node.callee)
+                        if struct_name:
+                            obj_name = self._expr(node.callee.obj)
+                            if method_name == "push":
+                                args_str = ", ".join(self._expr(a) for a in node.args)
+                                return f"{struct_name}_push(&{obj_name}, {args_str})"
+                            elif method_name == "pop":
+                                return f"{struct_name}_pop(&{obj_name})"
+                            elif method_name == "len":
+                                return f"{struct_name}_len(&{obj_name})"
+
+                    # Fall back to regular handling
+                    callee = self._expr(node.callee)
             else:
                 # Check if this is a call to len() function: len(arr) or len("string") or len(123)
                 if isinstance(node.callee, Var) and node.callee.name == "len":
@@ -776,24 +889,30 @@ class CodeGen:
                                 return f"len_int(-{val})"
 
                         # Handle regular variable - check if it's a dynam array or C array
-                        if isinstance(arg, Var):
-                            var_name = arg.name
-                            # Check if this is a dynam array by checking our tracking dict
-                            if var_name in self._dynam_declarations:
-                                dyn_type = self._dynam_declarations[var_name]
+                        if isinstance(arg, (Var, FieldAccess)):
+                            # Resolve type through member tracking for FieldAccess, or directly for Var
+                            if isinstance(arg, FieldAccess):
+                                dyn_type = self._resolve_member_dynam_type(arg)
+                                arg_name = self._expr(arg)
+                            else:
+                                var_name = arg.name
+                                dyn_type = self._dynam_declarations.get(var_name)
+                                arg_name = var_name
+
+                            if dyn_type:
                                 if dyn_type.startswith("dynam "):
                                     elem_type = dyn_type[6:]
                                     struct_name = self._get_dynam_struct_name(elem_type)
-                                    return f"{struct_name}_len(&{var_name})"
+                                    return f"{struct_name}_len(&{arg_name})"
                                 elif dyn_type == "string":
                                     self._ensure_ctri_string_helpers()
-                                    return f"__ctri_strlen({var_name})"
+                                    return f"__ctri_strlen({arg_name})"
 
-                            # For regular C arrays, we'd need symbol table info
-                            # For now, try to use sizeof approach: sizeof(arr)/sizeof(arr[0])
-                            # This works for static arrays
-                            # Generate: sizeof(var)/sizeof(var[0])
-                            return f"(int)(sizeof({var_name})/sizeof({var_name}[0]))"
+                            if isinstance(arg, Var):
+                                var_name = arg.name
+                                # For regular C arrays, we'd need symbol table info
+                                # For now, try to use sizeof approach: sizeof(arr)/sizeof(arr[0])
+                                return f"(int)(sizeof({var_name})/sizeof({var_name}[0]))"
 
                         # Handle other expressions - default to strlen for strings
                         arg_expr = self._expr(arg)
@@ -827,13 +946,19 @@ class CodeGen:
                 exposed_funcs = getattr(self, "_exposed_funcs", {})
                 is_func_exposed = base_callee in exposed_funcs
 
-                if not is_exposed and not is_func_exposed and "@" not in callee:
+                # When using X from <X>, the function is implicitly available
+                is_same_lib_import = (
+                    lib_name == base_callee
+                    or (lib_name.startswith("<") and lib_name[1:-1] == base_callee)
+                )
+
+                if not is_exposed and not is_func_exposed and not is_same_lib_import and "@" not in callee:
                     raise ValueError(
                         error_msgs.get_error_msg(
                             "E802",
                             lib=lib_name,
                             func=base_callee,
-                            fallback=f"Function '{base_callee}' requires '{base_callee}@{lib_name}()' syntax (library not exposed). Use 'expose {lib_name}' or 'expose {base_callee}@{lib_name}' before calling.",
+                            fallback=f"Function '{base_callee}' is in library '{lib_name}' which is not exposed. Options: (1) expose the entire library: 'expose {lib_name}'; (2) expose just this function: 'expose {base_callee}@{lib_name}'; (3) use the one-off syntax: '{base_callee}@{lib_name}()'.",
                         )
                     )
                 # If func_name is None, the function is a top-level plib function
@@ -861,7 +986,29 @@ class CodeGen:
                                 callee = f"{namespace}_{func_part}"
                             elif namespace in self._alias_to_lib:
                                 actual_lib = self._alias_to_lib[namespace]
-                                callee = f"{actual_lib}_{func_part}"
+                                # First try direct concatenation
+                                candidate = f"{actual_lib}_{func_part}"
+                                # Verify the generated name exists in any lib_key
+                                found_name = None
+                                for lib_key, funcs in self._top_level_lib_functions.items():
+                                    if candidate in funcs:
+                                        found_name = candidate
+                                        break
+                                if found_name:
+                                    callee = found_name
+                                else:
+                                    # Search all lib_keys for a matching suffix (folder imports)
+                                    suffix = f"_{func_part}"
+                                    for lib_key, funcs in self._top_level_lib_functions.items():
+                                        for generated_name in funcs:
+                                            if generated_name.endswith(suffix):
+                                                callee = generated_name
+                                                found_name = generated_name
+                                                break
+                                        if found_name:
+                                            break
+                                    if not found_name:
+                                        callee = candidate
                             else:
                                 raise SyntaxError(
                                     error_msgs.get_error_msg(
@@ -911,18 +1058,36 @@ class CodeGen:
                     callee = f"{lib_key}_{base_callee}"
                 else:
                     # Check if function exists in any imported plib's top-level functions
+                    # Auto-resolve only for folder imports (e.g., using <sdl3/sdl>)
+                    resolved = False
+                    error_lib = None
+                    error_func = None
                     for lib_name, funcs in getattr(
                         self, "_top_level_lib_functions", {}
                     ).items():
                         if base_callee in funcs or f"{lib_name}_{base_callee}" in funcs:
-                            raise SyntaxError(
-                                error_msgs.get_error_msg(
-                                    "E802",
-                                    lib=lib_name,
-                                    func=base_callee,
-                                    fallback=f"Function '{base_callee}' requires '{base_callee}@{lib_name}()' syntax (library '{lib_name}' not exposed). Use 'expose {base_callee}@{lib_name}' before calling.",
-                                )
+                            # Only auto-resolve for folder imports (e.g., sdl3/sdl -> lib key is sdl)
+                            for ns in getattr(self, "_namespace_imported_libs", set()):
+                                if "/" in ns:  # Only folder imports
+                                    ns_lib = ns.split("/")[-1]
+                                    if ns_lib == lib_name:
+                                        callee = base_callee if base_callee in funcs else f"{lib_name}_{base_callee}"
+                                        resolved = True
+                                        break
+                            if resolved:
+                                break
+                            # Save for error message
+                            error_lib = lib_name
+                            error_func = base_callee
+                    if not resolved and error_lib:
+                        raise SyntaxError(
+                            error_msgs.get_error_msg(
+                                "E802",
+                                lib=error_lib,
+                                func=error_func,
+                        fallback=f"Function '{error_func}' is in library '{error_lib}' which is not exposed. Options: (1) expose the entire library: 'expose {error_lib}'; (2) expose just this function: 'expose {error_func}@{error_lib}'; (3) use the one-off syntax: '{error_func}@{error_lib}()'.",
                             )
+                        )
 
             # When generating plib code, prefix internal calls to other plib functions
             # Don't add prefix if callee already contains underscore (already prefixed)
@@ -999,6 +1164,17 @@ class CodeGen:
                                     break
                             if found:
                                 break
+                        # Fallback: search all lib_keys (for folder imports where lib_key != folder name)
+                        if not found:
+                            suffix = f"_{func}"
+                            for lib_key, funcs in self._top_level_lib_functions.items():
+                                for generated_name in funcs:
+                                    if generated_name.endswith(suffix):
+                                        callee = generated_name
+                                        found = True
+                                        break
+                                if found:
+                                    break
                         if not found:
                             raise ValueError(
                                 error_msgs.get_error_msg(
@@ -1013,7 +1189,8 @@ class CodeGen:
                         found = False
                         for generated_name in self._top_level_lib_functions[namespace]:
                             suffix = f"_{func}"
-                            if generated_name.endswith(suffix):
+                            # Also check if generated_name == func (for double-prefix case)
+                            if generated_name.endswith(suffix) or generated_name == func:
                                 callee = generated_name
                                 found = True
                                 break
@@ -1047,15 +1224,13 @@ class CodeGen:
             # Track this function call for tree-shaking plibs.
             # This also applies while generating plib code so helper functions
             # referenced by an emitted public function remain available.
-            self._used_functions.add(base_callee)
-            # Also track prefixed name when @ alias was used (function generated as lib_func)
-            if callee != base_callee:
-                self._used_functions.add(callee)
+            # Only track the resolved callee name. Tracking the bare name
+            # alongside the prefixed name causes cross-plib leakage: the bare
+            # name matches functions from unrelated plibs, triggering their
+            # emission even when they are never called.
+            self._used_functions.add(callee)
 
-            # On macOS, asm functions need _ prefix for C linkage
             # This must happen AFTER @ resolution
-            if platform.system() == "Darwin" and callee in self._asm_function_names:
-                callee = f"_{callee}"
 
             args = ", ".join(self._expr(a) for a in node.args)
             return f"{callee}({args})"
@@ -1063,13 +1238,16 @@ class CodeGen:
         if isinstance(node, ArrayAccess):
             arr = self._expr(node.array)
             idx = self._expr(node.index)
-            # Check if this is a dynam array subscript
-            if isinstance(node.array, Var):
-                var_name = node.array.name
-                dyn_type = self._get_dynam_type(var_name)
-                if dyn_type and dyn_type.startswith("dynam "):
-                    # Dynam array: arr[idx] -> arr.data[idx]
-                    return f"{arr}.data[{idx}]"
+            # Check if this is a dynam array subscript (Var or FieldAccess)
+            dyn_type = None
+            if isinstance(node.array, FieldAccess):
+                dyn_type = self._resolve_member_dynam_type(node.array)
+            elif isinstance(node.array, Var):
+                dyn_type = self._get_dynam_type(node.array.name)
+
+            if dyn_type and dyn_type.startswith("dynam "):
+                # Dynam array: arr[idx] -> arr.data[idx]
+                return f"{arr}.data[{idx}]"
             return f"{arr}[{idx}]"
 
         if isinstance(node, Cast):
@@ -1121,13 +1299,7 @@ class CodeGen:
     # ------------------------------------------------------------------
 
     def _gen_program_code(self, node):
-        # Now emit collected includes at the very beginning (prepend)
-        includes_to_emit = []
-        for inc in sorted(self._collected_includes):
-            includes_to_emit.append(inc)
-        # Prepend includes before any existing code
-        self._lines = includes_to_emit + self._lines
-        # Now generate rest of code (plib functions included via _gen_plib_code)
+        # Generate rest of code (plib functions included via _gen_plib_code)
         for line in self._scoped_var_globals:
             self._emit(line)
         if self._scoped_var_globals:
@@ -1214,6 +1386,12 @@ class CodeGen:
 
             if source.startswith("<") and source.endswith(">"):
                 lib_name = source[1:-1]
+                if lib_name == "plstd":
+                    raise SyntaxError(
+                        "plstd is a standard library directory, not a library name. "
+                        "Import standard library files by filename, such as using <printd> "
+                        "or using <string>."
+                    )
 
                 if lib_name not in seen_libs:
                     local_imports.append(lib_name)
@@ -1268,6 +1446,8 @@ class CodeGen:
         for item, lib_name in specific_imports.items():
             # Will be updated when plib is processed
             self._specific_imports[item] = (lib_name, None)
+            # Mark specifically imported functions as used so tree-shaking includes them
+            self._used_functions.add(item)
 
         for lib_name in local_imports:
             alias = None
@@ -1281,9 +1461,6 @@ class CodeGen:
             else:
                 # No explicit alias - use lib name itself for @libname syntax
                 self._alias_to_lib[lib_name] = lib_name
-            # "lib" is an alias for the standard library (plstd)
-            if lib_name == "plstd" and "lib" not in self._alias_to_lib:
-                self._alias_to_lib["lib"] = "plstd"
             # Only collect includes from plib (don't generate code yet)
             self._collect_plib_includes(lib_name)
 
@@ -1297,8 +1474,8 @@ class CodeGen:
             exp_target = exp.target
 
             # Handle expose of a specifically imported function (using func from <lib>)
-            # e.g. "using printd from <plstd>;" + "expose printd;" should work
-            # as if the user wrote "expose printd@plstd;"
+            # e.g. "using printd from <printd>;" + "expose printd;" should work
+            # as if the user wrote "expose printd@lib;"
             if exp_target in self._specific_imports:
                 lib_name = self._specific_imports[exp_target][0]
                 exp_target = f"{exp_target}@{lib_name}"
@@ -1379,6 +1556,11 @@ class CodeGen:
                     else imp.source
                 )
                 == exp_base
+                # Handle folder imports: using <folder/lib> matched by expose lib
+                or (imp.source.rsplit("/", 1)[-1].strip("<>\"'")
+                    if "/" in imp.source
+                    else False)
+                == exp_base
                 for imp in imports
             )
             if not lib_imported:
@@ -1397,6 +1579,13 @@ class CodeGen:
                 exp_target in self._namespace_imported_libs
                 or exp_base in self._namespace_imported_libs
                 or exp_target in self._specific_imports
+                # Handle folder imports: using <folder/lib> matched by expose lib
+                or any(
+                    ns.rsplit("/", 1)[-1] == exp_target
+                    or ns.rsplit("/", 1)[-1] == exp_base
+                    for ns in self._namespace_imported_libs
+                    if "/" in ns
+                )
             )
             if not is_valid_target:
                 raise ValueError(
@@ -1419,6 +1608,11 @@ class CodeGen:
                     or lib_key.replace("_", "/") == exp_base
                     or lib_key == exp_base.replace("/", "_")
                 )
+                # Also match folder imports where lib_key is the last path component
+                # (e.g., exp_base="plstd" matches lib_key="printd" from "plstd/printd")
+                if not matches and "/" in exp_base:
+                    if lib_key == exp_base.split("/")[-1]:
+                        matches = True
                 if matches:
                     exposed_keys.add(lib_key)
                     # Determine the actual prefix used for function names
@@ -1426,6 +1620,9 @@ class CodeGen:
                         actual_prefix = lib_key
                     elif lib_key.startswith(f"{exp_base}_"):
                         actual_prefix = lib_key[len(exp_base) + 1 :]
+                    elif "/" in exp_base and lib_key == exp_base.split("/")[-1]:
+                        # Folder import: lib_key is the plib name (e.g., "printd")
+                        actual_prefix = lib_key
                     else:
                         actual_prefix = lib_key
                     self._exposed_libs.add(actual_prefix)
@@ -1561,6 +1758,11 @@ class CodeGen:
                 if not generated_name.endswith(f"_{func_name}"):
                     continue
                 if lib_matches or generated_name == f"{func_name}_{func_name}":
+                    return generated_name
+        # Fallback: search all lib_keys (for folder imports where lib_key != folder name)
+        for lib_key, funcs in self._top_level_lib_functions.items():
+            for generated_name in funcs:
+                if generated_name.endswith(f"_{func_name}"):
                     return generated_name
         return None
 
@@ -1733,7 +1935,11 @@ class CodeGen:
                     self._current_space = actual_prefix
                     for nested_decl in decl.declarations:
                         if isinstance(nested_decl, p.Function):
-                            generated_name = f"{actual_prefix}_{nested_decl.name}"
+                            # Avoid double-prefixing
+                            if nested_decl.name.startswith(f"{actual_prefix}_"):
+                                generated_name = nested_decl.name
+                            else:
+                                generated_name = f"{actual_prefix}_{nested_decl.name}"
                             if self._should_emit_plib_function(
                                 prefix,
                                 nested_decl.name,
@@ -1749,7 +1955,11 @@ class CodeGen:
                     self._current_space = None
                     self._space_local_functions = set()
                 elif isinstance(decl, p.Function):
-                    generated_name = f"{prefix}_{decl.name}"
+                    # Avoid double-prefixing
+                    if decl.name.startswith(f"{prefix}_"):
+                        generated_name = decl.name
+                    else:
+                        generated_name = f"{prefix}_{decl.name}"
                     if self._should_emit_plib_function(prefix, decl.name, generated_name):
                         before = len(self._used_functions)
                         self._scan_plib_function_dependencies(decl.body)
@@ -1764,13 +1974,16 @@ class CodeGen:
                 continue
 
             # Apply prefix to top-level declarations
+            # Avoid double-prefixing: if the name already starts with prefix_, don't add it again
             original_name = None
             if isinstance(decl, p.Function):
                 original_name = decl.name
-                decl.name = f"{prefix}_{decl.name}"
+                if not decl.name.startswith(f"{prefix}_"):
+                    decl.name = f"{prefix}_{decl.name}"
             elif isinstance(decl, p.Declaration):
                 original_name = decl.name
-                decl.name = f"{prefix}_{decl.name}"
+                if not decl.name.startswith(f"{prefix}_"):
+                    decl.name = f"{prefix}_{decl.name}"
 
             # Handle SpaceDecl - generate with prefix + namespace prefix
             if isinstance(decl, p.SpaceDecl):
@@ -1812,11 +2025,15 @@ class CodeGen:
 
                         nested_decl.name = generated_name
                     elif isinstance(nested_decl, p.Declaration):
-                        nested_decl.name = f"{actual_prefix}_{nested_decl.name}"
+                        if not nested_decl.name.startswith(f"{actual_prefix}_"):
+                            nested_decl.name = f"{actual_prefix}_{nested_decl.name}"
                     elif isinstance(nested_decl, p.AsmBlock):
                         if nested_decl.is_function and nested_decl.name:
                             original_name = nested_decl.name
-                            generated_name = f"{actual_prefix}_{nested_decl.name}"
+                            if nested_decl.name.startswith(f"{actual_prefix}_"):
+                                generated_name = nested_decl.name
+                            else:
+                                generated_name = f"{actual_prefix}_{nested_decl.name}"
                             if not self._should_emit_plib_function(
                                 prefix,
                                 original_name,
@@ -1833,14 +2050,13 @@ class CodeGen:
             elif isinstance(decl, p.AsmBlock):
                 # Prefix asm function names
                 if decl.is_function and decl.name:
-                    decl.name = f"{prefix}_{decl.name}"
+                    if not decl.name.startswith(f"{prefix}_"):
+                        decl.name = f"{prefix}_{decl.name}"
                     # Track for internal calls within plib
                     lib_key = lib_name.split("/")[-1]
                     if lib_key not in self._top_level_lib_functions:
                         self._top_level_lib_functions[lib_key] = set()
                     self._top_level_lib_functions[lib_key].add(decl.name)
-                    # Track for macOS _ prefix resolution
-                    self._asm_function_names.add(decl.name)
                 self._gen_asm_block(decl)
             elif isinstance(
                 decl, (p.Function, p.Declaration, p.StructDef, p.Typedef, p.EnumDef)
@@ -1926,6 +2142,8 @@ class CodeGen:
                 search_paths.append(parent)
                 current_dir = parent
                 parent = os.path.dirname(parent)
+            if "." not in search_paths:
+                search_paths.append(".")
             search_paths.extend(self._get_plibs_search_dirs())
 
             if "/" in lib_name:
@@ -1944,25 +2162,20 @@ class CodeGen:
                         break
 
                 if not plib_path:
+                    for base in search_paths:
+                        candidate = os.path.join(base, "plstd", f"{search_name}.plib")
+                        if os.path.exists(candidate):
+                            plib_path = candidate
+                            break
+
+                if not plib_path:
                     # Check if this is a folder containing plibs
                     for base in search_paths:
                         folder_path = os.path.join(base, search_name)
                         if os.path.isdir(folder_path):
-                            # Determine which specific items are imported from this lib
-                            items_from_lib = set()
-                            for item, (lb, _) in list(self._specific_imports.items()):
-                                if lb == search_name or lb == lib_name:
-                                    items_from_lib.add(item)
-                            # Collect plibs from folder (filtered when specific imports exist)
                             for f in sorted(os.listdir(folder_path)):
                                 if f.endswith(".plib"):
                                     plib_name = f[:-5]  # Remove .plib extension
-                                    # Only filter when specific items imported
-                                    if (
-                                        items_from_lib
-                                        and plib_name not in items_from_lib
-                                    ):
-                                        continue
                                     full_plib_path = os.path.join(folder_path, f)
                                     full_lib_name = f"{search_name}/{plib_name}"
                                     self._collect_single_plib(
@@ -2010,16 +2223,22 @@ class CodeGen:
         for decl in plib_ast.declarations:
             if isinstance(decl, p.Function):
                 # Top-level functions get prefix_ prefix
+                # Avoid double-prefixing: if the function name already starts with
+                # the prefix (e.g., sdl_init in lib sdl), don't add prefix again.
                 if prefix not in self._top_level_lib_functions:
                     self._top_level_lib_functions[prefix] = set()
-                self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
+                if decl.name.startswith(f"{prefix}_"):
+                    self._top_level_lib_functions[prefix].add(decl.name)
+                else:
+                    self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
             elif isinstance(decl, p.AsmBlock) and decl.is_function and decl.name:
-                # Asm functions get prefix_ prefix
+                # Asm functions get prefix_ prefix (with same double-prefix check)
                 if prefix not in self._top_level_lib_functions:
                     self._top_level_lib_functions[prefix] = set()
-                self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
-                # Track for macOS _ prefix resolution
-                self._asm_function_names.add(f"{prefix}_{decl.name}")
+                if decl.name.startswith(f"{prefix}_"):
+                    self._top_level_lib_functions[prefix].add(decl.name)
+                else:
+                    self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
             elif isinstance(decl, p.SpaceDecl):
                 # Functions inside a space get prefix_space_ prefix
                 if prefix not in self._top_level_lib_functions:
@@ -2050,6 +2269,10 @@ class CodeGen:
                 "plib_path": plib_path,
             }
         )
+
+        if plib_path and f"{os.sep}plstd{os.sep}" in plib_path:
+            self._standard_libs.add(prefix)
+            self._alias_to_lib["lib"] = prefix
 
     def _mark_plib_ast(self, plib_ast):
         """Mark all declarations in a plib AST as coming from a plib."""
@@ -2240,6 +2463,13 @@ class CodeGen:
                     if os.path.exists(candidate):
                         plib_path = candidate
                         break
+
+                if not plib_path:
+                    for d in ["."] + self._get_plibs_search_dirs():
+                        candidate = os.path.join(d, "plstd", f"{search_name}.plib")
+                        if os.path.exists(candidate):
+                            plib_path = candidate
+                            break
 
         if not plib_path:
             return
@@ -2452,7 +2682,7 @@ class CodeGen:
                 # Array initializer: [1, 2, 3]
                 init_vals = [self._expr(e) for e in node.initializer.elements]
                 init_count = len(init_vals)
-                init_capacity = max(4, init_count)
+                init_capacity = max(DEFAULT_DYNAM_CAPACITY, init_count)
 
                 if self._in_global_scope:
                     self._emit(f"{struct_name} {name};")
@@ -2476,7 +2706,7 @@ class CodeGen:
 
                 if self._in_global_scope:
                     self._emit(f"{struct_name} {name};")
-                    init_line = f"{name}.data = __ctri_malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
+                    init_line = f"{name}.data = __ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = {DEFAULT_DYNAM_CAPACITY};"
                     push_line = f"{struct_name}_push(&{name}, {init_expr});"
                     if is_plib:
                         self._plib_global_inits.append((init_line, [push_line]))
@@ -2485,20 +2715,20 @@ class CodeGen:
                         self._global_dynam_inits.append(push_line)
                 else:
                     self._emit(
-                        f"{struct_name} {name} = {{__ctri_malloc(4 * sizeof({mapped_elem})), 0, 4}};"
+                        f"{struct_name} {name} = {{__ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem})), 0, {DEFAULT_DYNAM_CAPACITY}}};"
                     )
                     self._emit(f"{struct_name}_push(&{name}, {init_expr});")
             else:
                 if self._in_global_scope:
                     self._emit(f"{struct_name} {name};")
-                    init_line = f"{name}.data = __ctri_malloc(4 * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = 4;"
+                    init_line = f"{name}.data = __ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem})); {name}.size = 0; {name}.capacity = {DEFAULT_DYNAM_CAPACITY};"
                     if is_plib:
                         self._plib_global_inits.append((init_line, []))
                     else:
                         self._global_dynam_inits.append(init_line)
                 else:
                     self._emit(
-                        f"{struct_name} {name} = {{__ctri_malloc(4 * sizeof({mapped_elem})), 0, 4}};"
+                        f"{struct_name} {name} = {{__ctri_malloc({DEFAULT_DYNAM_CAPACITY} * sizeof({mapped_elem})), 0, {DEFAULT_DYNAM_CAPACITY}}};"
                     )
             return
 
@@ -2692,6 +2922,27 @@ class CodeGen:
         else:
             self._emit(f"{typ} {name};")
 
+        # Track struct variable types for member access resolution
+        # Normalize type name by stripping "struct " or "union " prefix
+        lookup_type = node.var_type
+        if lookup_type.startswith("struct "):
+            lookup_type = lookup_type[7:]
+        elif lookup_type.startswith("union "):
+            lookup_type = lookup_type[6:]
+        if lookup_type in self._struct_field_types:
+            self._var_struct_types[name] = lookup_type
+            # Zero-initialize string and dynam fields so that
+            # __ctri_free() on the first assignment is safe.
+            if node.initializer is None:
+                field_types = self._struct_field_types[lookup_type]
+                for fname, ftype in field_types.items():
+                    if ftype == "string":
+                        self._emit(f"{name}.{fname} = (char*)0;")
+                    elif ftype.startswith("dynam "):
+                        self._emit(f"{name}.{fname}.data = (void*)0;")
+                        self._emit(f"{name}.{fname}.size = 0;")
+                        self._emit(f"{name}.{fname}.capacity = 0;")
+
     def _get_dynam_struct_name(self, elem_type: str) -> str:
         """Generate a valid C struct name from an element type.
 
@@ -2729,7 +2980,7 @@ class CodeGen:
             + " val) {"
         )
         self._helper_lines.append("    if (arr->size >= arr->capacity) {")
-        self._helper_lines.append("        arr->capacity *= 2;")
+        self._helper_lines.append("        arr->capacity = arr->capacity ? arr->capacity * 2 : 1;")
         self._helper_lines.append(
             f"        arr->data = __ctri_realloc(arr->data, arr->capacity * sizeof({elem_type}));"
         )
@@ -2921,6 +3172,10 @@ class CodeGen:
                 dynam_type = self._get_dynam_type(var_name)
                 if dynam_type and dynam_type.startswith("dynam "):
                     expr_str = f"{var_name}.data"
+            elif isinstance(node.expr, FieldAccess):
+                dynam_type = self._resolve_member_dynam_type(node.expr)
+                if dynam_type and dynam_type.startswith("dynam "):
+                    expr_str = f"{self._expr(node.expr)}.data"
             self._emit(f"return {expr_str};")
         else:
             self._emit("return;")
@@ -2932,53 +3187,55 @@ class CodeGen:
                 target = node.expr.target
                 value = node.expr.value
 
-                # Check if target is a Var that refers to a dynam or string
+                # Resolve dynam/string type for both Var and FieldAccess targets
+                dynam_type = None
                 if isinstance(target, Var):
-                    var_name = target.name
-                    # Check if this variable is dynam or string by looking at declaration
-                    dynam_type = self._get_dynam_type(var_name)
+                    dynam_type = self._get_dynam_type(target.name)
+                elif isinstance(target, FieldAccess):
+                    dynam_type = self._resolve_member_dynam_type(target)
 
-                    if dynam_type and dynam_type.startswith("dynam "):
-                        # This is a reassignment to a dynam array
-                        if isinstance(value, InitList):
-                            init_vals = [self._expr(e) for e in value.elements]
-                            elem_type = dynam_type[6:]
-                            struct_name = self._get_dynam_struct_name(elem_type)
-                            mapped_elem = self._map_type(elem_type)
+                if dynam_type and dynam_type.startswith("dynam "):
+                    # This is a reassignment to a dynam array (Var or FieldAccess)
+                    target_name = self._expr(target)
+                    if isinstance(value, InitList):
+                        init_vals = [self._expr(e) for e in value.elements]
+                        elem_type = dynam_type[6:]
+                        struct_name = self._get_dynam_struct_name(elem_type)
+                        mapped_elem = self._map_type(elem_type)
 
-                            # Free old data, reallocate and copy
-                            self._emit(f"__ctri_free({var_name}.data);")
-                            init_capacity = max(4, len(init_vals))
+                        # Free old data, reallocate and copy
+                        self._emit(f"__ctri_free({target_name}.data);")
+                        init_capacity = max(DEFAULT_DYNAM_CAPACITY, len(init_vals))
+                        self._emit(
+                            f"{target_name}.data = __ctri_malloc({init_capacity} * sizeof({mapped_elem}));"
+                        )
+                        self._emit(f"{target_name}.size = 0;")
+                        self._emit(f"{target_name}.capacity = {init_capacity};")
+                        for init_val in init_vals:
                             self._emit(
-                                f"{var_name}.data = __ctri_malloc({init_capacity} * sizeof({mapped_elem}));"
+                                f"{struct_name}_push(&{target_name}, {init_val});"
                             )
-                            self._emit(f"{var_name}.size = 0;")
-                            self._emit(f"{var_name}.capacity = {init_capacity};")
-                            for init_val in init_vals:
-                                self._emit(
-                                    f"{struct_name}_push(&{var_name}, {init_val});"
-                                )
-                            return
+                        return
 
-                    if dynam_type == "string":
-                        # This is a reassignment to a string
-                        if (
-                            isinstance(value, Literal)
-                            and isinstance(value.value, str)
-                            and value.value.startswith('"')
-                        ):
-                            self._ensure_ctri_string_helpers()
-                            self._emit(f"__ctri_free({var_name});")
-                            self._emit(f"{var_name} = __ctri_strdup({value.value});")
-                            return
-                        elif isinstance(value, Binary) and value.op == "+":
-                            self._ensure_ctri_string_helpers()
-                            right = self._expr(value.right)
-                            self._emit(
-                                f"{var_name} = __ctri_realloc({var_name}, __ctri_strlen({var_name}) + __ctri_strlen({right}) + 1);"
-                            )
-                            self._emit(f"__ctri_strcat({var_name}, {right});")
-                            return
+                if dynam_type == "string":
+                    # This is a reassignment to a string (Var or FieldAccess)
+                    target_name = self._expr(target)
+                    self._ensure_ctri_string_helpers()
+                    if (
+                        isinstance(value, Literal)
+                        and isinstance(value.value, str)
+                        and value.value.startswith('"')
+                    ):
+                        self._emit(f"__ctri_free({target_name});")
+                        self._emit(f"{target_name} = __ctri_strdup({value.value});")
+                        return
+                    elif isinstance(value, Binary) and value.op == "+":
+                        left_expr = self._expr(value.left)
+                        right_expr = self._expr(value.right)
+                        self._emit(f"{{ char* _new = __ctri_malloc(__ctri_strlen({left_expr}) + __ctri_strlen({right_expr}) + 1); "
+                                   f"__ctri_strcpy(_new, {left_expr}); __ctri_strcat(_new, {right_expr}); "
+                                   f"__ctri_free({target_name}); {target_name} = _new; }}")
+                        return
 
             self._emit(f"{self._expr(node.expr)};")
 
@@ -3010,6 +3267,18 @@ class CodeGen:
     def _gen_struct_def(self, node):
         name = getattr(node, "name", "") or ""
         fields = getattr(node, "fields", []) or []
+        # Track struct field types for member access resolution
+        if name:
+            field_type_map = {}
+            for field_type, field_name in fields:
+                base_name = field_name.split("[")[0] if "[" in field_name else field_name
+                field_type_map[base_name] = field_type
+            self._struct_field_types[name] = field_type_map
+            # Also register struct types for structor if available
+            if self.structor and hasattr(self.structor, '_structs'):
+                if name not in self.structor._structs:
+                    from structure import StructInfo
+                    self.structor._structs[name] = StructInfo(name, fields)
         header = f"struct {name}" if name else "struct"
         self._emit(f"{header} {{")
         self._indent += 1
@@ -3027,12 +3296,18 @@ class CodeGen:
                 
                 # Use the dynam struct name as the field type
                 self._emit(f"{struct_name} {field_name};")
+            elif field_type == "string":
+                # string in struct maps to char*
+                self._emit(f"char* {field_name};")
             else:
                 # For regular types, apply standard type mapping
                 mapped_type = self._map_type(field_type)
                 self._emit(f"{mapped_type} {field_name};")
         self._indent -= 1
         self._emit("};")  # struct definition always ends with ;
+        # Emit typedef so struct can be used without 'struct' keyword
+        if name:
+            self._emit(f"typedef struct {name} {name};")
 
     def _gen_typedef(self, node):
         actual = getattr(node, "actual_type", "")
@@ -3043,17 +3318,13 @@ class CodeGen:
         """Generate C declaration stub for asm block and store for .asm file generation."""
         if node.is_function:
             self._asm_blocks.append(node)
-            self._asm_function_names.add(node.name)
             ret_type = self._map_type(node.ret_type)
             params = []
             for ptype, pname in node.params:
                 mapped_type = self._map_type(ptype)
                 params.append(f"{mapped_type} {pname}")
             param_str = ", ".join(params) if params else "void"
-            # On macOS, asm functions need _ prefix for C linkage
-            is_macos = platform.system() == "Darwin"
-            func_name = f"_{node.name}" if is_macos else node.name
-            self._emit(f"{ret_type} {func_name}({param_str});")
+            self._emit(f"{ret_type} {node.name}({param_str});")
             self._gen_asm_variable_externs(node)
         else:
             self._asm_blocks.append(node)
@@ -3067,7 +3338,6 @@ class CodeGen:
             var_name = var_info["name"]
             var_type = var_info["type"]
             var_size = var_info.get("size")
-            self._asm_function_names.add(var_name)
             if var_type == "string":
                 initializer = var_info.get("initializer", "")
                 str_size = len(initializer) + 1 if isinstance(initializer, str) else 0

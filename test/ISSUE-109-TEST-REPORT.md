@@ -17,10 +17,10 @@ Tested whether the C△ compiler correctly implements tree-shaking (selective co
 ### Test Case: Selective Import of strlen
 
 ```c
-using strlen from <plstd>;
+using strlen from <string>;
 
 int main() {
-    strlen@plstd("hello");
+    strlen@lib("hello");
     return 0;
 }
 ```
@@ -39,7 +39,7 @@ do not support implicit function declarations
 
 The bug exists in the codegen's tree-shaking logic for selective imports of top-level functions:
 
-1. **Parsing** ✓ - Parser correctly identifies `using strlen from <plstd>;`
+1. **Parsing** ✓ - Parser correctly identifies `using strlen from <string>;`
 2. **Marking** ✓ - Codegen marks `strlen` as a used function
 3. **Code Generation** ✗ - **FAILS to emit the function body**
 4. **Call Emission** ✓ - Call to `plstd_strlen()` is emitted
@@ -66,8 +66,8 @@ The bug only manifests for **top-level functions** in libraries:
 
 ### Case 1: Selective Import (Broken) 
 ```ctri
-using strlen from <plstd>;
-strlen@plstd("hello");
+using strlen from <string>;
+strlen@lib("hello");
 ```
 - Generated: `plstd_strlen("hello");`
 - Defined: ❌ NO definition of plstd_strlen
@@ -75,7 +75,8 @@ strlen@plstd("hello");
 
 ### Case 2: Full Import with Namespace (Works)
 ```ctri
-using <plstd>;
+using <string>;
+using <printd>;
 strlen@string("hello");
 ```
 - Generated: `string_strlen("hello");`
@@ -84,8 +85,10 @@ strlen@string("hello");
 
 ### Case 3: Full Import + Expose (Should work but has issues)
 ```ctri
-using <plstd>;
-expose plstd;
+using <string>;
+using <printd>;
+expose string;
+expose printd;
 ```
 - Issue: Expose doesn't expose nested namespaces
 - Result: ❌ Functions in `space` blocks not accessible
@@ -103,11 +106,12 @@ expose plstd;
 **Workaround**: Use the full namespace reference instead of selective import
 ```c
 // DON'T:
-using strlen from <plstd>;
-strlen@plstd("hello");  // ❌ BROKEN
+using strlen from <string>;
+strlen@lib("hello");  // ❌ BROKEN
 
 // DO:
-using <plstd>;
+using <string>;
+using <printd>;
 strlen@string("hello");  // ✅ WORKS
 ```
 

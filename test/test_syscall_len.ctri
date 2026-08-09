@@ -1,13 +1,14 @@
 asm int syscall_len_test() {
-    syntax arm64_macho
-    .section __TEXT,__text
-    mov x0, #1
-    adr x1, msg
-    mov x2, len(msg)
-    mov x16, #4
-    svc #0x80
+    syntax x86_64_linux
+    section .data
+    string msg = "hello syscall\n"
+    section .text
+    mov rax, 1
+    mov rdi, 1
+    lea rsi, [msg]
+    mov rdx, len(msg)
+    syscall
     ret
-    msg: asciz "hello syscall\n"
 }
 
 int main() {

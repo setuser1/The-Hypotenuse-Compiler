@@ -15,7 +15,7 @@ Error codes are organized by category:
 
 import os
 
-_ERRORS: dict[str, list[str]] = {}
+_ERRORS: dict[str, list[str]] | None = None
 _ERROR_CATEGORIES = {
     "SYNTAX": "Syntax errors (E0xx)",
     "TYPE": "Type errors (E1xx)",
@@ -249,8 +249,11 @@ ERROR_MESSAGES = {
         "Use: using <{lib}> or using {item} from <{lib}>",
     ],
     "E802": [
+        "Function '{func}' is in library '{lib}' which is not exposed. "
+        "Options: (1) expose the entire library: 'expose {lib}'; "
+        "(2) expose just this function: 'expose {func}@{lib}'; "
+        "(3) use the one-off syntax: '{func}@{lib}()'.",
         "Library {lib} is not exposed. Use 'expose {lib}' before calling functions directly.",
-        "Function {func} requires 'expose {lib}' before direct calls.",
     ],
     "E803": [
         "Function {func} not found in library {lib}",

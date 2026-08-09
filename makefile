@@ -129,6 +129,15 @@ print('top-level declarations:', len(ast.declarations))"
 		(echo "FAIL: test_at_long_funcname.ctri import should resolve" && exit 1)
 	@python3 src/main.py test/test_at_rsplit.ctri > /dev/null || \
 		(echo "FAIL: test_at_rsplit.ctri import should resolve" && exit 1)
+	@python3 src/main.py test/issue-109-selective-import-full.ctri 2>&1 | grep -F "string_strlen(s)" > /dev/null || \
+		(echo "FAIL: @lib should resolve stdlib string functions by plib filename" && exit 1)
+	@python3 src/main.py test/issue-109-selective-import-full.ctri 2>&1 | grep -F "printd_printd(l)" > /dev/null || \
+		(echo "FAIL: @lib should resolve stdlib printd by plib filename" && exit 1)
+	@python3 src/main.py test/issue-109-selective-import-full.ctri 2>&1 | grep -E "^[A-Za-z_].*plstd_" > /dev/null && \
+		(echo "FAIL: plstd must not be used as a generated stdlib function prefix" && exit 1) || true
+	@printf 'using <printd>;\nint main() { printd(42); return 0; }\n' > /tmp/ctri_plstd_bare_call.ctri
+	@python3 src/main.py /tmp/ctri_plstd_bare_call.ctri 2>&1 | grep -F "not exposed" > /dev/null || \
+		(echo "FAIL: standard library imports should still require @lib or expose for bare calls" && exit 1)
 	@echo "PASS: local test imports"
 
 	@echo "--- Test: source files cannot include themselves ---"
@@ -144,8 +153,14 @@ print('PASS: self include rejected')"
 	@echo "--- Test: expose allows direct library calls and missing expose fails ---"
 	@python3 src/main.py test/expose_success.ctri 2>&1 | grep "string_strcmp(left, right)" > /dev/null || \
 		(echo "FAIL: expose string should allow direct strcmp calls" && exit 1)
-	@python3 src/main.py test/expose_required.ctri 2>&1 | grep "requires 'strcmp@string()' syntax" > /dev/null || \
-		(echo "FAIL: missing expose should require strcmp@string syntax" && exit 1)
+	@python3 src/main.py test/expose_required.ctri 2>&1 | grep "expose" > /dev/null || \
+		(echo "FAIL: missing expose should suggest expose options" && exit 1)
+	@python3 src/main.py test/test_expose_error_msg.ctri 2>&1 | grep "expose the entire library" > /dev/null || \
+		(echo "FAIL: error message should mention expose library option" && exit 1)
+	@python3 src/main.py test/test_expose_error_msg.ctri 2>&1 | grep "expose.*@.*string" > /dev/null || \
+		(echo "FAIL: error message should mention expose func@lib option" && exit 1)
+	@python3 src/main.py test/test_expose_full_lib.ctri 2>&1 | grep "string_strcmp(a, b)" > /dev/null || \
+		(echo "FAIL: expose entire library should allow direct calls" && exit 1)
 	@echo "PASS: expose behavior"
 
 	@echo "--- Test: allocate/free generate allocator calls ---"
@@ -194,16 +209,16 @@ print('PASS: self include rejected')"
 		(echo "FAIL: string literal reassignment should free previous storage" && exit 1)
 	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'greeting = __ctri_strdup("hi");' > /dev/null || \
 		(echo "FAIL: string literal reassignment should duplicate new literal" && exit 1)
-	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "greeting = __ctri_realloc(greeting, __ctri_strlen(greeting) + __ctri_strlen(suffix) + 1);" > /dev/null || \
-		(echo "FAIL: string append should grow the destination buffer" && exit 1)
-	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "__ctri_strcat(greeting, suffix);" > /dev/null || \
-		(echo "FAIL: string append should concatenate suffix" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "char\* _new = __ctri_malloc(__ctri_strlen(greeting) + __ctri_strlen(suffix) + 1);" > /dev/null || \
+		(echo "FAIL: string append should allocate new buffer for concatenation" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "__ctri_free(greeting);" > /dev/null || \
+		(echo "FAIL: string append should free old buffer" && exit 1)
 	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep "int greeting_len = __ctri_strlen(greeting);" > /dev/null || \
 		(echo "FAIL: len(string) should use __ctri_strlen" && exit 1)
-	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_hi = (strcmp(greeting, "hi world") == 0);' > /dev/null || \
-		(echo "FAIL: string == literal should emit strcmp == 0" && exit 1)
-	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_not_empty = (strcmp(greeting, "") != 0);' > /dev/null || \
-		(echo "FAIL: string != literal should emit strcmp != 0" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_hi = (__ctri_strcmp(greeting, "hi world") == 0);' > /dev/null || \
+		(echo "FAIL: string == literal should emit __ctri_strcmp == 0" && exit 1)
+	@python3 src/main.py test/base_string_ops.ctri 2>&1 | grep 'int is_not_empty = (__ctri_strcmp(greeting, "") != 0);' > /dev/null || \
+		(echo "FAIL: string != literal should emit __ctri_strcmp != 0" && exit 1)
 	@echo "PASS: base string operations"
 
 	@echo "--- Test: no libc string functions in compiler-generated code ---"
@@ -221,7 +236,7 @@ print('PASS: self include rejected')"
 	@python3 -c "\
 import sys; sys.path.insert(0,'src'); \
 import lexer, parser as p, structure, codegen; \
-asm_src = 'asm int asm_owner() {\\n    syntax arm64_macho\\n    .section __TEXT,__text\\n    int asm_value = 42\\n    return asm_value\\n}\\nusing asm_owner&asm_value\\nint main() { return asm_value; }\\n'; \
+asm_src = 'asm int asm_owner() {\\n    x86_64_linux\\n    section .text\\n    int asm_value = 42\\n    return asm_value\\n}\\nusing asm_owner&asm_value\\nint main() { return asm_value; }\\n'; \
 normal_src = 'int normal_owner() {\\n    int normal_value = 7;\\n    return normal_value;\\n}\\nusing normal_owner&normal_value\\nint main() { return normal_value; }\\n'; \
 bad_src = 'asm int missing_section() {\\n    syntax x86_64_elf\\n    return 1\\n}\\n'; \
 exec('def gen(src):\\n    ast = p.Parser(lexer.Lexer(src).lex()).parse_program()\\n    s = structure.Structor(ast)\\n    s.build_from_ast()\\n    return codegen.CodeGen(ast, s).generate()'); \
@@ -262,6 +277,100 @@ build-x86_64-elf:
 # ---------------------------------------------------------------
 binary: build
 	./dist/hypotenuse
+
+# ---------------------------------------------------------------
+# container-build: build the compiler using Apple's container CLI (macOS Apple Silicon)
+# ---------------------------------------------------------------
+container-build:
+	@if command -v container >/dev/null 2>&1; then \
+		@echo "Building compiler with Apple's container CLI..."; \
+		container build --platform linux/amd64 \
+			-t "hypotenuse-container" \
+			-f "$(CURDIR)/Containerfile" \
+			"$(CURDIR)"; \
+	else if command -v docker >/dev/null 2>&1; then \
+		@echo "Using Docker as fallback (Apple container CLI not found). Consider installing https://github.com/apple/container for native Apple Silicon support."; \
+		docker build \
+			--platform linux/amd64 \
+			-t "hypotenuse-container" \
+			--file "$(CURDIR)/Containerfile" \
+			"$(CURDIR)"; \
+	else \
+		echo "Error: Neither 'container' CLI (Apple Silicon) nor 'docker' found."; \
+		echo "Install the Apple container tool from https://github.com/apple/container"; \
+		exit 1; \
+	fi
+
+# ---------------------------------------------------------------
+# container-run: run the containerized compiler
+# ---------------------------------------------------------------
+container-run:
+	@if command -v container >/dev/null 2>&1; then \
+		container run --platform linux/amd64 \
+			--rm \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container "$@"; \
+	else if command -v docker >/dev/null 2>&1; then \
+		docker run --rm \
+			--platform linux/amd64 \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container "$@"; \
+	else \
+		echo "Error: Neither 'container' CLI nor 'docker' found"; \
+		exit 1; \
+	fi
+
+# ---------------------------------------------------------------
+# container-test: run the test suite inside the container
+# ---------------------------------------------------------------
+container-test: container-build
+	@if command -v container >/dev/null 2>&1; then \
+		@echo "Running tests with Apple's container CLI..."; \
+		container run --platform linux/amd64 \
+			--rm \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container \
+			sh -c "cd /work && python3 src/main.py test/baseline.ctri && python3 src/main.py -p test/baseline.ctri"; \
+	else if command -v docker >/dev/null 2>&1; then \
+		@echo "Using Docker as fallback..."; \
+		docker run --rm \
+			--platform linux/amd64 \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container \
+			sh -c "cd /work && python3 src/main.py test/baseline.ctri && python3 src/main.py -p test/baseline.ctri"; \
+	else \
+		echo "Error: Neither 'container' CLI nor 'docker' found"; \
+		exit 1; \
+	fi
+
+# ---------------------------------------------------------------
+# container-lint: run linting inside the container
+# ---------------------------------------------------------------
+container-lint: container-build
+	@if command -v container >/dev/null 2>&1; then \
+		@echo "Running linting with Apple's container CLI..."; \
+		container run --platform linux/amd64 \
+			--rm \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container \
+			sh -c "python3 -m pyflakes src/lexer.py src/parser.py src/structure.py src/codegen.py src/assembler.py src/main.py"; \
+	else if command -v docker >/dev/null 2>&1; then \
+		@echo "Using Docker as fallback..."; \
+		docker run --rm \
+			--platform linux/amd64 \
+			-v "$(CURDIR):/work" \
+			-w /work \
+			hypotenuse-container \
+			sh -c "python3 -m pyflakes src/lexer.py src/parser.py src/structure.py src/codegen.py src/assembler.py src/main.py"; \
+	else \
+		echo "Error: Neither 'container' CLI nor 'docker' found"; \
+		exit 1; \
+	fi
 
 # ---------------------------------------------------------------
 # clean: remove build artifacts

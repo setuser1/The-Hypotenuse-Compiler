@@ -13,11 +13,12 @@
 ## Importing plstd
 
 ```c
-// Import all from plstd
-using <plstd>;
+// Import standard library files by filename
+using <printd>;
+using <string>;
 
 // Import specific function
-using printd from <plstd>;
+using printd from <printd>;
 
 // Explicit access - function@lib syntax
 printd@lib("value: %d\n", 42);
