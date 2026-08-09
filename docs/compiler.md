@@ -35,8 +35,6 @@ The Hypotenuse Compiler transforms C△ source files into native Linux ELF x86_6
   7 Linker                          ──▶  native ELF binary
 ```
 
----
-
 ## Stage Details
 
 ### 1. Lexer (`lexer.py`)
@@ -119,10 +117,10 @@ python3 src/main.py -i mylib.plib
 
 ## Target
 
-| Details           | Linux      | MacOS      |
-| ----------------- | ---------- | ---------- |
-| Architecture      | x86_64     | arm64      |
-| Platform          | Linux      | MacOS      |
-| Output format     | ELF        | machO      |
-| Backend           | GCC + NASM | GCC + NASM |
-| Compiler language | Python 3   | Python 3   |
+| Details           | Linux      |
+| ----------------- | ---------- |
+| Architecture      | x86_64     |
+| Platform          | Linux      |
+| Output format     | ELF        |
+| Backend           | GCC + NASM |
+| Compiler language | Python 3   |
