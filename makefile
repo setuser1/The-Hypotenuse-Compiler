@@ -236,7 +236,7 @@ print('PASS: self include rejected')"
 	@python3 -c "\
 import sys; sys.path.insert(0,'src'); \
 import lexer, parser as p, structure, codegen; \
-asm_src = 'asm int asm_owner() {\\n    syntax arm64_macho\\n    .section __TEXT,__text\\n    int asm_value = 42\\n    return asm_value\\n}\\nusing asm_owner&asm_value\\nint main() { return asm_value; }\\n'; \
+asm_src = 'asm int asm_owner() {\\n    x86_64_linux\\n    section .text\\n    int asm_value = 42\\n    return asm_value\\n}\\nusing asm_owner&asm_value\\nint main() { return asm_value; }\\n'; \
 normal_src = 'int normal_owner() {\\n    int normal_value = 7;\\n    return normal_value;\\n}\\nusing normal_owner&normal_value\\nint main() { return normal_value; }\\n'; \
 bad_src = 'asm int missing_section() {\\n    syntax x86_64_elf\\n    return 1\\n}\\n'; \
 exec('def gen(src):\\n    ast = p.Parser(lexer.Lexer(src).lex()).parse_program()\\n    s = structure.Structor(ast)\\n    s.build_from_ast()\\n    return codegen.CodeGen(ast, s).generate()'); \
