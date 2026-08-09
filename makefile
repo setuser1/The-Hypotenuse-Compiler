@@ -129,6 +129,15 @@ print('top-level declarations:', len(ast.declarations))"
 		(echo "FAIL: test_at_long_funcname.ctri import should resolve" && exit 1)
 	@python3 src/main.py test/test_at_rsplit.ctri > /dev/null || \
 		(echo "FAIL: test_at_rsplit.ctri import should resolve" && exit 1)
+	@python3 src/main.py test/issue-109-selective-import-full.ctri 2>&1 | grep -F "string_strlen(s)" > /dev/null || \
+		(echo "FAIL: @lib should resolve stdlib string functions by plib filename" && exit 1)
+	@python3 src/main.py test/issue-109-selective-import-full.ctri 2>&1 | grep -F "printd_printd(l)" > /dev/null || \
+		(echo "FAIL: @lib should resolve stdlib printd by plib filename" && exit 1)
+	@python3 src/main.py test/issue-109-selective-import-full.ctri 2>&1 | grep -E "^[A-Za-z_].*plstd_" > /dev/null && \
+		(echo "FAIL: plstd must not be used as a generated stdlib function prefix" && exit 1) || true
+	@printf 'using <printd>;\nint main() { printd(42); return 0; }\n' > /tmp/ctri_plstd_bare_call.ctri
+	@python3 src/main.py /tmp/ctri_plstd_bare_call.ctri 2>&1 | grep -F "not exposed" > /dev/null || \
+		(echo "FAIL: standard library imports should still require @lib or expose for bare calls" && exit 1)
 	@echo "PASS: local test imports"
 
 	@echo "--- Test: source files cannot include themselves ---"

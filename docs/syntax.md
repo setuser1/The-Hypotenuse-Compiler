@@ -45,20 +45,20 @@ int t_len = len(t);    // t_len = 3
 ## Imports
 
 ```c
-// Import all from a system library (PLIBS/)
-using <plstd>
+// Import a standard library file by filename
+using <printd>
 
 // Import specific function from a system library
-using printd from <plstd>
+using printd from <printd>
 
 // Import from a local library
 using helper from "utils"
 
 // Globalize an entire library (all symbols in scope)
-expose plstd
+expose printd
 
 // Globalize a specific namespace from a library
-expose io@plstd;
+expose printd@lib;
 
 // Explicit access - function@namespace syntax
 printd@lib("value: %d\n", 42);
@@ -268,8 +268,8 @@ See [assembly.md](assembly.md) for full details.
 // Access a namespace member with '@' (namespace@function)
 random@mySpace()
 
-// Expose plstd library (all symbols global)
-expose plstd
+// Expose a standard library file (all symbols global)
+expose printd
 
 // Expose a specific namespace
 expose mySpace

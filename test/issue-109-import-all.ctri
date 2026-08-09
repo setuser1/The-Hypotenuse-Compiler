@@ -1,6 +1,6 @@
-using <plstd>;
+using <printd>;
 
 int main() {
-    printd(42);
+    printd@lib("value: %d", 42);
     return 0;
 }

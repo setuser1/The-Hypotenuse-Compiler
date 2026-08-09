@@ -1,8 +1,8 @@
 // Test: @ namespace handling - valid case
-// Using printd from "plstd" with @ syntax should transform to plstd_printd
-using printd from "plstd"
+// Using printd from the standard library with @lib syntax should transform to printd_printd
+using printd from <printd>
 
 int main() {
-    printd@plstd("Testing @ namespace syntax\n");
+    printd@lib("Testing @ namespace syntax\n");
     return 0;
 }

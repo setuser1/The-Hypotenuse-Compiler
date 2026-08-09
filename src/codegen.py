@@ -102,6 +102,7 @@ class CodeGen:
         self._exposed_funcs = {}  # Maps bare_name -> lib_name for exposed functions
         self._folder_libs = {}  # Maps folder alias -> list of plib names (e.g., "lib" -> ["plstd/streamer", "plstd/other"])
         self._namespace_imported_libs = set()  # Track libs imported as full namespaces
+        self._standard_libs = set()  # Plib filenames loaded from the standard library folder
         self._used_functions = set()  # Track used function names for tree-shaking
         self._pending_plibs = []  # Store pending plib ASTs for tree-shaking
         self._global_dynam_inits = []  # Track global dynam initialization code for main()
@@ -945,7 +946,13 @@ class CodeGen:
                 exposed_funcs = getattr(self, "_exposed_funcs", {})
                 is_func_exposed = base_callee in exposed_funcs
 
-                if not is_exposed and not is_func_exposed and "@" not in callee:
+                # When using X from <X>, the function is implicitly available
+                is_same_lib_import = (
+                    lib_name == base_callee
+                    or (lib_name.startswith("<") and lib_name[1:-1] == base_callee)
+                )
+
+                if not is_exposed and not is_func_exposed and not is_same_lib_import and "@" not in callee:
                     raise ValueError(
                         error_msgs.get_error_msg(
                             "E802",
@@ -1051,18 +1058,36 @@ class CodeGen:
                     callee = f"{lib_key}_{base_callee}"
                 else:
                     # Check if function exists in any imported plib's top-level functions
+                    # Auto-resolve only for folder imports (e.g., using <sdl3/sdl>)
+                    resolved = False
+                    error_lib = None
+                    error_func = None
                     for lib_name, funcs in getattr(
                         self, "_top_level_lib_functions", {}
                     ).items():
                         if base_callee in funcs or f"{lib_name}_{base_callee}" in funcs:
-                            raise SyntaxError(
-                                error_msgs.get_error_msg(
-                                    "E802",
-                                    lib=lib_name,
-                                    func=base_callee,
-                            fallback=f"Function '{base_callee}' is in library '{lib_name}' which is not exposed. Options: (1) expose the entire library: 'expose {lib_name}'; (2) expose just this function: 'expose {base_callee}@{lib_name}'; (3) use the one-off syntax: '{base_callee}@{lib_name}()'.",
-                                )
+                            # Only auto-resolve for folder imports (e.g., sdl3/sdl -> lib key is sdl)
+                            for ns in getattr(self, "_namespace_imported_libs", set()):
+                                if "/" in ns:  # Only folder imports
+                                    ns_lib = ns.split("/")[-1]
+                                    if ns_lib == lib_name:
+                                        callee = base_callee if base_callee in funcs else f"{lib_name}_{base_callee}"
+                                        resolved = True
+                                        break
+                            if resolved:
+                                break
+                            # Save for error message
+                            error_lib = lib_name
+                            error_func = base_callee
+                    if not resolved and error_lib:
+                        raise SyntaxError(
+                            error_msgs.get_error_msg(
+                                "E802",
+                                lib=error_lib,
+                                func=error_func,
+                        fallback=f"Function '{error_func}' is in library '{error_lib}' which is not exposed. Options: (1) expose the entire library: 'expose {error_lib}'; (2) expose just this function: 'expose {error_func}@{error_lib}'; (3) use the one-off syntax: '{error_func}@{error_lib}()'.",
                             )
+                        )
 
             # When generating plib code, prefix internal calls to other plib functions
             # Don't add prefix if callee already contains underscore (already prefixed)
@@ -1164,7 +1189,8 @@ class CodeGen:
                         found = False
                         for generated_name in self._top_level_lib_functions[namespace]:
                             suffix = f"_{func}"
-                            if generated_name.endswith(suffix):
+                            # Also check if generated_name == func (for double-prefix case)
+                            if generated_name.endswith(suffix) or generated_name == func:
                                 callee = generated_name
                                 found = True
                                 break
@@ -1360,6 +1386,12 @@ class CodeGen:
 
             if source.startswith("<") and source.endswith(">"):
                 lib_name = source[1:-1]
+                if lib_name == "plstd":
+                    raise SyntaxError(
+                        "plstd is a standard library directory, not a library name. "
+                        "Import standard library files by filename, such as using <printd> "
+                        "or using <string>."
+                    )
 
                 if lib_name not in seen_libs:
                     local_imports.append(lib_name)
@@ -1429,9 +1461,6 @@ class CodeGen:
             else:
                 # No explicit alias - use lib name itself for @libname syntax
                 self._alias_to_lib[lib_name] = lib_name
-            # "lib" is an alias for the standard library (plstd)
-            if lib_name == "plstd" and "lib" not in self._alias_to_lib:
-                self._alias_to_lib["lib"] = "plstd"
             # Only collect includes from plib (don't generate code yet)
             self._collect_plib_includes(lib_name)
 
@@ -1445,8 +1474,8 @@ class CodeGen:
             exp_target = exp.target
 
             # Handle expose of a specifically imported function (using func from <lib>)
-            # e.g. "using printd from <plstd>;" + "expose printd;" should work
-            # as if the user wrote "expose printd@plstd;"
+            # e.g. "using printd from <printd>;" + "expose printd;" should work
+            # as if the user wrote "expose printd@lib;"
             if exp_target in self._specific_imports:
                 lib_name = self._specific_imports[exp_target][0]
                 exp_target = f"{exp_target}@{lib_name}"
@@ -1906,7 +1935,11 @@ class CodeGen:
                     self._current_space = actual_prefix
                     for nested_decl in decl.declarations:
                         if isinstance(nested_decl, p.Function):
-                            generated_name = f"{actual_prefix}_{nested_decl.name}"
+                            # Avoid double-prefixing
+                            if nested_decl.name.startswith(f"{actual_prefix}_"):
+                                generated_name = nested_decl.name
+                            else:
+                                generated_name = f"{actual_prefix}_{nested_decl.name}"
                             if self._should_emit_plib_function(
                                 prefix,
                                 nested_decl.name,
@@ -1922,7 +1955,11 @@ class CodeGen:
                     self._current_space = None
                     self._space_local_functions = set()
                 elif isinstance(decl, p.Function):
-                    generated_name = f"{prefix}_{decl.name}"
+                    # Avoid double-prefixing
+                    if decl.name.startswith(f"{prefix}_"):
+                        generated_name = decl.name
+                    else:
+                        generated_name = f"{prefix}_{decl.name}"
                     if self._should_emit_plib_function(prefix, decl.name, generated_name):
                         before = len(self._used_functions)
                         self._scan_plib_function_dependencies(decl.body)
@@ -1937,13 +1974,16 @@ class CodeGen:
                 continue
 
             # Apply prefix to top-level declarations
+            # Avoid double-prefixing: if the name already starts with prefix_, don't add it again
             original_name = None
             if isinstance(decl, p.Function):
                 original_name = decl.name
-                decl.name = f"{prefix}_{decl.name}"
+                if not decl.name.startswith(f"{prefix}_"):
+                    decl.name = f"{prefix}_{decl.name}"
             elif isinstance(decl, p.Declaration):
                 original_name = decl.name
-                decl.name = f"{prefix}_{decl.name}"
+                if not decl.name.startswith(f"{prefix}_"):
+                    decl.name = f"{prefix}_{decl.name}"
 
             # Handle SpaceDecl - generate with prefix + namespace prefix
             if isinstance(decl, p.SpaceDecl):
@@ -1985,11 +2025,15 @@ class CodeGen:
 
                         nested_decl.name = generated_name
                     elif isinstance(nested_decl, p.Declaration):
-                        nested_decl.name = f"{actual_prefix}_{nested_decl.name}"
+                        if not nested_decl.name.startswith(f"{actual_prefix}_"):
+                            nested_decl.name = f"{actual_prefix}_{nested_decl.name}"
                     elif isinstance(nested_decl, p.AsmBlock):
                         if nested_decl.is_function and nested_decl.name:
                             original_name = nested_decl.name
-                            generated_name = f"{actual_prefix}_{nested_decl.name}"
+                            if nested_decl.name.startswith(f"{actual_prefix}_"):
+                                generated_name = nested_decl.name
+                            else:
+                                generated_name = f"{actual_prefix}_{nested_decl.name}"
                             if not self._should_emit_plib_function(
                                 prefix,
                                 original_name,
@@ -2006,7 +2050,8 @@ class CodeGen:
             elif isinstance(decl, p.AsmBlock):
                 # Prefix asm function names
                 if decl.is_function and decl.name:
-                    decl.name = f"{prefix}_{decl.name}"
+                    if not decl.name.startswith(f"{prefix}_"):
+                        decl.name = f"{prefix}_{decl.name}"
                     # Track for internal calls within plib
                     lib_key = lib_name.split("/")[-1]
                     if lib_key not in self._top_level_lib_functions:
@@ -2097,6 +2142,8 @@ class CodeGen:
                 search_paths.append(parent)
                 current_dir = parent
                 parent = os.path.dirname(parent)
+            if "." not in search_paths:
+                search_paths.append(".")
             search_paths.extend(self._get_plibs_search_dirs())
 
             if "/" in lib_name:
@@ -2113,6 +2160,13 @@ class CodeGen:
                     if os.path.exists(candidate):
                         plib_path = candidate
                         break
+
+                if not plib_path:
+                    for base in search_paths:
+                        candidate = os.path.join(base, "plstd", f"{search_name}.plib")
+                        if os.path.exists(candidate):
+                            plib_path = candidate
+                            break
 
                 if not plib_path:
                     # Check if this is a folder containing plibs
@@ -2169,14 +2223,22 @@ class CodeGen:
         for decl in plib_ast.declarations:
             if isinstance(decl, p.Function):
                 # Top-level functions get prefix_ prefix
+                # Avoid double-prefixing: if the function name already starts with
+                # the prefix (e.g., sdl_init in lib sdl), don't add prefix again.
                 if prefix not in self._top_level_lib_functions:
                     self._top_level_lib_functions[prefix] = set()
-                self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
+                if decl.name.startswith(f"{prefix}_"):
+                    self._top_level_lib_functions[prefix].add(decl.name)
+                else:
+                    self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
             elif isinstance(decl, p.AsmBlock) and decl.is_function and decl.name:
-                # Asm functions get prefix_ prefix
+                # Asm functions get prefix_ prefix (with same double-prefix check)
                 if prefix not in self._top_level_lib_functions:
                     self._top_level_lib_functions[prefix] = set()
-                self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
+                if decl.name.startswith(f"{prefix}_"):
+                    self._top_level_lib_functions[prefix].add(decl.name)
+                else:
+                    self._top_level_lib_functions[prefix].add(f"{prefix}_{decl.name}")
             elif isinstance(decl, p.SpaceDecl):
                 # Functions inside a space get prefix_space_ prefix
                 if prefix not in self._top_level_lib_functions:
@@ -2207,6 +2269,10 @@ class CodeGen:
                 "plib_path": plib_path,
             }
         )
+
+        if plib_path and f"{os.sep}plstd{os.sep}" in plib_path:
+            self._standard_libs.add(prefix)
+            self._alias_to_lib["lib"] = prefix
 
     def _mark_plib_ast(self, plib_ast):
         """Mark all declarations in a plib AST as coming from a plib."""
@@ -2397,6 +2463,13 @@ class CodeGen:
                     if os.path.exists(candidate):
                         plib_path = candidate
                         break
+
+                if not plib_path:
+                    for d in ["."] + self._get_plibs_search_dirs():
+                        candidate = os.path.join(d, "plstd", f"{search_name}.plib")
+                        if os.path.exists(candidate):
+                            plib_path = candidate
+                            break
 
         if not plib_path:
             return

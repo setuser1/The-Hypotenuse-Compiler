@@ -1,8 +1,8 @@
 // Test: @ namespace handling with library alias
-// Using an aliased library with @ syntax
-using printd from <plstd>
+// Using a standard library filename with @lib syntax
+using printd from <printd>
 
 int main() {
-    printd@plstd("Testing @ with alias syntax\n");
+    printd@lib("Testing @ with alias syntax\n");
     return 0;
 }

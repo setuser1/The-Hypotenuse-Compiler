@@ -59,7 +59,7 @@ class ExposeDecl(Node):
 
 @dataclass
 class LibAccess(Node):
-    """lib:symbol - explicit plstd access."""
+    """lib:symbol - explicit library access."""
 
     symbol: str
 
@@ -1152,17 +1152,17 @@ class Parser:
         t = self.peek()
         if t[0] == "LT":
             self.expect("LT")
-            # Handle both IDENTIFIER and PLSTD (plstd is a reserved keyword)
-            if self.peek()[0] == "PLSTD":
-                lib_name = self.expect("PLSTD")[1]
+            # Handle identifiers and keyword-like library filenames such as string.plib.
+            if self.peek()[0] in _TYPE_TOKENS:
+                lib_name = self.advance()[1]
             else:
                 lib_name = self.expect("IDENTIFIER")[1]
 
-            # Handle path-like imports: <plstd/printd>
+            # Handle path-like imports: <folder/file>
             while self.peek()[0] == "DIVIDE":
                 self.expect("DIVIDE")
-                if self.peek()[0] == "PLSTD":
-                    lib_name += "/" + self.expect("PLSTD")[1]
+                if self.peek()[0] in _TYPE_TOKENS:
+                    lib_name += "/" + self.advance()[1]
                 else:
                     lib_name += "/" + self.expect("IDENTIFIER")[1]
 
@@ -1206,27 +1206,17 @@ class Parser:
         self.expect("EXPOSE")
         t = self.peek()
         # Accept IDENTIFIER or keywords (like STRING) as valid targets
-        if t[0] in ("IDENTIFIER", "STRING", "PLSTD") or t[0].endswith("_KEYWORD"):
+        if t[0] in ("IDENTIFIER", "STRING") or t[0].endswith("_KEYWORD"):
             target = self.advance()[1]
-            # Check for @ syntax like expose printd@plstd or expose printd@lib
+            # Check for @ syntax like expose printd@lib
             if self.peek()[0] == "AT":
                 self.expect("AT")
-                # Can be IDENTIFIER or PLSTD for the namespace
-                if self.peek()[0] == "PLSTD":
-                    namespace = self.advance()[1]
-                else:
-                    namespace = self.expect("IDENTIFIER")[1]
+                namespace = self.expect("IDENTIFIER")[1]
                 target = f"{target}@{namespace}"
             # Semicolon is optional for expose statements
             if self.peek()[0] == "SEMICOLON":
                 self.expect("SEMICOLON")
             return ExposeDecl(target=target)
-        elif t[0] == "PLSTD":
-            self.advance()
-            # Semicolon is optional for expose statements
-            if self.peek()[0] == "SEMICOLON":
-                self.expect("SEMICOLON")
-            return ExposeDecl(target="plstd")
 
         return None  # type: ignore
 
@@ -1657,7 +1647,7 @@ class Parser:
         """Parse a namespace block declaration."""
         self.expect("SPACE")
         t = self.peek()
-        if t[0] == "IDENTIFIER" or t[0] == "PLSTD":
+        if t[0] == "IDENTIFIER":
             name = self.advance()[1]
             self.expect("LBRACE")
             declarations = []
@@ -3004,8 +2994,8 @@ class Parser:
                 # This is function@namespace pattern
                 func_name = self.advance()[1]
                 self.expect("AT")
-                # Namespace can be IDENTIFIER, PLSTD, or STRING (string type keyword)
-                if self.peek()[0] in ("IDENTIFIER", "PLSTD", "STRING"):
+                # Namespace can be IDENTIFIER or STRING (string type keyword)
+                if self.peek()[0] in ("IDENTIFIER", "STRING"):
                     namespace = self.advance()[1]
                 else:
                     line = self.peek()[2] if len(self.peek()) > 2 else 0

@@ -1,7 +1,7 @@
-using printd from <plstd>;
+using printd from <printd>;
 
 int main() {
     int lib = 7;
-    printd@plstd("value: %d", lib);
+    printd@lib("value: %d", lib);
     return lib;
 }
