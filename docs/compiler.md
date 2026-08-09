@@ -37,6 +37,18 @@ The Hypotenuse Compiler transforms C△ source files into native Linux ELF x86_6
 
 ---
 
+## Target
+
+| Details           | Linux      |
+| ----------------- | ---------- |
+| Architecture      | x86_64     |
+| Platform          | Linux      |
+| Output format     | ELF        |
+| Backend           | GCC + NASM |
+| Compiler language | Python 3   |
+
+---
+
 ## Stage Details
 
 ### 1. Lexer (`lexer.py`)
