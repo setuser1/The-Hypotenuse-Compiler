@@ -26,7 +26,7 @@ The C△ compiler and standard library support multiple architectures:
 
 ### Standard Library (plstd) Architecture Support
 
-- **printd.plib** — Type-aware printing with conditional compilation for both x86_64 Linux and ARM64 macOS
+- **printd.plib** — Type-aware printing with conditional compilation for both x86_64 Linux
 - **string.plib** — String operations (strcmp, strcpy, strcat, etc.) optimized for each architecture
 - **streamer.plib** — File I/O and syscall wrappers supporting both architectures
 - **Syscalls** — All syscalls use platform-specific conventions:
