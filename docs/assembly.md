@@ -22,7 +22,7 @@ asm functionName(params) {
 - **Parameters** use native C△ type declarations instead of assembler directives.
 - syntax describes what syntax is being used
 - Every `asm` block must explicitly declare its text section for the selected syntax.
-  Use `section .text` for x86_64 NASM targets and `.section __TEXT,__text` for `arm64_macho`.
+  Use `section .text` for x86_64 NASM targets
 - `return;` emits `ret`; `return expr;` moves the expression result to `rax` on x86_64 or `x0` on ARM64 before returning.
 - Variable declarations inside `asm` blocks may omit semicolons; newlines terminate ASM declarations and instructions.
 - Each `asm` block becomes its **own `.asm` file**.
