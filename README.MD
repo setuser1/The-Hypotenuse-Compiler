@@ -36,7 +36,7 @@ The C△ compiler and standard library support multiple architectures:
 
 ## Install Guide
 
-1. Make sure you have **Linux or MacOS** and **Python 3.14+**
+1. Make sure you have **Linux** and **Python 3.14+**
 2. Clone the repo and `cd` into it
 3. Run `make full-install`
 
