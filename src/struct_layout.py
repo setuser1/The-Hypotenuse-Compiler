@@ -7,8 +7,6 @@ from typing import Dict, List, Optional
 
 
 def _long_double_info():
-    if sys.platform == "darwin" and platform.machine() == "arm64":
-        return (8, 8)
     return (16, 16)
 
 _LONG_DOUBLE_SIZE, _LONG_DOUBLE_ALIGN = _long_double_info()
