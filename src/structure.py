@@ -44,18 +44,7 @@ SYSTEM_INCLUDE_PATHS = {
         "/usr/include",
         "/usr/local/include",
     ],
-    "darwin": [
-        "/usr/include",
-        "/usr/local/include",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
-        "/Library/Developer/CommandLineTools/usr/lib/clang/*/include",
-    ],
 }
-
-HOMEBObrew_INCLUDE_PATHS = [
-    "/opt/homebrew/include",
-    "/usr/local/include",
-]
 
 C11_SIZEOF = {
     "char": 1,
@@ -74,18 +63,6 @@ C11_SIZEOF = {
 def get_system_include_paths():
     system = platform.system().lower()
     paths = list(SYSTEM_INCLUDE_PATHS.get(system, []))
-
-    if system == "darwin":
-        xcode_sdk_path = (
-            "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
-        )
-        if xcode_sdk_path not in paths:
-            if os.path.isdir(xcode_sdk_path):
-                paths.append(xcode_sdk_path)
-        for hb_path in HOMEBObrew_INCLUDE_PATHS:
-            if hb_path not in paths and os.path.isdir(hb_path):
-                paths.append(hb_path)
-
     return paths
 
 
